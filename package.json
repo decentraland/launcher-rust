@@ -18,7 +18,7 @@
     "url": "^0.11.4",
     "@sentry/react": "^8.29.0",
     "@sentry/vite-plugin": "^2.22.4",
-    "decentraland-ui2": "^0.1.0"
+    "decentraland-ui2": "^0.12.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
