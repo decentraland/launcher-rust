@@ -1,17 +1,13 @@
-use std::path::PathBuf;
-use std::{fs, path::Path, io::Read};
-use std::io::Cursor;
-use tokio::fs::{create_dir_all, File};
-use tokio::io::AsyncWriteExt;
+use std::{fs, path::{Path, PathBuf}, io::{Cursor, Read, Write}};
 use zip::read::ZipArchive;
 use tar::Archive;
 
-pub async fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     if !source_path.exists() {
         return Err("Source file does not exist".into());
     }
 
-    create_dir_all(destination_path).await?;
+    fs::create_dir_all(destination_path)?;
 
     let zip_data = fs::read(source_path)?;
     let cursor = Cursor::new(zip_data);
@@ -42,9 +38,9 @@ pub async fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) 
             let output_path = Path::new(destination_path).join(path);
 
             if entry.header().entry_type().is_dir() {
-                create_dir_all(output_path).await?;
+                fs::create_dir_all(output_path)?;
             } else {
-                let mut output_file = std::fs::File::create(output_path)?;
+                let mut output_file = fs::File::create(output_path)?;
                 std::io::copy(&mut entry, &mut output_file)?;
             }
         }
@@ -56,13 +52,13 @@ pub async fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) 
 
             // Create directory if it's a directory
             if file.is_dir() {
-                create_dir_all(&output_path).await?;
+                fs::create_dir_all(&output_path)?;
             } else {
                 let mut content = Vec::new();
                 file.read_to_end(&mut content)?;
 
-                let mut output_file = File::create(output_path).await?;
-                output_file.write_all(&content).await?;
+                let mut output_file = fs::File::create(output_path)?;
+                output_file.write_all(&content)?;
             }
         }
     }

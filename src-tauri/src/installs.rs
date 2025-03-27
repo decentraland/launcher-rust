@@ -1,11 +1,10 @@
 use std::os::unix::fs::PermissionsExt;
-use std::{fs, io, env};
+use std::{fs, env};
 use std::path::{Path, PathBuf};
 use serde_json::Value;
 use anyhow::{anyhow, Context, Result, Error};
 use semver::Version;
 
-use crate::s3::get_latest_explorer_release;
 use crate::utils;
 
 pub mod downloads;
@@ -143,7 +142,7 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
         return Err(anyhow!(format!("Downloaded explorer file not found: {}", file_path.to_string_lossy())));
     }
 
-    compression::decompress_file(&file_path, &branch_path).await
+    compression::decompress_file(&file_path, &branch_path)
         .map_err(|e| anyhow::Error::msg(format!("Cannot decompress file {}", e.to_string())))?;
 
     if utils::get_os_name() == "macos" {
@@ -166,9 +165,7 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     // TODO support on windows
     std::os::unix::fs::symlink(&branch_path, latest_path)?;
 
-    // Update version data
     version_data[version] = Value::from(std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?.as_secs().to_string());
-
     if version != "dev" {
         version_data["version"] = Value::String(version.to_string());
     }

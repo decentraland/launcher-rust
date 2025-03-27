@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Ok, Result};
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use tauri::async_runtime::Mutex;
 use crate::{installs, s3::{self, ReleaseResponse}};
 use crate::types::Status;
@@ -23,12 +23,20 @@ pub trait LaunchStep {
 
 pub struct LaunchFlowState {
     latest_release: Option<ReleaseResponse>,
+    recent_download: Option<RecentDownload>,
+}
+
+#[derive(Clone)]
+struct RecentDownload {
+    version: String,
+    downloaded_path: PathBuf,
 }
 
 impl Default for LaunchFlowState {
     fn default() -> Self {
         LaunchFlowState {
-            latest_release: None
+            latest_release: None,
+            recent_download: None,
         }
     }
 }
@@ -100,7 +108,7 @@ impl LaunchStep for DownloadStep {
         let any_installed = crate::installs::is_explorer_installed(None);
         let mode = if any_installed { crate::types::BuildType::Update } else { crate::types::BuildType::New };
 
-        let guard = state.lock().await;
+        let mut guard = state.lock().await;
 
         let release = &guard.latest_release;
         match release {
@@ -112,12 +120,19 @@ impl LaunchStep for DownloadStep {
 
                 let captures = re.captures(url).context(format!("cannot find matches in the url: {}", url))?;
                 // TODO preserved for analytics
-                let _version = captures.get(2).map(|m| m.as_str()).context(format!("url doesn't contain version"))?;
+                let version = captures.get(2).map(|m| m.as_str()).context(format!("url doesn't contain version"))?.to_string();
 
                 let target_path = installs::target_download_path();
                 let path: &str = target_path.to_str().context("Cannot convert target download path")?;
 
                 installs::downloads::download_file(url, path, channel, &mode).await?;
+
+                guard.recent_download = Some(
+                    RecentDownload {
+                        version, 
+                        downloaded_path: target_path,
+                    }
+                );
 
                 Ok(())
 
@@ -133,13 +148,15 @@ struct InstallStep {}
 
 impl LaunchStep for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
-        // always refetch the origin
-        Ok(false)
+        let guard = state.lock().await;
+        Ok(guard.recent_download.is_some())
     }
     
     async fn execute(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
-        let latest_release = crate::s3::get_latest_explorer_release().await?;
-
+        let mut guard = state.lock().await;
+        let recent_download = guard.recent_download.clone().ok_or_else(|| anyhow!("Downloaded archive not found"))?;
+        guard.recent_download = None;
+        installs::install_explorer(&recent_download.version, Some(recent_download.downloaded_path)).await?;
         Ok(())
     }
 
