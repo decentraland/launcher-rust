@@ -4,40 +4,29 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Status {
     #[serde(rename_all = "camelCase")]
-    State{
-        step : Step,
-    },
+    State { step: Step },
     #[serde(rename_all = "camelCase")]
-    Error{
-        message: String,
-        can_retry: bool,
-    },
+    Error { message: String, can_retry: bool },
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
-pub enum Step{
+pub enum Step {
     #[serde(rename_all = "camelCase")]
-    Fetching{},
+    Fetching {},
     #[serde(rename_all = "camelCase")]
-    Downloading{
-        progress: u8 ,
-        build_type: BuildType,
-    },
+    Downloading { progress: u8, build_type: BuildType },
     #[serde(rename_all = "camelCase")]
-    Installing{
-        build_type: BuildType,
-    },
+    Installing { build_type: BuildType },
     #[serde(rename_all = "camelCase")]
     Launching,
-
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
-pub enum BuildType{
+pub enum BuildType {
     #[serde(rename_all = "camelCase")]
     New,
     #[serde(rename_all = "camelCase")]
-    Update
+    Update,
 }
