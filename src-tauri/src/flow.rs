@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Ok, Result};
 use std::{path::PathBuf, sync::Arc};
 use tauri::async_runtime::Mutex;
-use crate::{installs, s3::{self, ReleaseResponse}};
+use crate::{analytics::AnalyticsClient, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}};
 use crate::types::Status;
 use tauri::ipc::Channel;
 use regex::Regex;
@@ -49,23 +49,23 @@ pub struct LaunchFlow {
 }
 
 impl LaunchFlow {
+    pub fn new(installs_hub: Arc<Mutex<InstallsHub>>) -> Self {
+        LaunchFlow {
+            fetch_step: FetchStep{},
+            download_step: DownloadStep{},
+            install_step: InstallStep{},
+            app_launch_step: AppLaunchStep {
+                installs_hub,
+            },
+        }
+    }
+
     pub async fn launch(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         self.fetch_step.execute_if_needed(channel, state.clone()).await?;
         self.download_step.execute_if_needed(channel, state.clone()).await?;
         self.install_step.execute_if_needed(channel, state.clone()).await?;
         self.app_launch_step.execute_if_needed(channel, state.clone()).await?;
         Ok(())
-    }
-}
-
-impl Default for LaunchFlow {
-    fn default() -> Self {
-        LaunchFlow {
-            fetch_step: FetchStep{},
-            download_step: DownloadStep{},
-            install_step: InstallStep{},
-            app_launch_step: AppLaunchStep{},
-        }
     }
 }
 
@@ -162,16 +162,23 @@ impl LaunchStep for InstallStep {
 
 }
 
-struct AppLaunchStep {}
+struct AppLaunchStep {
+    installs_hub: Arc<Mutex<InstallsHub>>,
+}
 
 impl LaunchStep for AppLaunchStep {
-    async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
-        // always refetch the origin
+    async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
+        // Always launch explorer
         Ok(false)
     }
     
     async fn execute(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
-        let latest_release = crate::s3::get_latest_explorer_release().await?;
+        let state_guard = state.lock().await;
+        let guard = self.installs_hub.lock().await;
+
+        guard.launch_explorer(None).await?;
+        //TODO close launcher
+                //close_window().await?;
 
         Ok(())
     }

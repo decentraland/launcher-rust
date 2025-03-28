@@ -30,7 +30,6 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 regex = "1.11.1"
 anyhow = "1.0.97"
 
-tokio = { version = "1.44.1", features = ["full"] }
 futures-util = "0.3.14"
 
 semver = "1.0.26"
@@ -38,3 +37,11 @@ semver = "1.0.26"
 tar = "0.4.44"
 zip = "2.5.0"
 flate2 = "1.1.0"
+
+log = "0.4"
+fern = "0.7.1"
+humantime = "2.2.0"
+
+segment = "0.2.6"
+uuid = { version = "1.16.0", features = ["v4"] }
+
