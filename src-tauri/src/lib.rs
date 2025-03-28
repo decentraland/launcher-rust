@@ -1,8 +1,8 @@
-use flow::LaunchFlowState;
+use app::AppState;
 use tauri::{ipc::Channel, App, Manager, State};
 use std::sync::Arc;
-use fern;
 use tauri::async_runtime::Mutex;
+
 mod s3;
 mod types;
 mod utils;
@@ -11,13 +11,9 @@ mod installs;
 mod analytics;
 mod environment;
 mod protocols;
+mod app;
 
 type MutState = Arc<Mutex<AppState>>;
-
-struct AppState {
-    flow: flow::LaunchFlow,
-    state: Arc<Mutex<flow::LaunchFlowState>>,
-}
 
 #[tauri::command]
 async fn launch(state: State<'_, MutState>, channel: Channel<types::Status>) -> Result<(), ()> {
@@ -36,33 +32,7 @@ async fn launch(state: State<'_, MutState>, channel: Channel<types::Status>) -> 
 }
 
 fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    fern::Dispatch::new()
-        // Perform allocation-free log formatting
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                    "[{} {} {}] {}",
-                    humantime::format_rfc3339(std::time::SystemTime::now()),
-                    record.level(),
-                    record.target(),
-                    message
-            ))
-        })
-        .level(log::LevelFilter::Trace)
-        .chain(std::io::stdout())
-        .chain(fern::log_file("output.log")?)
-        .apply()?;
-
-    //TODO pass real client
-    let analytics = Arc::new(Mutex::new(analytics::Analytics::new(None)));
-
-    let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(analytics)));
-
-    let flow = flow::LaunchFlow::new(installs_hub);
-    let flow_state = LaunchFlowState::default();
-    let app_state = AppState {
-        flow,
-        state: Arc::new(Mutex::new(flow_state)),
-    };
+    let app_state = AppState::setup()?;
     let mut_state: MutState = Arc::new(Mutex::new(app_state));
     a.manage(mut_state);
     Ok(())
