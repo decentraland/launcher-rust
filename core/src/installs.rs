@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::{fs, env, fs::create_dir_all};
 use std::path::{Path, PathBuf};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use anyhow::{anyhow, Context, Result, Error};
 use semver::Version;
 use tokio::sync::Mutex;
@@ -17,8 +17,8 @@ pub mod compression;
 
 const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
-const EXPLORER_MAC_BIN_PATH: &str = "/Decentraland.app/Contents/MacOS/Explorer";
-const EXPLORER_WIN_BIN_PATH: &str = "/Decentraland.exe";
+const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
+const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
 
 fn get_app_base_path() -> PathBuf {
     dirs::data_local_dir()
@@ -31,7 +31,7 @@ fn explorer_path() -> PathBuf {
 
 fn explorer_downloads_path() -> PathBuf {
     let dir = explorer_path().join("downloads");
-    create_dir_all(&dir);
+    create_dir_all(&dir).expect("Cannot create downloads directory");
     dir 
 }
 
@@ -47,7 +47,7 @@ fn explorer_dev_version_path() -> PathBuf {
     explorer_path().join("dev")
 }
 
-fn get_version_data() -> Result<serde_json::Value> {
+fn get_version_data() -> Result<Value> {
     let path = explorer_version_path();
     if path.exists() {
         let data = fs::read_to_string(path).context("Failed to read version.json")?;
@@ -55,6 +55,10 @@ fn get_version_data() -> Result<serde_json::Value> {
     } 
 
     Err(anyhow!(format!("File doesn't exists: {}", path.to_str().unwrap_or("no path"))))
+}
+
+fn get_version_data_or_empty() -> Value {
+    get_version_data().unwrap_or_else(|_| Value::Object(Map::new()))
 }
 
 #[cfg(target_os = "macos")]
@@ -75,6 +79,36 @@ fn get_explorer_bin_path(version: Option<&str>) -> PathBuf {
         None => explorer_latest_version_path(),
     };
     base_path.join(EXPLORER_WIN_BIN_PATH)
+}
+
+fn move_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
+    if !src.exists() {
+        return Err(anyhow!("Source path does not exist"));
+    }
+
+    if src.is_dir() {
+        if !dst.exists() {
+            fs::create_dir_all(dst)?;
+        }
+
+        for entry in fs::read_dir(src)? {
+            let entry = entry?;
+            let src_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+
+            if src_path.is_dir() {
+                move_recursive(&src_path, &dst_path)?;
+            } else {
+                fs::rename(&src_path, &dst_path)?; 
+            }
+        }
+
+        fs::remove_dir(src)?;
+    } else {
+        fs::rename(src, dst)?;
+    }
+
+    Ok(())
 }
 
 async fn cleanup_versions() -> Result<()> {
@@ -119,14 +153,16 @@ async fn cleanup_versions() -> Result<()> {
     Ok(())
 }
 
-fn is_app_updated(app_path: &Path, version: &str) -> bool {
-    let version_file = app_path.join("version.json");
-    if let Ok(data) = fs::read_to_string(version_file) {
-        if let Ok(version_data) = serde_json::from_str::<serde_json::Value>(&data) {
-            return version_data["version"] == version;
-        }
+fn is_app_updated(version: &str) -> bool {
+    let result = get_version_data();
+    match result {
+        Ok(data) => {
+            data["version"] == version
+        },
+        Err(_) => {
+            false
+        },
     }
-    false
 }
 
 pub fn is_explorer_installed(version: Option<&str>) -> bool {
@@ -134,7 +170,7 @@ pub fn is_explorer_installed(version: Option<&str>) -> bool {
 }
 
 pub fn is_explorer_updated(version: &str) -> bool {
-    is_explorer_installed(Some(version)) && is_app_updated(&explorer_path(), version)
+    is_explorer_installed(Some(version)) && is_app_updated(version)
 }
 
 pub fn target_download_path() -> PathBuf {
@@ -145,8 +181,6 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     let branch_path = explorer_path().join(version);
     let file_path = downloaded_file_path.unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
 
-    let mut version_data = get_version_data()?;
-
     if !file_path.exists() {
         return Err(anyhow!(format!("Downloaded explorer file not found: {}", file_path.to_string_lossy())));
     }
@@ -155,6 +189,12 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
         .map_err(|e| anyhow::Error::msg(format!("Cannot decompress file {}", e.to_string())))?;
 
     if utils::get_os_name() == "macos" {
+
+        let from = &branch_path.join("build");
+        let to = &branch_path;
+
+        move_recursive(from, to).context("Cannot move build folder")?;
+
         let explorer_bin_path = branch_path.join(EXPLORER_MAC_BIN_PATH);
         if explorer_bin_path.exists() {
             let metadata = fs::metadata(&explorer_bin_path)?;
@@ -167,13 +207,14 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     // Remove old version symlink if it exists
     let latest_path = explorer_latest_version_path();
     if latest_path.exists() {
-        fs::remove_file(&latest_path)?;
+        fs::remove_file(&latest_path).context("Cannot delete latest version")?;
     }
 
     // Create a symlink
     // TODO support on windows
-    std::os::unix::fs::symlink(&branch_path, latest_path)?;
+    std::os::unix::fs::symlink(&branch_path, latest_path).context("Cannot create symlink")?;
 
+    let mut version_data = get_version_data_or_empty();
     version_data[version] = Value::from(std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?.as_secs().to_string());
     if version != "dev" {
         version_data["version"] = Value::String(version.to_string());
@@ -182,11 +223,11 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     // Write version data to file
     let version_data_str = serde_json::to_string(&version_data)?;
     let version_path = explorer_version_path();
-    fs::write(version_path, version_data_str)?;
+    fs::write(version_path, version_data_str).context("Cannot write version data")?;
 
     // Remove the downloaded file
-    fs::remove_file(file_path)?;
-    cleanup_versions().await?;
+    fs::remove_file(file_path).context("Cannot remove the downloaded file")?;
+    cleanup_versions().await.context("Cannot clean up the old versions")?;
 
     Ok(())
 }
@@ -206,15 +247,20 @@ impl InstallsHub {
     async fn explorer_params(&self) -> Vec<String> {
         let guard = self.analytics.lock().await;
 
-        vec![
-            Protocol::value(),
+        let mut output = vec![
             "--launcher_anonymous_id".to_string(),
             guard.anonymous_id().to_owned(),
             "--session_id".to_string(),
             guard.session_id().value().to_owned(),
             "--provider".to_string(),
             AppEnvironment::provider(),
-        ]
+        ];
+
+        if let Some(value) = Protocol::value() {
+            output.insert(0, value);
+        }
+
+        output
     }
 
 
@@ -231,7 +277,7 @@ impl InstallsHub {
                 Some(ver) => format!("The explorer version specified ({}) is not installed.", ver),
                 None => "The explorer is not installed.".to_string(),
             };
-            log::error!("{}", error_message);
+            log::error!("{}, {}", error_message, explorer_bin_path.to_string_lossy().to_string());
             return Err(anyhow!(error_message));
         }
 
@@ -254,4 +300,3 @@ impl InstallsHub {
         Ok(())
     }
 }
-

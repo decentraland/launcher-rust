@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Context, Ok, Result};
+use log::info;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 use crate::{installs::{self, InstallsHub}, s3::{self, ReleaseResponse}};
-use crate::types::Status;
 use crate::channel::EventChannel;
 use regex::Regex;
 
@@ -11,13 +11,17 @@ pub trait LaunchStep {
     
     async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()>;
 
-    async fn execute_if_needed<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn execute_if_needed<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>, label: &str) -> Result<()> {
         let complete = self.is_complete(state.clone()).await?;
         if complete {
+            info!("Step {} is already complete", label);
             return Ok(());
         }
 
-        self.execute(channel, state).await
+        info!("Step {} is started", label);
+        self.execute(channel, state).await?;
+        info!("Step {} is finished", label);
+        Ok(())
     }
 }
 
@@ -61,10 +65,10 @@ impl LaunchFlow {
     }
 
     pub async fn launch<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
-        self.fetch_step.execute_if_needed(channel, state.clone()).await?;
-        self.download_step.execute_if_needed(channel, state.clone()).await?;
-        self.install_step.execute_if_needed(channel, state.clone()).await?;
-        self.app_launch_step.execute_if_needed(channel, state.clone()).await?;
+        self.fetch_step.execute_if_needed(channel, state.clone(), "fetch").await?;
+        self.download_step.execute_if_needed(channel, state.clone(), "download").await?;
+        self.install_step.execute_if_needed(channel, state.clone(), "install").await?;
+        self.app_launch_step.execute_if_needed(channel, state.clone(), "launch").await?;
         Ok(())
     }
 }
@@ -149,7 +153,7 @@ struct InstallStep {}
 impl LaunchStep for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
-        Ok(guard.recent_download.is_some())
+        Ok(guard.recent_download.is_none())
     }
     
     async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {

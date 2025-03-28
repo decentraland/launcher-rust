@@ -1,0 +1,67 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'dcl_launcher_core'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=dcl-launcher-core"
+                ],
+                "filter": {
+                    "name": "dcl_launcher_core",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'dcl_launcher_core'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=dcl_launcher_core",
+                    "--package=dcl-launcher-core"
+                ],
+                "filter": {
+                    "name": "dcl_launcher_core",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "VITE_AWS_S3_BUCKET_PUBLIC_URL": "https://explorer-artifacts.decentraland.org"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'dcl_launcher_core'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=dcl_launcher_core",
+                    "--package=dcl-launcher-core"
+                ],
+                "filter": {
+                    "name": "dcl_launcher_core",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
