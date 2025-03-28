@@ -1,30 +1,31 @@
-use app::AppState;
+use dcl_launcher_core::{ app::AppState, channel::EventChannel, types, utils };
 use tauri::{ipc::Channel, App, Manager, State};
 use std::sync::Arc;
 use tauri::async_runtime::Mutex;
 
-mod s3;
-mod types;
-mod utils;
-mod flow;
-mod installs;
-mod analytics;
-mod environment;
-mod protocols;
-mod app;
-
 type MutState = Arc<Mutex<AppState>>;
+
+pub struct StatusChannel(Channel<types::Status>); 
+
+impl EventChannel for StatusChannel {
+    fn send(&self, status: types::Status) -> anyhow::Result<()> {
+        self.0.send(status)?;
+        Ok(())
+    }
+}
 
 #[tauri::command]
 async fn launch(state: State<'_, MutState>, channel: Channel<types::Status>) -> Result<(), ()> {
+    let status_channel = StatusChannel(channel);
     let guard = state.lock().await;
 
     let flow_state = guard.state.clone();
+
     //TODO expose error
-    guard.flow.launch(&channel, flow_state).await.map_err(|_| {return ();} )?;
+    guard.flow.launch(&status_channel, flow_state).await.map_err(|_| {return ();} )?;
 
     //TODO remove message
-    let _result = channel.send(types::Status::Error {
+    let _result = status_channel.send(types::Status::Error {
         message: "not implemented".into(),
         can_retry: true,
     });
