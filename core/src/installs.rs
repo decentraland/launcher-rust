@@ -1,7 +1,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::{fs, env};
+use std::{fs, env, fs::create_dir_all};
 use std::path::{Path, PathBuf};
 use serde_json::Value;
 use anyhow::{anyhow, Context, Result, Error};
@@ -15,20 +15,24 @@ use crate::protocols::Protocol;
 pub mod downloads;
 pub mod compression;
 
+const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 const EXPLORER_MAC_BIN_PATH: &str = "/Decentraland.app/Contents/MacOS/Explorer";
 const EXPLORER_WIN_BIN_PATH: &str = "/Decentraland.exe";
 
 fn get_app_base_path() -> PathBuf {
-    env::current_dir().expect("Failed to get current directory")
+    dirs::data_local_dir()
+        .expect("Failed to get current directory")
 }
 
 fn explorer_path() -> PathBuf {
-    get_app_base_path().join("Explorer")
+    get_app_base_path().join(APP_NAME)
 }
 
 fn explorer_downloads_path() -> PathBuf {
-    explorer_path().join("downloads")
+    let dir = explorer_path().join("downloads");
+    create_dir_all(&dir);
+    dir 
 }
 
 fn explorer_version_path() -> PathBuf {

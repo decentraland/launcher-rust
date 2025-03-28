@@ -26,7 +26,7 @@ pub fn bucket_url() -> Result<String> {
 }
 
 async fn fetch_explorer_latest_release() -> Result<LatestRelease> {
-    let bucket_url = bucket_url()?;
+    let bucket_url = bucket_url().context("Cannot fetch latest release")?;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -58,7 +58,7 @@ async fn fetch_explorer_latest_release() -> Result<LatestRelease> {
 }
 
 pub async fn get_latest_explorer_release() -> Result<ReleaseResponse> {
-    let url = bucket_url()?;
+    let url = bucket_url().context("Cannot get latest release")?;
     let latest_release = fetch_explorer_latest_release().await?;
     let os = get_os_name();
     let release_name = format!("Decentraland_{}.zip", os);
