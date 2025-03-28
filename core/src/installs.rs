@@ -8,6 +8,7 @@ use anyhow::{anyhow, Context, Result, Error};
 use semver::Version;
 use tokio::sync::Mutex;
 use crate::analytics::Analytics;
+use crate::processes::CommandExtDetached;
 use crate::utils;
 use crate::environment::AppEnvironment;
 use crate::protocols::Protocol;
@@ -289,13 +290,19 @@ impl InstallsHub {
         let explorer_params = self.explorer_params().await;
         log::info!("Opening Explorer at {:?} with params: {:?}", explorer_bin_path, explorer_params);
 
-        Command::new(&explorer_bin_path)
+        let mut child = Command::new(&explorer_bin_path)
             .current_dir(&explorer_bin_dir)
             .args(&explorer_params)
+            .detached()
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .context("Failed to start explorer process")?;
+
+        log::info!("Process run with id: {}", child.id());
+
+        std::thread::sleep(std::time::Duration::from_secs(60*10));
+        //child.wait()?;
 
         Ok(())
     }
