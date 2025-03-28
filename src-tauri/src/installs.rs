@@ -1,11 +1,16 @@
 use std::os::unix::fs::PermissionsExt;
+use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::{fs, env};
 use std::path::{Path, PathBuf};
 use serde_json::Value;
 use anyhow::{anyhow, Context, Result, Error};
 use semver::Version;
-
+use tauri::async_runtime::Mutex;
+use crate::analytics::Analytics;
 use crate::utils;
+use crate::environment::AppEnvironment;
+use crate::protocols::Protocol;
 
 pub mod downloads;
 pub mod compression;
@@ -181,3 +186,68 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 
     Ok(())
 }
+
+pub struct InstallsHub {
+   analytics: Arc<Mutex<Analytics>>,
+}
+
+impl InstallsHub {
+
+    pub fn new(analytics: Arc<Mutex<Analytics>>) -> Self {
+        InstallsHub {
+            analytics,
+        }
+    }
+
+    async fn explorer_params(&self) -> Vec<String> {
+        let guard = self.analytics.lock().await;
+
+        vec![
+            Protocol::value(),
+            "--launcher_anonymous_id".to_string(),
+            guard.anonymous_id().to_owned(),
+            "--session_id".to_string(),
+            guard.session_id().value().to_owned(),
+            "--provider".to_string(),
+            AppEnvironment::provider(),
+        ]
+    }
+
+
+    pub async fn launch_explorer(&self, preferred_version: Option<&str>) -> Result<()> {
+        log::info!("Launching Explorer...");
+
+        let explorer_bin_path = get_explorer_bin_path(preferred_version);
+        let explorer_bin_dir = explorer_bin_path
+            .parent()
+            .ok_or_else(|| anyhow!("Failed to get explorer binary directory"))?;
+
+        if !explorer_bin_path.exists() {
+            let error_message = match preferred_version {
+                Some(ver) => format!("The explorer version specified ({}) is not installed.", ver),
+                None => "The explorer is not installed.".to_string(),
+            };
+            log::error!("{}", error_message);
+            return Err(anyhow!(error_message));
+        }
+
+        // Ensure binary is executable
+        fs::metadata(&explorer_bin_path)
+            .context("Failed to access explorer binary")?;
+
+        // Prepare explorer parameters
+        let explorer_params = self.explorer_params().await;
+        log::info!("Opening Explorer at {:?} with params: {:?}", explorer_bin_path, explorer_params);
+
+        Command::new(&explorer_bin_path)
+            .current_dir(&explorer_bin_dir)
+            .args(&explorer_params)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("Failed to start explorer process")?;
+
+        Ok(())
+    }
+}
+

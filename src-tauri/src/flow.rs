@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Ok, Result};
 use std::{path::PathBuf, sync::Arc};
 use tauri::async_runtime::Mutex;
-use crate::{analytics::AnalyticsClient, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}};
+use crate::{installs::{self, InstallsHub}, s3::{self, ReleaseResponse}};
 use crate::types::Status;
 use tauri::ipc::Channel;
 use regex::Regex;
