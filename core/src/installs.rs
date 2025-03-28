@@ -1,6 +1,8 @@
 use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
+use std::thread;
 use std::{fs, env, fs::create_dir_all};
 use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
@@ -301,8 +303,20 @@ impl InstallsHub {
 
         log::info!("Process run with id: {}", child.id());
 
-        std::thread::sleep(std::time::Duration::from_secs(60*10));
-        //child.wait()?;
+        // TODO make with for loop with separations;
+        const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+        thread::sleep(WAIT_TIMEOUT);
+        let exit_code = child.try_wait()?;
+        if let Some(exit_status) = exit_code {
+            return Err(anyhow!("Child process exited with code: {}", exit_status));
+        }
+
+        const ALIVE_TIMEOUT: Duration = Duration::from_secs(2);
+        thread::sleep(ALIVE_TIMEOUT);
+        let exit_code = child.try_wait()?;
+        if let Some(exit_status) = exit_code {
+            return Err(anyhow!("Process died shorly after its start with code: {}", exit_status));
+        }
 
         Ok(())
     }
