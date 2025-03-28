@@ -1,17 +1,17 @@
 use anyhow::{anyhow, Context, Ok, Result};
 use std::{path::PathBuf, sync::Arc};
-use tauri::async_runtime::Mutex;
+use tokio::sync::Mutex;
 use crate::{installs::{self, InstallsHub}, s3::{self, ReleaseResponse}};
 use crate::types::Status;
-use tauri::ipc::Channel;
+use crate::channel::EventChannel;
 use regex::Regex;
 
 pub trait LaunchStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool>;
     
-    async fn execute(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()>;
+    async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()>;
 
-    async fn execute_if_needed(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn execute_if_needed<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let complete = self.is_complete(state.clone()).await?;
         if complete {
             return Ok(());
@@ -60,7 +60,7 @@ impl LaunchFlow {
         }
     }
 
-    pub async fn launch(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    pub async fn launch<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         self.fetch_step.execute_if_needed(channel, state.clone()).await?;
         self.download_step.execute_if_needed(channel, state.clone()).await?;
         self.install_step.execute_if_needed(channel, state.clone()).await?;
@@ -77,7 +77,7 @@ impl LaunchStep for FetchStep {
         Ok(false)
     }
     
-    async fn execute(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let mut guard = state.lock().await;
         let latest_release = crate::s3::get_latest_explorer_release().await?;
         guard.latest_release = Some(latest_release);
@@ -104,7 +104,7 @@ impl LaunchStep for DownloadStep {
         }
     }
     
-    async fn execute(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let any_installed = crate::installs::is_explorer_installed(None);
         let mode = if any_installed { crate::types::BuildType::Update } else { crate::types::BuildType::New };
 
@@ -152,7 +152,7 @@ impl LaunchStep for InstallStep {
         Ok(guard.recent_download.is_some())
     }
     
-    async fn execute(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let mut guard = state.lock().await;
         let recent_download = guard.recent_download.clone().ok_or_else(|| anyhow!("Downloaded archive not found"))?;
         guard.recent_download = None;
@@ -172,10 +172,10 @@ impl LaunchStep for AppLaunchStep {
         Ok(false)
     }
     
-    async fn execute(&self, channel: &Channel<Status>, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
-        let state_guard = state.lock().await;
+    async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let guard = self.installs_hub.lock().await;
 
+        //TODO passed version if specified manually from upper flow
         guard.launch_explorer(None).await?;
         //TODO close launcher
                 //close_window().await?;

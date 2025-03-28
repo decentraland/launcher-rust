@@ -3,12 +3,12 @@ use std::fs::File;
 use std::io::Write;
 use futures_util::StreamExt;
 use reqwest::Client;
-use tauri::ipc::Channel;
     
+use crate::channel::EventChannel;
 use crate::types::{BuildType, Status, Step};
 use anyhow::{Context, Result};
 
-pub async fn download_file(url: &str, path: &str, channel: &Channel<Status>, build_type: &BuildType) -> Result<()> {
+pub async fn download_file<T: EventChannel>(url: &str, path: &str, channel: &T, build_type: &BuildType) -> Result<()> {
     let client = Client::new();
 
     let res = client

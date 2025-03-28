@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use anyhow::{anyhow, Context, Result, Error};
 use semver::Version;
-use tauri::async_runtime::Mutex;
+use tokio::sync::Mutex;
 use crate::analytics::Analytics;
 use crate::utils;
 use crate::environment::AppEnvironment;

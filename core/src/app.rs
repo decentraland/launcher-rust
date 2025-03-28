@@ -4,7 +4,7 @@ use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::analytics;
 use crate::installs;
 use std::sync::Arc;
-use tauri::async_runtime::Mutex;
+use tokio::sync::Mutex;
 
 pub struct AppState {
     pub flow: LaunchFlow,
