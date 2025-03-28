@@ -1,32 +1,14 @@
-export enum APPS {
-  Explorer = 'unity-explorer',
+export enum BuildType {
+  New = 'new',
+  Update = 'update'
 }
 
-export interface ReleaseResponse {
-  browser_download_url: string;
-  version: string;
-}
+export type Step = 
+  | { event: 'fetching', data: {} }
+  | { event: 'downloading', data: { progress: number, buildType: BuildType } }
+  | { event: 'installing', data: { buildType: BuildType } }
+  | { event: 'launching', data: {} };
 
-export interface GithubRelease {
-  tag_name: string;
-  name: string;
-  assets: {
-    name: string;
-    browser_download_url: string;
-  }[];
-  draft: boolean;
-  prerelease: boolean;
-}
-
-export enum AppState {
-  Fetching,
-  Fetched,
-  Downloading,
-  Downloaded,
-  Installing,
-  Installed,
-  Launching,
-  Launched,
-  Cancelled,
-  Error,
-}
+export type Status = 
+  | { event: 'state', data: { step: Step } }
+  | { event: 'error', data: { message: string, canRetry: boolean } };
