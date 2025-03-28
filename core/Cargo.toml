@@ -3,6 +3,14 @@ name = "dcl-launcher-core"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "dcl_launcher_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dcl_launcher_core"
+path = "src/main.rs"
+
 [dependencies]
 # fix for the issue: https://github.com/ebarnard/rust-plist/issues/151
 deranged = "=0.4.0"
