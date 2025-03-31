@@ -24,7 +24,7 @@ export const Home: React.FC = memo(() => {
   const currentStatus = useChannelUpdates(channel);
 
   const launchFlow = async () => {
-      await invoke('launch', { channel })
+      await invoke('launch', { channel }).catch(console.error);
   };
   //  const shouldRunDevVersion = getRunDevVersion();
   //const customDownloadedFilePath = getDownloadedFilePath();
