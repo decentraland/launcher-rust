@@ -62,7 +62,7 @@ export const Home: React.FC = memo(() => {
   };
 
   const renderFetchStep = useCallback(() => {
-    return <Typography variant="h4">Fetching the latest available version of Decentraland</Typography>;
+    return <Typography variant="h4">Fetching Latest</Typography>;
   }, []);
 
   const renderDownloadStep = useCallback((isUpdate: boolean, downloadingProgress: number) => {

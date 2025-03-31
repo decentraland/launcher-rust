@@ -13,7 +13,7 @@ pub enum Status {
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Step {
     #[serde(rename_all = "camelCase")]
-    Fetching {},
+    Fetching,
     #[serde(rename_all = "camelCase")]
     Downloading { progress: u8, build_type: BuildType },
     #[serde(rename_all = "camelCase")]

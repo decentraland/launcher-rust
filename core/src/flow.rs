@@ -2,12 +2,14 @@ use anyhow::{anyhow, Context, Ok, Result};
 use log::info;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use crate::{installs::{self, InstallsHub}, s3::{self, ReleaseResponse}};
+use crate::{installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{Status, Step, BuildType}};
 use crate::channel::EventChannel;
 use regex::Regex;
 
 pub trait LaunchStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool>;
+
+    fn start_label(&self) -> Result<Status>;
     
     async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()>;
 
@@ -17,6 +19,10 @@ pub trait LaunchStep {
             info!("Step {} is already complete", label);
             return Ok(());
         }
+
+
+        let status = self.start_label()?;
+        channel.send(status)?;
 
         info!("Step {} is started", label);
         self.execute(channel, state).await?;
@@ -80,6 +86,11 @@ impl LaunchStep for FetchStep {
         // always refetch the origin
         Ok(false)
     }
+
+    fn start_label(&self) -> Result<Status> {
+        let status = Status::State { step: Step::Fetching };
+        Ok(status)
+    }
     
     async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let mut guard = state.lock().await;
@@ -91,6 +102,14 @@ impl LaunchStep for FetchStep {
 }
 
 struct DownloadStep {}
+
+impl DownloadStep {
+    pub fn mode() -> BuildType {
+        let any_installed = crate::installs::is_explorer_installed(None);
+        let mode = if any_installed { BuildType::Update } else { BuildType::New };
+        mode
+    }
+}
 
 impl LaunchStep for DownloadStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
@@ -107,10 +126,15 @@ impl LaunchStep for DownloadStep {
             },
         }
     }
+
+    fn start_label(&self) -> Result<Status> {
+        let mode = DownloadStep::mode();
+        let status = Status::State { step: Step::Downloading { progress: 0, build_type: mode } };
+        Ok(status)
+    }
     
     async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
-        let any_installed = crate::installs::is_explorer_installed(None);
-        let mode = if any_installed { crate::types::BuildType::Update } else { crate::types::BuildType::New };
+        let mode = DownloadStep::mode();
 
         let mut guard = state.lock().await;
 
@@ -155,6 +179,12 @@ impl LaunchStep for InstallStep {
         let guard = state.lock().await;
         Ok(guard.recent_download.is_none())
     }
+
+    fn start_label(&self) -> Result<Status> {
+        let mode = DownloadStep::mode();
+        let status = Status::State { step: Step::Installing { build_type: mode } };
+        Ok(status)
+    }
     
     async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let mut guard = state.lock().await;
@@ -174,6 +204,11 @@ impl LaunchStep for AppLaunchStep {
     async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         // Always launch explorer
         Ok(false)
+    }
+
+    fn start_label(&self) -> Result<Status> {
+        let status = Status::State { step: Step::Launching };
+        Ok(status)
     }
     
     async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
@@ -218,195 +253,10 @@ impl LaunchStep for AppLaunchStep {
   }, []);
 
 
-
-  const initialized = useRef(false);
-  const [state, setState] = useState<AppState | undefined>(undefined);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [isUpdated, setIsUpdated] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState<string | undefined>(undefined);
-  const [downloadingProgress, setDownloadingProgress] = useState(0);
-  const [downloadedVersion, setDownloadedVersion] = useState<string | undefined>(undefined);
   const [retry, setRetry] = useState(0);
   const [error, setError] = useState<string | undefined>(undefined);
 
 // TODO catch these 2 params
   const shouldRunDevVersion = getRunDevVersion();
   const customDownloadedFilePath = getDownloadedFilePath();
-
-  const handleFetch = useCallback(async () => {
-    try {
-      + const { browser_download_url: url, version } = await getLatestRelease();
-      + setDownloadUrl(url);
-      // If there is any Explorer version installed, set isInstalled = true
-      + setIsInstalled(await isExplorerInstalled());
-
-      // Validates if the version fetched is installed or not to download the new version
-      ++ const _isInstalled = await isExplorerInstalled(version);
-      ++ if (!_isInstalled) {
-      ++  handleDownload(url);
-      ++  return;
-      ++ }
-
-      ++ setState(AppState.Installed);
-
-      const _isUpdated = await isExplorerUpdated(version);
-      if (!_isUpdated) {
-        handleDownload(url);
-        return;
-      }
-      setIsUpdated(true);
-      setRetry(0);
-      handleLaunch();
-    } catch (error) {
-      const errorMessage = getErrorMessage(error);
-      setError(getErrorMessage(errorMessage));
-      log.error('[Renderer][Home][GetLatestRelease]', errorMessage);
-      handleRetryFetch();
-    }
-  }, [setDownloadUrl, setError, setIsInstalled, setIsUpdated, setState]);
-
-  const handleRetryFetch = useCallback(
-    (manualRetry: boolean = false) => {
-      if (!manualRetry && retry >= 5) {
-        return;
-      }
-
-      setRetry(retry + 1);
-      setTimeout(() => {
-        handleFetch();
-      }, FIVE_SECONDS);
-    },
-    [retry],
-  );
-
-  const handleLaunch = useCallback((version?: string) => {
-    const _version = shouldRunDevVersion ? 'dev' : version;
-    setState(AppState.Launching);
-    setTimeout(() => {
-      launchExplorer(_version);
-      launchState(handleLaunchState);
-    }, ONE_SECOND);
-  }, []);
-
-  const handleLaunchState = useCallback(
-    (_event: IpcRendererEvent, eventData: IpcRendererEventData) => {
-      switch (eventData.type) {
-        case IPC_EVENT_DATA_TYPE.LAUNCHED:
-          setState(AppState.Launched);
-          break;
-        case IPC_EVENT_DATA_TYPE.ERROR:
-          setError((eventData as IpcRendererEventDataError).error);
-          log.error('[Renderer][Home][HandleLaunchState]', getErrorMessage((eventData as IpcRendererEventDataError).error));
-          break;
-      }
-    },
-    [setError, setState],
-  );
-
-  const handleRetryInstall = useCallback(
-    (manualRetry: boolean = false) => {
-      if (!manualRetry && retry >= 5) {
-        return;
-      }
-
-      if (!downloadedVersion) {
-        return;
-      }
-
-      setRetry(retry + 1);
-      setTimeout(() => {
-        handleInstall(downloadedVersion);
-      }, FIVE_SECONDS);
-    },
-    [downloadedVersion, retry],
-  );
-
-  const handleInstallState = useCallback(
-    (_event: IpcRendererEvent, eventData: IpcRendererEventData) => {
-      switch (eventData.type) {
-        case IPC_EVENT_DATA_TYPE.START:
-          setState(AppState.Installing);
-          break;
-        case IPC_EVENT_DATA_TYPE.COMPLETED:
-          setState(AppState.Installed);
-          setIsUpdated(true);
-          setRetry(0);
-          handleLaunch();
-          break;
-        case IPC_EVENT_DATA_TYPE.ERROR:
-          setError((eventData as IpcRendererEventDataError).error);
-          log.error('[Renderer][Home][HandleInstallState]', getErrorMessage((eventData as IpcRendererEventDataError).error));
-          handleRetryInstall();
-          break;
-      }
-    },
-    [handleLaunch, handleRetryInstall, setError, setIsUpdated, setRetry, setState],
-  );
-
-  const handleInstall = useCallback((version: string, downloadedFilePath?: string) => {
-    installExplorer(version, downloadedFilePath);
-    installState(handleInstallState);
-  }, []);
-
-  const handleRetryDownload = useCallback(
-    (manualRetry: boolean = false) => {
-      if (!downloadUrl) {
-        throw new Error('Not available downloadable release found.');
-      }
-
-      if (!manualRetry && retry >= 5) {
-        return;
-      }
-
-      setRetry(retry + 1);
-      setTimeout(() => {
-        handleDownload(downloadUrl);
-      }, FIVE_SECONDS);
-    },
-    [retry, downloadUrl],
-  );
-
-  const handleDownloadState = useCallback(
-    (_event: IpcRendererEvent, eventData: IpcRendererEventData) => {
-      switch (eventData.type) {
-        case IPC_EVENT_DATA_TYPE.START:
-          setState(AppState.Downloading);
-          break;
-        case IPC_EVENT_DATA_TYPE.PROGRESS:
-          setDownloadingProgress((eventData as IpcRendererDownloadProgressStateEventData).progress);
-          break;
-        case IPC_EVENT_DATA_TYPE.COMPLETED: {
-          const downloadeVersion = (eventData as IpcRendererDownloadCompletedEventData).version;
-          setState(AppState.Downloaded);
-          setDownloadedVersion(downloadeVersion);
-          setRetry(0);
-          handleInstall(downloadeVersion);
-          break;
-        }
-        case IPC_EVENT_DATA_TYPE.CANCELLED: {
-          const downloadeVersion = (eventData as IpcRendererDownloadCompletedEventData)?.version;
-          if (downloadeVersion) {
-            handleLaunch(downloadeVersion);
-          } else {
-            setState(AppState.Cancelled);
-          }
-          break;
-        }
-        case IPC_EVENT_DATA_TYPE.ERROR:
-          setError((eventData as IpcRendererEventDataError).error);
-          log.error('[Renderer][Home][HandleDownloadState]', getErrorMessage((eventData as IpcRendererEventDataError).error));
-          handleRetryDownload();
-          break;
-      }
-    },
-    [handleInstall, handleRetryDownload, setDownloadingProgress, setDownloadedVersion, setError, setRetry, setState],
-  );
-
-  const handleDownload = useCallback((url: string) => {
-    downloadExplorer(url);
-    downloadState(handleDownloadState);
-  }, []);
-
-
-
 */

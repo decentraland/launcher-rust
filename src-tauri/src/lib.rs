@@ -1,5 +1,5 @@
 use dcl_launcher_core::{ app::AppState, channel::EventChannel, types, utils };
-use tauri::{ipc::Channel, App, Manager, State};
+use tauri::{ipc::Channel, App, AppHandle, Manager, State};
 use std::sync::Arc;
 use tauri::async_runtime::Mutex;
 
@@ -15,19 +15,26 @@ impl EventChannel for StatusChannel {
 }
 
 #[tauri::command]
-async fn launch(state: State<'_, MutState>, channel: Channel<types::Status>) -> Result<(), String> {
+async fn launch(app: AppHandle, state: State<'_, MutState>, channel: Channel<types::Status>) -> Result<(), String> {
     let status_channel = StatusChannel(channel);
     let guard = state.lock().await;
 
     let flow_state = guard.state.clone();
 
-    guard.flow.launch(&status_channel, flow_state).await.map_err(|e| e.to_string())?;
+    guard.flow.launch(&status_channel, flow_state).await.map_err(|e| 
+        {
+            let message = e.to_string();
+            let _ = status_channel.send(types::Status::Error {
+                message: message.clone(),
+                can_retry: true,
+            });
+            message
+        }
+    )?;
 
-    //TODO remove message
-    let _result = status_channel.send(types::Status::Error {
-        message: "not implemented".into(),
-        can_retry: true,
-    });
+    app.cleanup_before_exit();
+    app.exit(0);
+
     Ok(())
 }
 
