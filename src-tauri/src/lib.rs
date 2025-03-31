@@ -14,6 +14,22 @@ impl EventChannel for StatusChannel {
     }
 }
 
+fn notify_error<T: EventChannel>(message: String, channel: &T) {
+    let send_result = channel.send(types::Status::Error {
+        message: message.clone(),
+        //TODO retries
+        can_retry: true,
+    });
+    match send_result {
+        Ok(_) => {
+            // ignore
+        },
+        Err(e) => {
+            eprintln!("Error during the message sending: {}", e.to_string());
+        },
+    }
+}
+
 #[tauri::command]
 async fn launch(app: AppHandle, state: State<'_, MutState>, channel: Channel<types::Status>) -> Result<(), String> {
     let status_channel = StatusChannel(channel);
@@ -24,19 +40,7 @@ async fn launch(app: AppHandle, state: State<'_, MutState>, channel: Channel<typ
     guard.flow.launch(&status_channel, flow_state).await.map_err(|e| 
         {
             let message = e.to_string();
-            let send_result = status_channel.send(types::Status::Error {
-                message: message.clone(),
-                can_retry: true,
-            });
-            match send_result {
-                Ok(_) => {
-                    // ignore
-                },
-                Err(e) => {
-                    eprintln!("Error during the message sending: {}", e.to_string());
-                },
-            }
-
+            notify_error(message.clone(), &status_channel);
             message
         }
     )?;
