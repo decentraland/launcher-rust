@@ -24,10 +24,19 @@ async fn launch(app: AppHandle, state: State<'_, MutState>, channel: Channel<typ
     guard.flow.launch(&status_channel, flow_state).await.map_err(|e| 
         {
             let message = e.to_string();
-            let _ = status_channel.send(types::Status::Error {
+            let send_result = status_channel.send(types::Status::Error {
                 message: message.clone(),
                 can_retry: true,
             });
+            match send_result {
+                Ok(_) => {
+                    // ignore
+                },
+                Err(e) => {
+                    eprintln!("Error during the message sending: {}", e.to_string());
+                },
+            }
+
             message
         }
     )?;
