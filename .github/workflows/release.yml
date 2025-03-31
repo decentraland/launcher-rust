@@ -76,6 +76,15 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}         
+
+          #- name: Install Rust
+          #run: rustup update stable && rustup default stable
+
       - uses: actions/setup-node@v4
         with:
           cache: 'npm'
@@ -116,12 +125,23 @@ jobs:
           repository: 'SSLcom/esigner-codesign'
           path: esigner-codesign
 
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          releaseName: 'App v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
       - name: Compile artifacts ${{ inputs.dry-run && '' || 'and upload them to github release' }}
         # I use this action because it is capable of retrying multiple times if there are any issues with the distribution server
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
-          max_attempts: 6
+          max_attempts: 0 # replace with the actual value, previous 6
           retry_wait_seconds: 15
           retry_on: error
           shell: 'bash'
