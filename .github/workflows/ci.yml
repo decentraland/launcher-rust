@@ -1,0 +1,67 @@
+# This workflow is the entry point for all CI processes.
+# It is from here that all other workflows are launched.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'renovate/**'
+    paths-ignore:
+      - '.github/**'
+      - '!.github/workflows/ci.yml'
+      - '!.github/workflows/typechecking.yml'
+      - '!.github/workflows/tests.yml'
+      - '!.github/workflows/release.yml'
+      - '**.md'
+      - .editorconfig
+      - .gitignore
+      - '.idea/**'
+      - '.vscode/**'
+  pull_request:
+    paths-ignore:
+      - '.github/**'
+      - '!.github/workflows/ci.yml'
+      - '!.github/workflows/typechecking.yml'
+      - '!.github/workflows/tests.yml'
+      - '!.github/workflows/release.yml'
+      - '**.md'
+      - .editorconfig
+      - .gitignore
+      - '.idea/**'
+      - '.vscode/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typechecking:
+    uses: ./.github/workflows/typechecking.yml
+  tests:
+    uses: ./.github/workflows/tests.yml
+  draft_release:
+    permissions:
+      contents: write # Allows this job to create releases
+    with:
+      dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' }}
+    needs: [ typechecking, tests ]
+    uses: ./.github/workflows/release.yml
+    secrets:
+      # Secrets required to sign and notarize the app in MacOS
+      MACOS_CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+      MACOS_CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+      MACOS_NOTARIZATION_APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+      MACOS_NOTARIZATION_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+      MACOS_NOTARIZATION_PWD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+      # Secrets required to sign and notarize the app in Windows
+      ES_USERNAME: ${{ secrets.ES_USERNAME }}
+      ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+      WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+      ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+      # Segment API Key
+      SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+      # Sentry AUTH Token
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      # AWS Secrets
+      EXPLORER_TEAM_S3_BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}

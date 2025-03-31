@@ -1,0 +1,108 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+        placeholder: '1.0.0'
+        pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+        default: ''
+      os:
+        description: 'Operating system'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - windows-latest
+          - macos-latest
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  draft_release:
+    permissions:
+      contents: write # Allows this job to create releases
+
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ${{ github.event.inputs.os == 'all' && 'windows-latest' || github.event.inputs.os }}
+          - os: ${{ github.event.inputs.os == 'all' && 'macos-latest' || '' }}
+        exclude:
+          - os: ''
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-node@v4
+        with:
+          cache: 'npm'
+      
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      - run: npm run build
+        env:
+          MODE: production
+          # Segment API Key
+          VITE_SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          # Sentry AUTH Token
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          VITE_AWS_S3_BUCKET_PUBLIC_URL: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+
+      # Download 'SSLcom/esigner-codesign' to a folder called 'esigner-codesign' in the root of the project
+      - name: Checkout esigner-codesign repository (Windows)
+        if: ${{github.ref == 'refs/heads/main' && matrix.os == 'windows-latest'}}
+        uses: actions/checkout@v3
+        with:
+          repository: 'SSLcom/esigner-codesign'
+          path: esigner-codesign
+
+      - name: Compile artifacts and upload them to GitHub release
+        # I use this action because it is capable of retrying multiple times if there are any issues with the distribution server
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 6
+          retry_wait_seconds: 15
+          retry_on: error
+          shell: 'bash'
+          command: npx electron-builder --config electron-builder.cjs -c.extraMetadata.version=${{ github.event.inputs.version }} -c.mac.notarize.teamId=${{ env.APPLE_TEAM_ID }} --publish always
+        env:
+          # Code Signing params
+          # See https://www.electron.build/code-signing
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          # Notarization params
+          # See https://www.electron.build/configuration/mac#NotarizeNotaryOptions
+          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+          APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+          # Publishing artifacts
+          GH_TOKEN: ${{ secrets.github_token }} # GitHub token, automatically provided (No need to define this secret in the repo settings)
+          # The following are the parameters required by the esigner-codesign action to work, we must explicitly pass in even the optional ones since we're not using the action directly, but from the checked out repo
+          CODE_SIGN_SCRIPT_PATH: "${{ github.workspace }}\\esigner-codesign\\dist\\index.js"
+          INPUT_COMMAND: "sign"
+          INPUT_FILE_PATH: "${{ github.workspace }}\\dist\\Decentraland Launcher-win-x64.exe"
+          INPUT_OVERRIDE: "true"
+          INPUT_MALWARE_BLOCK: "false"
+          INPUT_CLEAN_LOGS: "false"
+          INPUT_JVM_MAX_MEMORY: "1024M"
+          INPUT_ENVIRONMENT_NAME: "PROD"
+          INPUT_USERNAME: ${{ secrets.ES_USERNAME }}
+          INPUT_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          INPUT_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+          INPUT_CREDENTIAL_ID: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}

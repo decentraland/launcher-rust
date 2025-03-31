@@ -1,0 +1,154 @@
+name: Release
+on:
+  workflow_call:
+    inputs:
+      dry-run:
+        description: 'Compiles the app but not upload artifacts to distribution server'
+        default: false
+        required: false
+        type: boolean
+    secrets:
+      MACOS_CSC_LINK:
+        description: 'Certificate to sign dmg file'
+        required: true
+      MACOS_CSC_KEY_PASSWORD:
+        description: 'Password to decrypt the certificate file'
+        required: true
+      MACOS_NOTARIZATION_APPLE_ID:
+        description: 'Apple ID used for notarization'
+        required: true
+      MACOS_NOTARIZATION_TEAM_ID:
+        description: 'Team ID used for notarization'
+        required: true
+      MACOS_NOTARIZATION_PWD:
+        description: 'Password used for notarization'
+        required: true
+      ES_USERNAME:
+        description: 'Username to sign exe file'
+        required: true
+      ES_PASSWORD:
+        description: 'Password to sign the exe file'
+        required: true
+      WINDOWS_CREDENTIAL_ID_SIGNER:
+        description: 'Certificate to sign the exe file'
+        required: true
+      ES_TOTP_SECRET:
+        description: 'Password to decrypt the certificate file'
+        required: true
+      SEGMENT_API_KEY: 
+        description: 'Segment API key'
+        required: true
+      SENTRY_AUTH_TOKEN:
+        description: 'Sentry auth token'
+        required: true
+      SENTRY_DSN:
+        description: 'Sentry DSN to perform the requests'
+        required: true
+      EXPLORER_TEAM_S3_BUCKET:
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+
+defaults:
+  run:
+    shell: 'bash'
+
+
+jobs:
+  draft_release:
+
+    permissions:
+      contents: write # Allows this job to create releases
+
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ macos-latest, windows-latest ]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-node@v4
+        with:
+          cache: 'npm'
+
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
+      - run: npm run build
+        env:
+          MODE: production
+          DRY_RUN: ${{ inputs.dry-run }}
+          # Segment API Key
+          VITE_SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          # Sentry AUTH Token
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          VITE_AWS_S3_BUCKET_PUBLIC_URL: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+
+      - name: Generate Release Version
+        id: version
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: ""
+          version_format: ${major}.${minor}.${patch}
+          major_pattern: "/^(major|breaking).+/"
+          minor_pattern: "/^(minor|feat).+/"
+          bump_each_commit: false
+          bump_each_commit_patch_pattern: "/^(patch|fix).+/"
+          search_commit_body: true
+          user_format_type: "json"
+
+      # Download 'SSLcom/esigner-codesign' to a folder called 'esigner-codesign' in the root of the project
+      - name: Checkout esigner-codesign repository (Windows)
+        if: ${{github.ref == 'refs/heads/main' && matrix.os == 'windows-latest' && !inputs.dry-run}}
+        uses: actions/checkout@v3
+        with:
+          repository: 'SSLcom/esigner-codesign'
+          path: esigner-codesign
+
+      - name: Compile artifacts ${{ inputs.dry-run && '' || 'and upload them to github release' }}
+        # I use this action because it is capable of retrying multiple times if there are any issues with the distribution server
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 6
+          retry_wait_seconds: 15
+          retry_on: error
+          shell: 'bash'
+          command: npx electron-builder --config electron-builder.cjs -c.extraMetadata.version=${{ steps.version.outputs.version }} -c.mac.notarize.teamId=${{ env.APPLE_TEAM_ID }} --publish ${{ inputs.dry-run && 'never' || 'always' }}
+        env:
+          # Code Signing params
+          # See https://www.electron.build/code-signing
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          # Notarization params
+          # See https://www.electron.build/configuration/mac#NotarizeNotaryOptions
+          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+          APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+          # Publishing artifacts
+          GH_TOKEN: ${{ secrets.github_token }} # GitHub token, automatically provided (No need to define this secret in the repo settings)
+          # The following are the parameters required by the esigner-codesign action to work, we must explicitly pass in even the optional ones since we're not using the action directly, but from the checked out repo
+          CODE_SIGN_SCRIPT_PATH: "${{ github.workspace }}\\esigner-codesign\\dist\\index.js"
+          INPUT_COMMAND: "sign"
+          INPUT_FILE_PATH: "${{ github.workspace }}\\dist\\Decentraland Launcher-win-x64.exe"
+          INPUT_OVERRIDE: "true"
+          INPUT_MALWARE_BLOCK: "false"
+          INPUT_CLEAN_LOGS: "false"
+          INPUT_JVM_MAX_MEMORY: "1024M"
+          INPUT_ENVIRONMENT_NAME: "PROD"
+          INPUT_USERNAME: ${{ secrets.ES_USERNAME }}
+          INPUT_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          INPUT_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+          INPUT_CREDENTIAL_ID: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+
