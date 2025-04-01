@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Ok, Result};
 use log::info;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use crate::{installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{Status, Step, BuildType}};
+use crate::{environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, Status, Step}};
 use crate::channel::EventChannel;
 use regex::Regex;
 
@@ -143,7 +143,7 @@ impl LaunchStep for DownloadStep {
             Some(r) => {
                 let url = &r.browser_download_url;
 
-                let pattern = format!(r"(^{}\/{}\/(v?\d+\.\d+\.\d+-?\w*)\/(\w+.zip))", s3::bucket_url()?, s3::RELEASE_PREFIX);
+                let pattern = format!(r"(^{}\/{}\/(v?\d+\.\d+\.\d+-?\w*)\/(\w+.zip))", AppEnvironment::bucket_url(), s3::RELEASE_PREFIX);
                 let re = Regex::new(&pattern)?;
 
                 let captures = re.captures(url).context(format!("cannot find matches in the url: {}", url))?;
