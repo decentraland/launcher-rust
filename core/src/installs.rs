@@ -23,6 +23,29 @@ const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
 
+pub fn log_file_path() -> Result<PathBuf> {
+    let mut path = PathBuf::new();
+    if let Some(dir) = dirs::home_dir() {
+        path.push(dir);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        path.push("Library/Logs");
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let dir = env::var("%APPDATA%")?;
+        path.push(dir);
+    }
+
+    path.push(APP_NAME);
+    fs::create_dir_all(&path)?;
+
+    path.push("output.log");
+    Ok(path)
+}
+
 fn get_app_base_path() -> PathBuf {
     dirs::data_local_dir()
         .expect("Failed to get current directory")
