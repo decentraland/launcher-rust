@@ -32,6 +32,7 @@ impl Monitoring {
                     ..Default::default()
                 };
                 let guard = sentry::init(opts);
+                // keeps guard for the whole lifetime of the app
                 std::mem::forget(guard);
                 Ok(())
             },

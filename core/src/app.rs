@@ -21,8 +21,7 @@ impl AppState {
 
         Monitoring::try_setup_sentry()?;
 
-        //TODO pass real client
-        let analytics = Arc::new(Mutex::new(analytics::Analytics::new(None)));
+        let analytics = Arc::new(Mutex::new(analytics::Analytics::new_from_env()));
 
         let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(analytics)));
 

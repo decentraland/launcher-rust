@@ -4,11 +4,14 @@ mod null_client;
 mod session;
 
 use client::AnalyticsClient;
+use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
 use event::Event;
 use serde_json::Value;
 use anyhow::Result;
+
+use crate::utils::get_os_name;
 
 pub struct CreateArgs {
     write_key: String, 
@@ -23,6 +26,31 @@ pub enum Analytics {
 }
 
 impl Analytics {
+
+    pub fn new_from_env() -> Self {
+        let write_key = option_env!("SEGMENT_API_KEY");
+
+        let args: Option<CreateArgs> = match write_key {
+            Some(segment_key) => {
+                info!("SEGMENT_API_KEY is set successfully from environment variable, segment is available");                
+                let anon_id = uuid::Uuid::new_v4().to_string();
+                let version = env!("CARGO_PKG_VERSION").to_owned();
+                let os_name = get_os_name().to_owned();
+                let args = CreateArgs {
+                    write_key: segment_key.to_owned(),
+                    anonymous_id: anon_id,
+                    os: os_name,
+                    launcher_version: version,
+                };
+                Some(args)
+            },
+            None => {
+                error!("SEGMENT_API_KEY is not set to environment variable, segment is not available");
+                None
+            },
+        };
+        Analytics::new(args)
+    }
 
     pub fn new(args: Option<CreateArgs>) -> Self {
         match args {
