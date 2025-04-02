@@ -74,7 +74,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
 
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -144,17 +143,16 @@ jobs:
           echo "Certificate imported."
   
       - name: Build MacOS
-        if: matrix.os == 'macos-latest'  # Windows Only 
+        if: matrix.os == 'macos-latest'  # MacOS Only 
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+          APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }} #TODO replace
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+
         with:
           tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
           releaseName: "App v__VERSION__"
