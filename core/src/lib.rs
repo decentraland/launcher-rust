@@ -8,4 +8,6 @@ pub mod environment;
 pub mod protocols;
 pub mod app;
 pub mod channel;
+mod monitoring;
 mod processes;
+mod logs;

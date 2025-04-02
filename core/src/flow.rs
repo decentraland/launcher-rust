@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use crate::{environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, Status, Step}};
 use crate::channel::EventChannel;
 use regex::Regex;
+use sentry_anyhow::capture_anyhow;
 
 pub trait LaunchStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool>;
@@ -71,6 +72,15 @@ impl LaunchFlow {
     }
 
     pub async fn launch<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+        let result = self.launch_internal(channel, state).await;
+        if let Err(e) = &result {
+            capture_anyhow(e);
+        }
+        result
+    }
+
+
+    async fn launch_internal<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         self.fetch_step.execute_if_needed(channel, state.clone(), "fetch").await?;
         self.download_step.execute_if_needed(channel, state.clone(), "download").await?;
         self.install_step.execute_if_needed(channel, state.clone(), "install").await?;
@@ -92,7 +102,7 @@ impl LaunchStep for FetchStep {
         Ok(status)
     }
     
-    async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn execute<T: EventChannel>(&self, _channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let mut guard = state.lock().await;
         let latest_release = crate::s3::get_latest_explorer_release().await?;
         guard.latest_release = Some(latest_release);
@@ -186,7 +196,7 @@ impl LaunchStep for InstallStep {
         Ok(status)
     }
     
-    async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn execute<T: EventChannel>(&self, _channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let mut guard = state.lock().await;
         let recent_download = guard.recent_download.clone().ok_or_else(|| anyhow!("Downloaded archive not found"))?;
         guard.recent_download = None;
@@ -211,14 +221,11 @@ impl LaunchStep for AppLaunchStep {
         Ok(status)
     }
     
-    async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn execute<T: EventChannel>(&self, _channel: &T, _state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
         let guard = self.installs_hub.lock().await;
 
         //TODO passed version if specified manually from upper flow
         guard.launch_explorer(None).await?;
-        //TODO close launcher
-                //close_window().await?;
-
         Ok(())
     }
 
