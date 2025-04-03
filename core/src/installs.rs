@@ -313,17 +313,21 @@ impl InstallsHub {
         }
     }
 
+    async fn send_analytics_event(&self, event: Event) -> Result<()> {
+        let mut guard = self.analytics.lock().await;
+        guard.track_and_flush(event).await
+    }
+
     pub async fn launch_explorer(&self, preferred_version: Option<&str>) -> Result<()> {
         let readable_version = InstallsHub::readable_version(preferred_version.clone());
-        let mut guard = self.analytics.lock().await;
 
-        guard.track_and_flush(Event::LAUNCH_CLIENT_START { version: readable_version.clone() }).await?;
+        self.send_analytics_event(Event::LAUNCH_CLIENT_START { version: readable_version.clone() }).await?;
         let result = self.launch_explorer_internal(preferred_version).await;
         if let Err(e) = &result {
-            guard.track_and_flush(Event::LAUNCH_CLIENT_ERROR { version: readable_version, error: e.to_string() }).await?;
+            self.send_analytics_event(Event::LAUNCH_CLIENT_ERROR { version: readable_version, error: e.to_string() }).await?;
         }
         else {
-            guard.track_and_flush(Event::LAUNCH_CLIENT_SUCCESS { version: readable_version }).await?;
+            self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS { version: readable_version }).await?;
         }
 
         result
