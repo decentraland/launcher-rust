@@ -14,7 +14,7 @@ impl EventChannel for ConsoleChannel {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let app_state = AppState::setup().context("Cannot setup state")?;
+    let app_state = AppState::setup().await.context("Cannot setup state")?;
     let channel = ConsoleChannel();
     app_state.flow.launch(&channel, app_state.state).await?;
     Ok(())

@@ -38,7 +38,7 @@ impl AnalyticsClient {
         }
     }
 
-    async fn track(&mut self, event: Event, mut properties: Value) -> Result<()> {
+    async fn track(&mut self, event: String, mut properties: Value) -> Result<()> {
         //TODO
         //user real id
         //anon id
@@ -49,8 +49,8 @@ impl AnalyticsClient {
         properties["appId"] = Value::from_str(APP_ID)?;
 
         let msg = Track {
-            event: format!("{}", event),
-            properties: properties,
+            event,
+            properties,
             ..Default::default()
         };
 
@@ -64,8 +64,10 @@ impl AnalyticsClient {
         Ok(())
     }
 
-    pub async fn track_and_flush(&mut self, event: Event, properties: Value) -> Result<()> {
-        self.track(event, properties).await?;
+    pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
+        let properties = properties_from_event(&event);
+        let event_name = format!("{}", event);
+        self.track(event_name, properties).await?;
         self.flush().await?;
         Ok(())
     }
@@ -77,4 +79,8 @@ impl AnalyticsClient {
     pub fn session_id(&self) -> &SessionId {
         &self.session_id
     }
+}
+
+fn properties_from_event(event: &Event) -> Value {
+    todo!("match event properties to json")
 }

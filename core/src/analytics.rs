@@ -70,10 +70,10 @@ impl Analytics {
         }
     }
 
-    pub async fn track_and_flush(&mut self, event: Event, properties: Value) -> Result<()> {
+    pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         match self {
             Self::Client(client) => { 
-                client.track_and_flush(event, properties).await?;
+                client.track_and_flush(event).await?;
                 Ok(())
             },
             Self::Null(_) => Ok(())

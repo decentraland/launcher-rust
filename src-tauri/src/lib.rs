@@ -45,6 +45,7 @@ async fn launch(app: AppHandle, state: State<'_, MutState>, channel: Channel<typ
         }
     )?;
 
+    guard.cleanup().await;
     app.cleanup_before_exit();
     app.exit(0);
 
@@ -52,7 +53,7 @@ async fn launch(app: AppHandle, state: State<'_, MutState>, channel: Channel<typ
 }
 
 fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let app_state = AppState::setup()?;
+    let app_state = tauri::async_runtime::block_on(AppState::setup())?;
     let mut_state: MutState = Arc::new(Mutex::new(app_state));
     a.manage(mut_state);
     Ok(())
