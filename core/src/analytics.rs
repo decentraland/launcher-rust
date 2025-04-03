@@ -1,4 +1,4 @@
-mod event;
+pub mod event;
 mod client;
 mod null_client;
 mod session;
