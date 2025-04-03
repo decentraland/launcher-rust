@@ -11,11 +11,12 @@ use event::Event;
 use serde_json::Value;
 use anyhow::Result;
 
-use crate::utils::get_os_name;
+use crate::{config, utils::{ app_version, get_os_name}};
 
 pub struct CreateArgs {
     write_key: String, 
     anonymous_id: String, 
+    user_id: String,
     os: String, 
     launcher_version: String,
 }
@@ -33,14 +34,19 @@ impl Analytics {
         let args: Option<CreateArgs> = match write_key {
             Some(segment_key) => {
                 info!("SEGMENT_API_KEY is set successfully from environment variable, segment is available");                
-                let anon_id = uuid::Uuid::new_v4().to_string();
-                let version = env!("CARGO_PKG_VERSION").to_owned();
-                let os_name = get_os_name().to_owned();
+                let anonymous_id = uuid::Uuid::new_v4().to_string();
+                let user_id = config::user_id().unwrap_or_else(|e| {
+                    error!("Cannot get user id from config, fallback is used: {}", e);
+                    "none".to_owned()
+                });
+                let launcher_version = app_version().to_owned();
+                let os = get_os_name().to_owned();
                 let args = CreateArgs {
                     write_key: segment_key.to_owned(),
-                    anonymous_id: anon_id,
-                    os: os_name,
-                    launcher_version: version,
+                    anonymous_id,
+                    user_id,
+                    os,
+                    launcher_version,
                 };
                 Some(args)
             },
@@ -55,7 +61,7 @@ impl Analytics {
     pub fn new(args: Option<CreateArgs>) -> Self {
         match args {
             Some(a) => {
-                let client = AnalyticsClient::new(a.write_key, a.anonymous_id, a.os, a.launcher_version);
+                let client = AnalyticsClient::new(a.write_key, a.anonymous_id, a.user_id, a.os, a.launcher_version);
                 Analytics::Client(client)
             },
             None => {

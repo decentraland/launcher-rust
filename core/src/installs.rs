@@ -46,6 +46,10 @@ pub fn log_file_path() -> Result<PathBuf> {
     Ok(path)
 }
 
+pub fn config_path() -> PathBuf {
+    explorer_path().join("config.json")
+}
+
 fn get_app_base_path() -> PathBuf {
     dirs::data_local_dir()
         .expect("Failed to get current directory")

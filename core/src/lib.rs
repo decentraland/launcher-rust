@@ -11,3 +11,4 @@ pub mod channel;
 mod monitoring;
 mod processes;
 mod logs;
+mod config;

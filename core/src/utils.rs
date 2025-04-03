@@ -61,6 +61,10 @@ pub fn get_version(args: &HashMap<String, String>) -> Option<&String> {
     return None;
 }
 
+pub fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 /**
  * Determines if should run the dev version of the Explorer when passing the arguments --dev or --version=dev.
  * @returns A boolean value indicating if the Explorer should run the explorer from the dev path.
