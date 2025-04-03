@@ -1,8 +1,10 @@
 [package]
-name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+name = "Decentraland Launcher"
+# should be synchronized youwith tauri.conf.json !!!
+version = "1.0.1"
+
+description = "Decentraland Launcher App"
+authors = ["Decentraland"]
 edition = "2021"
 default-run = "app"
 
@@ -41,3 +43,6 @@ serde_json = "1.0.140"
 
 tauri = { version = "2", features = [] }
 tauri-plugin-deep-link = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
