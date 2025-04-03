@@ -1,12 +1,12 @@
 [package]
-name = "Decentraland Launcher"
+name = "Decentraland-Launcher"
 # should be synchronized youwith tauri.conf.json !!!
 version = "1.0.1"
 
 description = "Decentraland Launcher App"
 authors = ["Decentraland"]
 edition = "2021"
-default-run = "app"
+default-run = "Decentraland-Launcher"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

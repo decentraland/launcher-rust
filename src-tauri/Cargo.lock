@@ -3,6 +3,21 @@
 version = 4
 
 [[package]]
+name = "Decentraland-Launcher"
+version = "1.0.1"
+dependencies = [
+ "anyhow",
+ "dcl-launcher-core",
+ "deranged",
+ "plist",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-deep-link",
+ "tauri-plugin-updater",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -74,21 +89,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 dependencies = [
  "backtrace",
-]
-
-[[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dcl-launcher-core",
- "deranged",
- "plist",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-deep-link",
- "tauri-plugin-updater",
 ]
 
 [[package]]
