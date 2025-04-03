@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Context, Ok, Result};
 use log::info;
+use segment::message;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use crate::{environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, Status, Step}};
+use crate::{analytics::{self, event::Event, Analytics}, environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, Status, Step}};
 use crate::channel::EventChannel;
 use regex::Regex;
 use sentry_anyhow::capture_anyhow;
@@ -60,11 +61,15 @@ pub struct LaunchFlow {
 }
 
 impl LaunchFlow {
-    pub fn new(installs_hub: Arc<Mutex<InstallsHub>>) -> Self {
+    pub fn new(installs_hub: Arc<Mutex<InstallsHub>>, analytics: Arc<Mutex<Analytics>>) -> Self {
         LaunchFlow {
             fetch_step: FetchStep{},
-            download_step: DownloadStep{},
-            install_step: InstallStep{},
+            download_step: DownloadStep {
+                analytics: analytics.clone(),
+            },
+            install_step: InstallStep{
+                analytics: analytics.clone(),
+            },
             app_launch_step: AppLaunchStep {
                 installs_hub,
             },
@@ -111,13 +116,36 @@ impl LaunchStep for FetchStep {
 
 }
 
-struct DownloadStep {}
+struct DownloadStep {
+    analytics: Arc<Mutex<Analytics>>,
+}
 
 impl DownloadStep {
     pub fn mode() -> BuildType {
         let any_installed = crate::installs::is_explorer_installed(None);
         let mode = if any_installed { BuildType::Update } else { BuildType::New };
         mode
+    }
+
+    async fn version_from_url(&self, url: &str) -> Result<String> {
+        let pattern = format!(r"(^{}\/{}\/(v?\d+\.\d+\.\d+-?\w*)\/(\w+.zip))", AppEnvironment::bucket_url(), s3::RELEASE_PREFIX);
+        let re = Regex::new(&pattern)?;
+
+        let captures = re.captures(url).context(format!("cannot find matches in the url: {}", url))?;
+        let version = captures.get(2).map(|m| m.as_str());
+
+        match version {
+            Some(v) => {
+                Ok(v.to_owned())
+            },
+            None => {
+                let mut guard = self.analytics.lock().await;
+                guard
+                    .track_and_flush(Event::DOWNLOAD_VERSION_ERROR { version: None, error: "No version provided".to_owned() })
+                    .await?;
+                Err(anyhow!("url doesn't contain version"))
+            },
+        }
     }
 }
 
@@ -152,18 +180,20 @@ impl LaunchStep for DownloadStep {
         match release {
             Some(r) => {
                 let url = &r.browser_download_url;
-
-                let pattern = format!(r"(^{}\/{}\/(v?\d+\.\d+\.\d+-?\w*)\/(\w+.zip))", AppEnvironment::bucket_url(), s3::RELEASE_PREFIX);
-                let re = Regex::new(&pattern)?;
-
-                let captures = re.captures(url).context(format!("cannot find matches in the url: {}", url))?;
-                // TODO preserved for analytics
-                let version = captures.get(2).map(|m| m.as_str()).context(format!("url doesn't contain version"))?.to_string();
+                let version = self.version_from_url(url).await?;
 
                 let target_path = installs::target_download_path();
                 let path: &str = target_path.to_str().context("Cannot convert target download path")?;
 
-                installs::downloads::download_file(url, path, channel, &mode).await?;
+                let mut analytics = self.analytics.lock().await;
+                analytics.track_and_flush(Event::DOWNLOAD_VERSION { version: version.clone() }).await;
+                let result = installs::downloads::download_file(url, path, channel, &mode).await;
+                if let Err(e) = result {
+                    analytics.track_and_flush(Event::DOWNLOAD_VERSION_ERROR { version: Some(version.clone()), error: e.to_string() }).await;
+                }
+                else {
+                    analytics.track_and_flush(Event::DOWNLOAD_VERSION_SUCCESS { version: version.clone() }).await;
+                }
 
                 guard.recent_download = Some(
                     RecentDownload {
@@ -182,7 +212,26 @@ impl LaunchStep for DownloadStep {
     }
 }
 
-struct InstallStep {}
+struct InstallStep {
+    analytics: Arc<Mutex<Analytics>>,
+}
+
+impl InstallStep {
+    async fn execute_internal(recent_download: RecentDownload) -> Result<()> {
+        installs::install_explorer(&recent_download.version, Some(recent_download.downloaded_path)).await?;
+        Ok(())
+    }
+
+    async fn recent_download_and_update_state(state: Arc<Mutex<LaunchFlowState>>) -> Option<RecentDownload> {
+        let mut guard = state.lock().await;
+        let recent_download = guard.recent_download.clone();
+        if recent_download.is_none() {
+            return None;
+        }
+        guard.recent_download = None;
+        recent_download
+    }
+}
 
 impl LaunchStep for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
@@ -197,13 +246,29 @@ impl LaunchStep for InstallStep {
     }
     
     async fn execute<T: EventChannel>(&self, _channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
-        let mut guard = state.lock().await;
-        let recent_download = guard.recent_download.clone().ok_or_else(|| anyhow!("Downloaded archive not found"))?;
-        guard.recent_download = None;
-        installs::install_explorer(&recent_download.version, Some(recent_download.downloaded_path)).await?;
-        Ok(())
-    }
+        let mut analytics = self.analytics.lock().await;
 
+        let recent_download = InstallStep::recent_download_and_update_state(state).await;
+        match recent_download {
+            Some(download) => {
+                let version = download.version.clone();
+                analytics.track_and_flush(Event::INSTALL_VERSION_START { version: version.clone() }).await;
+                let result = InstallStep::execute_internal(download).await;
+                if let Err(e) = &result {
+                    analytics.track_and_flush(Event::INSTALL_VERSION_ERROR { version: Some(version), error: e.to_string() }).await?;
+                }
+                else {
+                    analytics.track_and_flush(Event::INSTALL_VERSION_SUCCESS { version }).await?;
+                }
+                result
+            },
+            None => {
+                const ERROR_MESSAGE: &str = "Downloaded archive not found";
+                analytics.track_and_flush(Event::INSTALL_VERSION_ERROR { version: None, error: ERROR_MESSAGE.to_owned() }).await?;
+                Err(anyhow!(ERROR_MESSAGE))
+            },
+        }
+    }
 }
 
 struct AppLaunchStep {
@@ -228,10 +293,7 @@ impl LaunchStep for AppLaunchStep {
         guard.launch_explorer(None).await?;
         Ok(())
     }
-
 }
-
-
 
 
 /*

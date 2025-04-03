@@ -28,7 +28,8 @@ pub enum Event {
         version: String
     }, 
     INSTALL_VERSION_ERROR {
-        version: String
+        version: Option<String>,
+        error: String,
     },
     LAUNCH_CLIENT_START {
         version: String
@@ -37,7 +38,8 @@ pub enum Event {
         version: String
     }, 
     LAUNCH_CLIENT_ERROR {
-        version: String
+        version: String,
+        error: String
     },
     LAUNCHER_UPDATE_CHECKING,
     LAUNCHER_UPDATE_AVAILABLE {
@@ -79,4 +81,4 @@ impl Display for Event {
             Event::LAUNCHER_UPDATE_DOWNLOADED {..} => "Launcher Update Downloaded",
         })
     }
-}
+} 

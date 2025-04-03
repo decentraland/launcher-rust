@@ -14,6 +14,7 @@ use crate::processes::CommandExtDetached;
 use crate::utils;
 use crate::environment::AppEnvironment;
 use crate::protocols::Protocol;
+use crate::analytics::event::Event;
 
 pub mod downloads;
 pub mod compression;
@@ -293,8 +294,42 @@ impl InstallsHub {
         output
     }
 
+    fn readable_version(version: Option<&str>) -> String {
+        match version {
+            Some(v) => {v.to_owned()},
+            None => {
+                let result = get_version_data_or_empty();
+                if let Some(map) = result.as_object() {
+                    if let Some(v) = map.get("version") {
+                        if let Some(str_version) = v.as_str() {
+                            return str_version.to_owned()
+                        }
+                    }
+
+                }
+            
+                "latest".to_owned()
+            },
+        }
+    }
 
     pub async fn launch_explorer(&self, preferred_version: Option<&str>) -> Result<()> {
+        let readable_version = InstallsHub::readable_version(preferred_version.clone());
+        let mut guard = self.analytics.lock().await;
+
+        guard.track_and_flush(Event::LAUNCH_CLIENT_START { version: readable_version.clone() }).await?;
+        let result = self.launch_explorer_internal(preferred_version).await;
+        if let Err(e) = &result {
+            guard.track_and_flush(Event::LAUNCH_CLIENT_ERROR { version: readable_version, error: e.to_string() }).await?;
+        }
+        else {
+            guard.track_and_flush(Event::LAUNCH_CLIENT_SUCCESS { version: readable_version }).await?;
+        }
+
+        result
+    }
+
+    async fn launch_explorer_internal(&self, preferred_version: Option<&str>) -> Result<()> {
         log::info!("Launching Explorer...");
 
         let explorer_bin_path = get_explorer_bin_path(preferred_version);
