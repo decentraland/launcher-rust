@@ -1,5 +1,5 @@
-use dcl_launcher_core::log::{error, info};
-use dcl_launcher_core::{app::AppState, channel::EventChannel, types, utils};
+use dcl_launcher_core::log::{error};
+use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::sync::Arc;
 use tauri::async_runtime::Mutex;
 use tauri::{ipc::Channel, App, AppHandle, Manager, State};
@@ -99,7 +99,6 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_opener::init())
         .setup(setup)
         .invoke_handler(tauri::generate_handler![launch])
         .run(tauri::generate_context!())
