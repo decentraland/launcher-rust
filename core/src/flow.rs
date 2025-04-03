@@ -252,7 +252,7 @@ impl LaunchStep for InstallStep {
         match recent_download {
             Some(download) => {
                 let version = download.version.clone();
-                analytics.track_and_flush(Event::INSTALL_VERSION_START { version: version.clone() }).await;
+                analytics.track_and_flush(Event::INSTALL_VERSION_START { version: version.clone() }).await?;
                 let result = InstallStep::execute_internal(download).await;
                 if let Err(e) = &result {
                     analytics.track_and_flush(Event::INSTALL_VERSION_ERROR { version: Some(version), error: e.to_string() }).await?;
