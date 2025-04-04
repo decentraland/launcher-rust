@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use segment::{HttpClient, AutoBatcher, Batcher};
-use segment::message::Track;
+use segment::message::{Track, User};
 use serde_json::{json, Value};
 use anyhow::Result;
 
@@ -39,16 +39,18 @@ impl AnalyticsClient {
     }
 
     async fn track(&mut self, event: String, mut properties: Value) -> Result<()> {
-        //TODO
-        //user real id
-        //anon id
-
         properties["os"] = Value::from_str(&self.os)?;
         properties["launcherVersion"] = Value::from_str(&self.launcher_version)?;
         properties["sessionId"] = Value::from_str(self.session_id.value())?;
         properties["appId"] = Value::from_str(APP_ID)?;
 
+        let user = User::Both {
+            user_id: self.user_id.clone(),
+            anonymous_id: self.anonymous_id.clone()
+        };
+
         let msg = Track {
+            user,
             event,
             properties,
             ..Default::default()
