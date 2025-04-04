@@ -6,7 +6,11 @@ version = "1.0.1"
 description = "Decentraland Launcher App"
 authors = ["Decentraland"]
 edition = "2021"
-default-run = "Decentraland-Launcher"
+default-run = "app"
+
+[[bin]]
+name = "app"
+path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
