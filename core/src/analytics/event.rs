@@ -1,6 +1,9 @@
 use std::fmt;
 use std::fmt::Display;
+use serde::Serialize;
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Event {
     LAUNCHER_OPEN {
         version: String

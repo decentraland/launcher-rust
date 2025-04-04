@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use log::error;
 use segment::{HttpClient, AutoBatcher, Batcher};
 use segment::message::{Track, User};
 use serde_json::{json, Value};
@@ -84,5 +85,30 @@ impl AnalyticsClient {
 }
 
 fn properties_from_event(event: &Event) -> Value {
-    todo!("match event properties to json")
+    let result = serde_json::to_value(event);
+    match result {
+        Ok(json) => {
+            match json.as_object() {
+                Some(map) => {
+                    match map.get("data") {
+                        Some(data) => {
+                            data.to_owned()
+                        },
+                        None => {
+                            error!("serialized event doesn't have data property");
+                            json!("{}")
+                        },
+                    }
+                },
+                None => {
+                    error!("serialized event is not an object");
+                    json!("{}")
+                },
+            }
+        },
+        Err(error) => {
+            error!("Cannot serialize event; {}", error);
+            json!("{}")
+        },
+    }
 }
