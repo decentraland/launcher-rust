@@ -214,13 +214,13 @@ impl LaunchStep for DownloadStep {
                 let path: &str = target_path.to_str().context("Cannot convert target download path")?;
 
                 let mut analytics = self.analytics.lock().await;
-                analytics.track_and_flush(Event::DOWNLOAD_VERSION { version: version.clone() }).await;
+                analytics.track_and_flush(Event::DOWNLOAD_VERSION { version: version.clone() }).await?;
                 let result = installs::downloads::download_file(url, path, channel, &mode).await;
                 if let Err(e) = result {
-                    analytics.track_and_flush(Event::DOWNLOAD_VERSION_ERROR { version: Some(version.clone()), error: e.to_string() }).await;
+                    analytics.track_and_flush(Event::DOWNLOAD_VERSION_ERROR { version: Some(version.clone()), error: e.to_string() }).await?;
                 }
                 else {
-                    analytics.track_and_flush(Event::DOWNLOAD_VERSION_SUCCESS { version: version.clone() }).await;
+                    analytics.track_and_flush(Event::DOWNLOAD_VERSION_SUCCESS { version: version.clone() }).await?;
                 }
 
                 guard.recent_download = Some(
