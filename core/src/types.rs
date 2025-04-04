@@ -32,15 +32,20 @@ pub enum BuildType {
 }
 
 pub struct FlowError {
-    pub inner_error: anyhow::Error,
+    pub user_message: String, 
     pub can_retry: bool,
 }
 
 impl From<&FlowError> for Status {
     fn from(err: &FlowError) -> Self {
         Status::Error {
-            message: err.inner_error.to_string(),
+            message: err.user_message.to_owned(),
             can_retry: err.can_retry,
         }
     }
+}
+
+pub struct StepError {
+    pub user_message: String,
+    pub inner_error: anyhow::Error,
 }

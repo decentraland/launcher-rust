@@ -3,7 +3,7 @@ use log::info;
 use segment::message;
 use std::{error::Error, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use crate::{analytics::{self, event::Event, Analytics}, environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, FlowError, Status, Step}};
+use crate::{analytics::{self, event::Event, Analytics}, environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, FlowError, Status, Step, StepError}};
 use crate::channel::EventChannel;
 use regex::Regex;
 use sentry_anyhow::capture_anyhow;
@@ -12,10 +12,26 @@ pub trait LaunchStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool>;
 
     fn start_label(&self) -> Result<Status>;
+
+    fn user_error_message(&self) -> &str;
     
     async fn execute<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()>;
 
-    async fn execute_if_needed<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>, label: &str) -> Result<()> {
+    async fn execute_if_needed<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>, label: &str) -> std::result::Result<(), StepError> {
+        let result = self.execute_if_needed_inner(channel, state, label).await;
+
+        if let Err(e) = result {
+            let error = StepError {
+                inner_error: e,
+                user_message: self.user_error_message().to_owned()
+            };
+            return std::result::Result::Err(error);
+        }
+
+        std::result::Result::Ok(())
+    }
+
+    async fn execute_if_needed_inner<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>, label: &str) -> Result<()> {
         let complete = self.is_complete(state.clone()).await?;
         if complete {
             info!("Step {} is already complete", label);
@@ -83,10 +99,10 @@ impl LaunchFlow {
     pub async fn launch<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> std::result::Result<(), FlowError> {
         let result = self.launch_internal(channel, state.clone()).await;
         if let Err(e) = result {
-            capture_anyhow(&e);
+            capture_anyhow(&e.inner_error);
             let can_retry = Self::can_retry(state).await;
             let error = FlowError {
-                inner_error: e,
+                user_message: e.user_message,
                 can_retry 
             };
             return std::result::Result::Err(error);
@@ -96,24 +112,30 @@ impl LaunchFlow {
     }
 
 
-    async fn launch_internal<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn launch_internal<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> std::result::Result<(), StepError> {
         Self::validate_attempt_and_increase(state.clone()).await?;
         self.fetch_step.execute_if_needed(channel, state.clone(), "fetch").await?;
         self.download_step.execute_if_needed(channel, state.clone(), "download").await?;
         self.install_step.execute_if_needed(channel, state.clone(), "install").await?;
         self.app_launch_step.execute_if_needed(channel, state.clone(), "launch").await?;
-        Ok(())
+        std::result::Result::Ok(())
     }
 
-    async fn validate_attempt_and_increase(state: Arc<Mutex<LaunchFlowState>>) -> Result<()> {
+    async fn validate_attempt_and_increase(state: Arc<Mutex<LaunchFlowState>>) -> std::result::Result<(), StepError> {
         let mut guard = state.lock().await;
 
         if guard.current_attempt < Self::MAX_ATTEMPTS {
             guard.current_attempt += 1;
-            return Ok(());
+            return std::result::Result::Ok(());
         }
 
-        Err(anyhow!("Out of attempts"))
+        let message = "Out of attempts";
+        let inner_error = anyhow!(message);
+        let error = StepError {
+            inner_error,
+            user_message: message.to_owned(),
+        };
+        std::result::Result::Err(error)
     }
 
     async fn can_retry(state: Arc<Mutex<LaunchFlowState>>) -> bool {
@@ -128,6 +150,10 @@ impl LaunchStep for FetchStep {
     async fn is_complete(&self, _state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         // always refetch the origin
         Ok(false)
+    }
+
+    fn user_error_message(&self) -> &str {
+        "Failed to fetch"
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -191,6 +217,10 @@ impl LaunchStep for DownloadStep {
                 Err(anyhow!("Latest release is not found in the state"))
             },
         }
+    }
+
+    fn user_error_message(&self) -> &str {
+        "Failed to download"
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -267,6 +297,10 @@ impl LaunchStep for InstallStep {
         Ok(guard.recent_download.is_none())
     }
 
+    fn user_error_message(&self) -> &str {
+        "Failed to install"
+    }
+
     fn start_label(&self) -> Result<Status> {
         let mode = DownloadStep::mode();
         let status = Status::State { step: Step::Installing { build_type: mode } };
@@ -307,6 +341,10 @@ impl LaunchStep for AppLaunchStep {
     async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         // Always launch explorer
         Ok(false)
+    }
+
+    fn user_error_message(&self) -> &str {
+        "Failed to launch"
     }
 
     fn start_label(&self) -> Result<Status> {

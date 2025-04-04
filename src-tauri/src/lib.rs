@@ -46,7 +46,7 @@ async fn launch(
         .await
         .map_err(|e| {
             notify_error(&e, &status_channel);
-            e.inner_error.to_string()
+            e.user_message
         })?;
 
     guard.cleanup().await;

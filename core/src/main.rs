@@ -16,6 +16,6 @@ impl EventChannel for ConsoleChannel {
 async fn main() -> Result<()> {
     let app_state = AppState::setup().await.context("Cannot setup state")?;
     let channel = ConsoleChannel();
-    app_state.flow.launch(&channel, app_state.state).await?;
-    Ok(())
+    app_state.flow.launch(&channel, app_state.state).await
+        .map_err(|e| anyhow::anyhow!(e.user_message))
 }
