@@ -3,7 +3,7 @@ use log::info;
 use segment::message;
 use std::{error::Error, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use crate::{analytics::{self, event::Event, Analytics}, environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, FlowError, Status, Step, StepError}};
+use crate::{analytics::{self, event::Event, Analytics}, attempts::Attempts, environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, FlowError, Status, Step, StepError}};
 use crate::channel::EventChannel;
 use regex::Regex;
 use sentry_anyhow::capture_anyhow;
@@ -52,7 +52,7 @@ pub trait LaunchStep {
 pub struct LaunchFlowState {
     latest_release: Option<ReleaseResponse>,
     recent_download: Option<RecentDownload>,
-    current_attempt: i32,
+    attempts: Attempts,
 }
 
 #[derive(Clone)]
@@ -66,7 +66,7 @@ impl Default for LaunchFlowState {
         LaunchFlowState {
             latest_release: None,
             recent_download: None,
-            current_attempt: 0,
+            attempts: Attempts::default(),
         }
     }
 }
@@ -79,7 +79,6 @@ pub struct LaunchFlow {
 }
 
 impl LaunchFlow {
-    const MAX_ATTEMPTS: i32 = 5;
 
     pub fn new(installs_hub: Arc<Mutex<InstallsHub>>, analytics: Arc<Mutex<Analytics>>) -> Self {
         LaunchFlow {
@@ -124,8 +123,7 @@ impl LaunchFlow {
     async fn validate_attempt_and_increase(state: Arc<Mutex<LaunchFlowState>>) -> std::result::Result<(), StepError> {
         let mut guard = state.lock().await;
 
-        if guard.current_attempt < Self::MAX_ATTEMPTS {
-            guard.current_attempt += 1;
+        if guard.attempts.try_consume_attempt() {
             return std::result::Result::Ok(());
         }
 
@@ -140,7 +138,7 @@ impl LaunchFlow {
 
     async fn can_retry(state: Arc<Mutex<LaunchFlowState>>) -> bool {
         let guard = state.lock().await;
-        guard.current_attempt < Self::MAX_ATTEMPTS
+        guard.attempts.can_retry()
     }
 }
 

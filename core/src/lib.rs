@@ -12,5 +12,6 @@ mod monitoring;
 mod processes;
 mod logs;
 mod config;
+mod attempts;
 
 pub use log;
