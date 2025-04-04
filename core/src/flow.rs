@@ -153,7 +153,7 @@ impl LaunchStep for FetchStep {
     }
 
     fn user_error_message(&self) -> &str {
-        "Failed to fetch"
+        "Fetch the latest client version failed"
     }
 
     fn start_label(&self) -> Result<Status> {

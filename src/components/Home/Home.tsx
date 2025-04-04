@@ -102,23 +102,12 @@ export const Home: React.FC = memo(() => {
 
   const renderError = useCallback((shouldShowRetryButton: boolean, message: string) => {
     if (shouldShowRetryButton) {
-
       return (
         <Box>
           <Typography variant="h4" align="center">
             {
                 message
-               /* TODO provide corresponding descriptions from rust side
-               * isFetching
-              ? 'Fetch the latest client version failed'
-              : isDownloading
-                ? 'Download failed'
-                : isInstalling
-                  ? 'Install failed'
-                  : 'Error'
-                  */
             }
-
           </Typography>
           <Typography variant="body1" align="center">
             {
