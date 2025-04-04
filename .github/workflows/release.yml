@@ -131,7 +131,8 @@ jobs:
 
       - name: Import Apple Developer Certificate
         # Prevents keychain from locking automatically for 3600 seconds.
-        if: matrix.os == 'macos-latest' && github.ref == 'refs/heads/main' && !inputs.dry-run
+        # temporary commenting this->> if: matrix.os == 'macos-latest' && github.ref == 'refs/heads/main' && !inputs.dry-run
+        if: matrix.os == 'macos-latest'  # MacOS Only <<-temporary adding this
         env:
           APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
