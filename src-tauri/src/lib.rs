@@ -1,4 +1,5 @@
-use dcl_launcher_core::log::{error};
+use dcl_launcher_core::log::error;
+use dcl_launcher_core::types::FlowError;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::sync::Arc;
 use tauri::async_runtime::Mutex;
@@ -16,12 +17,8 @@ impl EventChannel for StatusChannel {
     }
 }
 
-fn notify_error<T: EventChannel>(message: String, channel: &T) {
-    let send_result = channel.send(types::Status::Error {
-        message: message.clone(),
-        //TODO retries
-        can_retry: true,
-    });
+fn notify_error<T: EventChannel>(flow_error: &FlowError, channel: &T) {
+    let send_result = channel.send(flow_error.into());
     match send_result {
         Ok(_) => {
             // ignore
@@ -48,9 +45,8 @@ async fn launch(
         .launch(&status_channel, flow_state)
         .await
         .map_err(|e| {
-            let message = e.to_string();
-            notify_error(message.clone(), &status_channel);
-            message
+            notify_error(&e, &status_channel);
+            e.inner_error.to_string()
         })?;
 
     guard.cleanup().await;
@@ -61,7 +57,6 @@ async fn launch(
 }
 
 fn setup_deeplink(a: &mut App) {
-
     #[cfg(target_os = "macos")]
     {
         a.deep_link().on_open_url(|event| {
@@ -69,10 +64,10 @@ fn setup_deeplink(a: &mut App) {
             match urls.first() {
                 Some(url) => {
                     dcl_launcher_core::protocols::Protocol::try_assign_value(url.to_string());
-                },
+                }
                 None => {
                     error!("No values are provided in deep link")
-                },
+                }
             }
         });
     }
@@ -89,7 +84,6 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     setup_deeplink(a);
 
-
     let mut_state: MutState = Arc::new(Mutex::new(app_state));
     a.manage(mut_state);
     Ok(())
@@ -98,6 +92,7 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .setup(setup)
         .invoke_handler(tauri::generate_handler![launch])

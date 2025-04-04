@@ -30,3 +30,17 @@ pub enum BuildType {
     #[serde(rename_all = "camelCase")]
     Update,
 }
+
+pub struct FlowError {
+    pub inner_error: anyhow::Error,
+    pub can_retry: bool,
+}
+
+impl From<&FlowError> for Status {
+    fn from(err: &FlowError) -> Self {
+        Status::Error {
+            message: err.inner_error.to_string(),
+            can_retry: err.can_retry,
+        }
+    }
+}
