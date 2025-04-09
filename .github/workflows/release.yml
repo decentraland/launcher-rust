@@ -46,6 +46,12 @@ on:
         required: true
       EXPLORER_TEAM_S3_BUCKET:
         required: true
+      TAURI_SIGNING_PRIVATE_KEY:
+        description: 'Private key used to sign the Tauri updater'
+        required: true
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        description: 'Password to unlock the private key for Tauri updater'
+        required: true
 
 concurrency:
   group: release-${{ github.ref }}
@@ -56,6 +62,9 @@ defaults:
   run:
     shell: 'bash'
 
+env:
+  VITE_AWS_S3_BUCKET_PUBLIC_URL: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
+  PROJECT_PATH: src-tauri
 
 jobs:
   draft_release:
@@ -71,17 +80,26 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-targets: true
+          cache-provider: github
+
       - uses: actions/setup-node@v4
         with:
+          node-version: lts/*
           cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - run: npm ci
         env:
@@ -96,7 +114,6 @@ jobs:
           # Sentry AUTH Token
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          VITE_AWS_S3_BUCKET_PUBLIC_URL: ${{ vars.EXPLORER_TEAM_S3_BUCKET_PUBLIC_URL }}
 
       - name: Generate Release Version
         id: version
@@ -121,10 +138,12 @@ jobs:
 
       - name: import Apple Developer Certificate
         # Prevents keychain from locking automatically for 3600 seconds.
+        # temporary commenting this->> if: matrix.os == 'macos-latest' && github.ref == 'refs/heads/main' && !inputs.dry-run
+        if: matrix.os == 'macos-latest'  # MacOS Only <<-temporary adding this
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
         run: |
           echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
@@ -136,12 +155,13 @@ jobs:
           security find-identity -v -p codesigning build.keychain
   
       - name: verify certificate
+        if: matrix.os == 'macos-latest' # MacOS Only
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
-  
+
       - name: Build MacOS
         if: matrix.os == 'macos-latest'  # MacOS Only 
         uses: tauri-apps/tauri-action@v0
@@ -150,9 +170,10 @@ jobs:
           APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
           APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
-
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
           releaseName: "App v__VERSION__"
@@ -160,6 +181,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ secrets.args }}
+          projectPath: ${{ env.PROJECT_PATH }}
 
       - name: Build Windows
         if: matrix.os == 'windows-latest'  # Windows Only 
@@ -173,6 +195,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ secrets.args }}
+          projectPath: ${{ env.PROJECT_PATH }}
 
           # todo publish      - name: Compile artifacts ${{ inputs.dry-run && '' || 'and upload them to github release' }}
 
