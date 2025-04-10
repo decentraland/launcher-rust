@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,6 +14,9 @@ use crate::utils;
 use crate::environment::AppEnvironment;
 use crate::protocols::Protocol;
 use crate::analytics::event::Event;
+
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::PermissionsExt;
 
 pub mod downloads;
 pub mod compression;
@@ -184,6 +186,27 @@ async fn cleanup_versions() -> Result<()> {
     Ok(())
 }
 
+fn create_symlink(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
+    // Create a symlink
+    #[cfg(target_os = "macos")]
+    {
+        std::os::unix::fs::symlink(src, dst)?;
+    }
+
+    // Create a symlink
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::fs::{symlink_file, symlink_dir};
+        if src.is_dir() {
+            symlink_dir(src, dst)?
+        } else {
+            symlink_file(src, dst)?
+        }
+    }
+
+    Ok(())
+}
+
 fn is_app_updated(version: &str) -> bool {
     let result = get_version_data();
     match result {
@@ -219,7 +242,8 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     compression::decompress_file(&file_path, &branch_path)
         .map_err(|e| anyhow::Error::msg(format!("Cannot decompress file {}", e.to_string())))?;
 
-    if utils::get_os_name() == "macos" {
+    #[cfg(target_os = "macos")]
+    {
 
         let from = &branch_path.join("build");
         let to = &branch_path;
@@ -241,9 +265,7 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
         fs::remove_file(&latest_path).context("Cannot delete latest version")?;
     }
 
-    // Create a symlink
-    // TODO support on windows
-    std::os::unix::fs::symlink(&branch_path, latest_path).context("Cannot create symlink")?;
+    create_symlink(&branch_path, &latest_path).context("Cannot create symlink")?;
 
     let mut version_data = get_version_data_or_empty();
     version_data[version] = Value::from(std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?.as_secs().to_string());
