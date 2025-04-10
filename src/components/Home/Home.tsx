@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 import { Box, Button, Typography } from 'decentraland-ui2';
 import { Status, BuildType } from './types';
 import { Landscape, LoadingBar } from './Home.styles';
-import LANDSCAPE_IMG from '../../assets/landscape.png';
+import LANDSCAPE_IMG from '../../assets/background.jpg';
 import { invoke, Channel } from '@tauri-apps/api/core';
 
 const useChannelUpdates = (channel: Channel<Status>) => {
