@@ -2,6 +2,7 @@ use std::fmt;
 use std::fmt::Display;
 use serde::Serialize;
 
+#[allow(non_camel_case_types)]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Event {
