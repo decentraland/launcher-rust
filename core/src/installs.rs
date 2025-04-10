@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,6 +14,9 @@ use crate::utils;
 use crate::environment::AppEnvironment;
 use crate::protocols::Protocol;
 use crate::analytics::event::Event;
+
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::PermissionsExt;
 
 pub mod downloads;
 pub mod compression;
@@ -195,7 +197,7 @@ fn create_symlink(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::fs::{symlink_file, symlink_dir};
-        if &branch_path.is_dir() {
+        if src.is_dir() {
             symlink_dir(src, dst)?
         } else {
             symlink_file(src, dst)?
@@ -240,7 +242,8 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     compression::decompress_file(&file_path, &branch_path)
         .map_err(|e| anyhow::Error::msg(format!("Cannot decompress file {}", e.to_string())))?;
 
-    if utils::get_os_name() == "macos" {
+    #[cfg(target_os = "macos")]
+    {
 
         let from = &branch_path.join("build");
         let to = &branch_path;
