@@ -38,7 +38,7 @@ pub fn log_file_path() -> Result<PathBuf> {
     }
     #[cfg(target_os = "windows")]
     {
-        let dir = env::var("%APPDATA%")?;
+        let dir = env::var("APPDATA")?;
         path.push(dir);
     }
 
