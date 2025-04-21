@@ -99,13 +99,13 @@ fn get_version_data_or_empty() -> Value {
 }
 
 #[cfg(target_os = "macos")]
-fn get_explorer_bin_path(version: Option<&str>) -> PathBuf {
+fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
         Some("dev") => explorer_dev_version_path(),
         Some(v) => explorer_path().join(v),
-        None => explorer_latest_version_path(),
+        None => explorer_latest_version_path()?,
     };
-    base_path.join(EXPLORER_MAC_BIN_PATH)
+    Ok(base_path.join(EXPLORER_MAC_BIN_PATH))
 }
 
 #[cfg(target_os = "windows")]
