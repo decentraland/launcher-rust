@@ -27,6 +27,12 @@ export const Landscape = styled('div')(_props => ({
   },
 }));
 
+export const Logo = styled('img')(props => ({
+  ...props,
+  height: '61px',
+  width: '61px',
+}));
+
 export const LoadingBar = styled(LinearProgress)(props => ({
   ...props,
   width: '450px',

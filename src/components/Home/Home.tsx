@@ -1,8 +1,9 @@
 import React, { memo, useCallback, useEffect, useState } from 'react';
 import { Box, Button, Typography } from 'decentraland-ui2';
 import { Status, BuildType } from './types';
-import { Landscape, LoadingBar } from './Home.styles';
+import { Landscape, LoadingBar, Logo } from './Home.styles';
 import LANDSCAPE_IMG from '../../assets/background.jpg';
+import LOGO_SVG from '../../assets/logo.svg';
 import { invoke, Channel } from '@tauri-apps/api/core';
 
 const useChannelUpdates = (channel: Channel<Status>) => {
@@ -62,14 +63,14 @@ export const Home: React.FC = memo(() => {
   };
 
   const renderFetchStep = useCallback(() => {
-    return <Typography variant="h4">Fetching Latest</Typography>;
+    return <Typography variant="h4">Fetching Latest...</Typography>;
   }, []);
 
   const renderDownloadStep = useCallback((isUpdate: boolean, downloadingProgress: number) => {
     return (
       <Box>
         <Typography variant="h4" align="center">
-          {isUpdate ? 'Downloading Update' : 'Downloading Decentraland'}
+          {isUpdate ? 'Downloading Update...' : 'Downloading Decentraland...'}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <LoadingBar variant="determinate" value={downloadingProgress} sx={{ mr: 1 }} />
@@ -83,7 +84,7 @@ export const Home: React.FC = memo(() => {
     return (
       <Box>
         <Typography variant="h4" align="center">
-          {isUpdate ? 'Installing Update' : 'Installation in Progress'}
+          {isUpdate ? 'Installing Update...' : 'Installation in Progress...'}
         </Typography>
         <Box paddingTop={'10px'} paddingBottom={'10px'}>
           <LoadingBar />
@@ -93,7 +94,7 @@ export const Home: React.FC = memo(() => {
   }, []);
 
   const renderLaunchStep = useCallback(() => {
-    return <Typography variant="h4">Launching Decentraland</Typography>;
+    return <Typography variant="h4">Launching Decentraland...</Typography>;
   }, []);
 
   const handleOnClickRetry = useCallback(() => {
@@ -101,23 +102,13 @@ export const Home: React.FC = memo(() => {
   }, []);
 
   const renderError = useCallback((shouldShowRetryButton: boolean, message: string) => {
+    message += '...';
     if (shouldShowRetryButton) {
       return (
         <Box>
           <Typography variant="h4" align="center">
             {
                 message
-            }
-          </Typography>
-          <Typography variant="body1" align="center">
-            {
-          /* TODO
-                 isFetching || isDownloading
-              ? 'Please check your internet connection and try again.'
-              : isInstalling
-                ? 'Please try again.'
-                : error
-        */
             }
           </Typography>
           <Box display="flex" justifyContent="center" marginTop={'10px'}>
@@ -141,6 +132,7 @@ export const Home: React.FC = memo(() => {
       <Landscape>
         <img src={LANDSCAPE_IMG} />
       </Landscape>
+      <Logo src={LOGO_SVG} />
       {renderStatusMessage()}
     </Box>
   );
