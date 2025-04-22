@@ -17,7 +17,6 @@ export const Landscape = styled('div')(_props => ({
     width: '100%',
     height: '100%',
     content: "''",
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     mixBlendMode: 'multiply',
     pointerEvents: 'none',
   },
