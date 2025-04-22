@@ -1,11 +1,12 @@
 use std::process::{Command, Stdio};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::thread;
 use std::{fs, env, fs::create_dir_all};
 use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
-use anyhow::{anyhow, Context, Result, Error};
+use anyhow::{anyhow, Context, Error, Result};
 use semver::Version;
 use tokio::sync::Mutex;
 use crate::analytics::Analytics;
@@ -38,7 +39,7 @@ pub fn log_file_path() -> Result<PathBuf> {
     }
     #[cfg(target_os = "windows")]
     {
-        let dir = env::var("%APPDATA%")?;
+        let dir = env::var("APPDATA")?;
         path.push(dir);
     }
 
@@ -72,8 +73,11 @@ fn explorer_version_path() -> PathBuf {
     explorer_path().join("version.json")
 }
 
-fn explorer_latest_version_path() -> PathBuf {
-    explorer_path().join("latest")
+fn explorer_latest_version_path() -> Result<PathBuf> {
+    let data  = get_version_data()?;
+    let path = &data["path"];
+    let value = path.as_str().context("cannot get string value from path property")?;
+    Ok(PathBuf::from(value))
 }
 
 fn explorer_dev_version_path() -> PathBuf {
@@ -95,23 +99,23 @@ fn get_version_data_or_empty() -> Value {
 }
 
 #[cfg(target_os = "macos")]
-fn get_explorer_bin_path(version: Option<&str>) -> PathBuf {
+fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
         Some("dev") => explorer_dev_version_path(),
         Some(v) => explorer_path().join(v),
-        None => explorer_latest_version_path(),
+        None => explorer_latest_version_path()?,
     };
-    base_path.join(EXPLORER_MAC_BIN_PATH)
+    Ok(base_path.join(EXPLORER_MAC_BIN_PATH))
 }
 
 #[cfg(target_os = "windows")]
-fn get_explorer_bin_path(version: Option<&str>) -> PathBuf {
+fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
         Some("dev") => explorer_dev_version_path(),
         Some(v) => explorer_path().join(v),
-        None => explorer_latest_version_path(),
+        None => explorer_latest_version_path()?,
     };
-    base_path.join(EXPLORER_WIN_BIN_PATH)
+    Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
 }
 
 fn move_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
@@ -186,27 +190,6 @@ async fn cleanup_versions() -> Result<()> {
     Ok(())
 }
 
-fn create_symlink(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
-    // Create a symlink
-    #[cfg(target_os = "macos")]
-    {
-        std::os::unix::fs::symlink(src, dst)?;
-    }
-
-    // Create a symlink
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::fs::{symlink_file, symlink_dir};
-        if src.is_dir() {
-            symlink_dir(src, dst)?
-        } else {
-            symlink_file(src, dst)?
-        }
-    }
-
-    Ok(())
-}
-
 fn is_app_updated(version: &str) -> bool {
     let result = get_version_data();
     match result {
@@ -220,7 +203,11 @@ fn is_app_updated(version: &str) -> bool {
 }
 
 pub fn is_explorer_installed(version: Option<&str>) -> bool {
-    get_explorer_bin_path(version).exists()
+    let path = get_explorer_bin_path(version);
+    match path {
+        Ok(path) => path.exists(),
+        Err(_) => false,
+    }
 }
 
 pub fn is_explorer_updated(version: &str) -> bool {
@@ -259,19 +246,13 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
         }
     }
 
-    // Remove old version symlink if it exists
-    let latest_path = explorer_latest_version_path();
-    if latest_path.exists() {
-        fs::remove_file(&latest_path).context("Cannot delete latest version")?;
-    }
-
-    create_symlink(&branch_path, &latest_path).context("Cannot create symlink")?;
-
     let mut version_data = get_version_data_or_empty();
     version_data[version] = Value::from(std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?.as_secs().to_string());
     if version != "dev" {
         version_data["version"] = Value::String(version.to_string());
     }
+
+    version_data["path"] = branch_path.to_string_lossy().into();
 
     // Write version data to file
     let version_data_str = serde_json::to_string(&version_data)?;
@@ -358,7 +339,7 @@ impl InstallsHub {
     async fn launch_explorer_internal(&self, preferred_version: Option<&str>) -> Result<()> {
         log::info!("Launching Explorer...");
 
-        let explorer_bin_path = get_explorer_bin_path(preferred_version);
+        let explorer_bin_path = get_explorer_bin_path(preferred_version)?;
         let explorer_bin_dir = explorer_bin_path
             .parent()
             .ok_or_else(|| anyhow!("Failed to get explorer binary directory"))?;
@@ -368,7 +349,7 @@ impl InstallsHub {
                 Some(ver) => format!("The explorer version specified ({}) is not installed.", ver),
                 None => "The explorer is not installed.".to_string(),
             };
-            log::error!("{}, {}", error_message, explorer_bin_path.to_string_lossy().to_string());
+            log::error!("{}, {:?}", error_message, explorer_bin_path);
             return Err(anyhow!(error_message));
         }
 
@@ -387,7 +368,8 @@ impl InstallsHub {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .context("Failed to start explorer process")?;
+            .map_err(|e| anyhow!("Failed to start explorer process: {}", e))
+            .with_context(|| format!("Dir: {:?}, Bin: {:?} Args: {:?}", explorer_bin_dir, explorer_bin_path, explorer_params))?;
 
         log::info!("Process run with id: {}", child.id());
 

@@ -98,6 +98,7 @@ impl LaunchFlow {
     pub async fn launch<T: EventChannel>(&self, channel: &T, state: Arc<Mutex<LaunchFlowState>>) -> std::result::Result<(), FlowError> {
         let result = self.launch_internal(channel, state.clone()).await;
         if let Err(e) = result {
+            log::error!("Error during the flow {} {:#}", e.user_message, e.inner_error);
             capture_anyhow(&e.inner_error);
             let can_retry = Self::can_retry(state).await;
             let error = FlowError {
