@@ -43,7 +43,7 @@ impl AnalyticsClient {
         properties["sessionId"] = Value::from_str(self.session_id.value())?;
         properties["appId"] = Value::from_str(APP_ID)?;
 
-        let user = User::Both {
+        let user = User::AnonymousId {
             anonymous_id: self.anonymous_id.clone()
         };
 
