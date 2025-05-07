@@ -15,7 +15,8 @@
       {
         "title": "Decentraland Launcher",
         "width": 600,
-        "height": 156
+        "height": 156,
+        "resizable": false
       }
     ],
     "security": {
