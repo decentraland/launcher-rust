@@ -244,7 +244,7 @@ impl LaunchStep for DownloadStep {
 
                 let mut analytics = self.analytics.lock().await;
                 analytics.track_and_flush(Event::DOWNLOAD_VERSION { version: version.clone() }).await?;
-                let result = installs::downloads::download_file(url, path, channel, &mode).await;
+                let result = installs::downloads::download_file(url, path, channel, &mode, self.analytics.clone()).await;
                 if let Err(e) = result {
                     analytics.track_and_flush(Event::DOWNLOAD_VERSION_ERROR { version: Some(version.clone()), error: e.to_string() }).await?;
                 }
