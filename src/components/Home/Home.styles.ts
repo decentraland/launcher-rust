@@ -33,6 +33,12 @@ export const Logo = styled('img')(props => ({
   width: '61px',
 }));
 
+export const ErrorIcon = styled('img')(props => ({
+  ...props,
+  height: '62px',
+  width: '62px',
+}));
+
 export const LoadingBar = styled(LinearProgress)(props => ({
   ...props,
   width: '348px',
