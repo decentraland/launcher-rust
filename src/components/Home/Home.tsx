@@ -25,12 +25,12 @@ export const Home: React.FC = memo(() => {
   const currentStatus = useChannelUpdates(channel);
 
   const launchFlow = async () => {
-      await invoke('launch', { channel }).catch(console.error);
+    await invoke('launch', { channel }).catch(console.error);
   };
-  //  const shouldRunDevVersion = getRunDevVersion();
-  //const customDownloadedFilePath = getDownloadedFilePath();
 
-  useEffect(() => { launchFlow(); }, []);
+  useEffect(() => {
+    launchFlow();
+  }, []);
 
   const renderStatusMessage = () => {
     if (!currentStatus) return null;
@@ -43,18 +43,17 @@ export const Home: React.FC = memo(() => {
           case 'downloading':
             {
               let data = currentStatus.data.step.data;
-              let isUpdate = data.buildType === BuildType.Update; 
+              let isUpdate = data.buildType === BuildType.Update;
               let progress = data.progress;
               return renderDownloadStep(isUpdate, progress);
             }
           case 'installing':
             let data = currentStatus.data.step.data;
-            let isUpdate = data.buildType === BuildType.Update; 
+            let isUpdate = data.buildType === BuildType.Update;
             return renderInstallStep(isUpdate);
           case 'launching':
             return renderLaunchStep();
         }
-        break;
       case 'error':
         return renderError(currentStatus.data.canRetry, currentStatus.data.message);
       default:
@@ -62,44 +61,17 @@ export const Home: React.FC = memo(() => {
     }
   };
 
-  const renderFetchStep = useCallback(() => {
-    return <Typography variant="h4">Fetching Latest...</Typography>;
-  }, []);
+  const renderFetchStep = () =>
+    renderStep('Fetching Latest...')
 
-  const renderDownloadStep = useCallback((isUpdate: boolean, downloadingProgress: number) => {
-    return (
-      <Box>
-        <Typography variant="h4" align="center">
-          {isUpdate ? 'Downloading Update...' : 'Downloading Decentraland...'}
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <LoadingBar variant="determinate" value={downloadingProgress} sx={{ mr: 1 }} />
-          <Typography variant="body1">{`${Math.round(downloadingProgress)}%`}</Typography>
-        </Box>
-      </Box>
-    );
-  }, []);
+  const renderDownloadStep = (isUpdate: boolean, downloadingProgress: number) =>
+    renderStep(isUpdate ? 'Downloading Update...' : 'Downloading Decentraland...', downloadingProgress);
 
-  const renderInstallStep = useCallback((isUpdate: boolean) => {
-    return (
-      <Box>
-        <Typography variant="h4" align="center">
-          {isUpdate ? 'Installing Update...' : 'Installation in Progress...'}
-        </Typography>
-        <Box paddingTop={'10px'} paddingBottom={'10px'}>
-          <LoadingBar />
-        </Box>
-      </Box>
-    );
-  }, []);
+  const renderInstallStep = (isUpdate: boolean) =>
+    renderStep(isUpdate ? 'Installing Update...' : 'Installation in Progress...');
 
-  const renderLaunchStep = useCallback(() => {
-    return <Typography variant="h4">Launching Decentraland...</Typography>;
-  }, []);
-
-  const handleOnClickRetry = useCallback(() => {
-      launchFlow();
-  }, []);
+  const renderLaunchStep = () =>
+    renderStep('Launching Decentraland...');
 
   const renderError = useCallback((shouldShowRetryButton: boolean, message: string) => {
     message += '...';
@@ -107,12 +79,10 @@ export const Home: React.FC = memo(() => {
       return (
         <Box>
           <Typography variant="h4" align="center">
-            {
-                message
-            }
+            {message}
           </Typography>
           <Box display="flex" justifyContent="center" marginTop={'10px'}>
-            <Button onClick={handleOnClickRetry}>Retry</Button>
+            <Button onClick={launchFlow}>Retry</Button>
           </Box>
         </Box>
       );
@@ -127,8 +97,22 @@ export const Home: React.FC = memo(() => {
     );
   }, []);
 
+  const renderStep = (message: string, downloadingProgress: number | undefined = undefined) => {
+    return (
+      <Box display="flex" flexDirection="column" justifyContent="space-between" height="61px">
+        <Typography variant="h6" align="left" fontWeight="bold" >
+          {message}
+        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <LoadingBar variant={downloadingProgress ? "determinate" : undefined} value={downloadingProgress ?? undefined} sx={{ mr: 1 }} />
+          {<Typography variant="body1" width="45px" visibility={downloadingProgress ? "visible" : "hidden"}>{`${Math.round(downloadingProgress ?? 0)}%`}</Typography>}
+        </Box>
+      </Box>
+    );
+  };
+
   return (
-    <Box display="flex" alignItems={'center'} justifyContent={'center'} width={'100%'}>
+    <Box display="flex" alignItems={'center'} justifyContent={'center'} width={'100%'} gap={3.5}>
       <Landscape>
         <img src={LANDSCAPE_IMG} />
       </Landscape>

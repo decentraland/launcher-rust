@@ -35,5 +35,6 @@ export const Logo = styled('img')(props => ({
 
 export const LoadingBar = styled(LinearProgress)(props => ({
   ...props,
-  width: '450px',
+  width: '348px',
+  height: '7px',
 }));
