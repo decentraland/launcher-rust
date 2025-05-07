@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Decentraland-Launcher",
+  "productName": "Decentraland Launcher",
   "mainBinaryName": "dcl_launcher",
   "version": "1.0.1",
   "identifier": "com.decentraland.launcherlite",
@@ -13,9 +13,10 @@
   "app": {
     "windows": [
       {
-        "title": "app",
-        "width": 800,
-        "height": 600
+        "title": "Decentraland Launcher",
+        "width": 600,
+        "height": 156,
+        "resizable": false
       }
     ],
     "security": {

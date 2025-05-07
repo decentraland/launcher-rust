@@ -16,10 +16,6 @@ pub trait CommandExtDetached {
 
 impl CommandExtDetached for Command {
     fn detached(&mut self) -> &mut Self {
-        #[cfg(windows)]
-        {
-            self.creation_flags(CREATE_NEW_CONSOLE | DETACHED_PROCESS);
-        }
 
         #[cfg(unix)]
         {
