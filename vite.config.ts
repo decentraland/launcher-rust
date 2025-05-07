@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { fileURLToPath } from 'url';
+import { fileURLToPath } from "url";
 import path from "path";
 
 // @ts-expect-error process is a nodejs global
@@ -35,7 +35,7 @@ export default defineConfig(async () => ({
   },
   build: {
     rollupOptions: {
-      input: path.resolve(__dirname, 'index.html'),
+      input: path.resolve(__dirname, "index.html"),
     },
-  }
+  },
 }));
