@@ -5,6 +5,31 @@ import { Landscape, LoadingBar, Logo } from './Home.styles';
 import LANDSCAPE_IMG from '../../assets/background.jpg';
 import LOGO_SVG from '../../assets/logo.svg';
 import { invoke, Channel } from '@tauri-apps/api/core';
+import { LogicalSize, getCurrentWindow } from '@tauri-apps/api/window';
+
+type WindowSize = {
+  width: number;
+  height: number;
+}
+
+function asLogicalSize(size: WindowSize) {
+  return new LogicalSize(size.width, size.height);
+}
+
+const stateWindowSize = {
+  "width": 600,
+  "height": 156
+}
+
+const errorWindowSize = {
+  "width": 600,
+  "height": 358
+}
+
+const resizeWindow = async (size: WindowSize) => {
+  const logicalSize = asLogicalSize(size);
+  await getCurrentWindow().setSize(logicalSize).catch(console.error);
+}
 
 const useChannelUpdates = (channel: Channel<Status>) => {
   const [currentStatus, setCurrentStatus] = useState<Status | null>(null);
@@ -74,6 +99,7 @@ export const Home: React.FC = memo(() => {
     renderStep('Launching Decentraland...');
 
   const renderError = useCallback((shouldShowRetryButton: boolean, message: string) => {
+    resizeWindow(errorWindowSize);
     message += '...';
     if (shouldShowRetryButton) {
       return (
@@ -98,9 +124,10 @@ export const Home: React.FC = memo(() => {
   }, []);
 
   const renderStep = (message: string, downloadingProgress: number | undefined = undefined) => {
+    resizeWindow(stateWindowSize);
     return (
       <Box display="flex" flexDirection="column" justifyContent="space-between" height="61px">
-        <Typography variant="h6" align="left" 
+        <Typography variant="h6" align="left"
           sx={{
             fontFamily: 'Inter, sans-serif',
             fontWeight: 700,
