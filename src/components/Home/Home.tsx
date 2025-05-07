@@ -100,7 +100,16 @@ export const Home: React.FC = memo(() => {
   const renderStep = (message: string, downloadingProgress: number | undefined = undefined) => {
     return (
       <Box display="flex" flexDirection="column" justifyContent="space-between" height="61px">
-        <Typography variant="h6" align="left" fontWeight="bold" >
+        <Typography variant="h6" align="left" 
+          sx={{
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 700,
+            fontSize: '20px',
+            lineHeight: '160%',
+            letterSpacing: '0px',
+            verticalAlign: 'middle'
+          }}
+        >
           {message}
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -112,7 +121,7 @@ export const Home: React.FC = memo(() => {
   };
 
   return (
-    <Box display="flex" alignItems={'center'} justifyContent={'center'} width={'100%'} gap={3.5}>
+    <Box display="flex" alignItems={'center'} justifyContent={'center'} width={'100%'} gap={4}>
       <Landscape>
         <img src={LANDSCAPE_IMG} />
       </Landscape>
