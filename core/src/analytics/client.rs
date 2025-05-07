@@ -9,11 +9,10 @@ use anyhow::Result;
 use super::event::Event;
 use super::session::SessionId;
 
-const APP_ID: &str = "decentraland-launcher";
+const APP_ID: &str = "decentraland-launcher-rust";
 
 pub struct AnalyticsClient {
     anonymous_id: String,
-    user_id: String,
     os: String,
     launcher_version: String,
     session_id: SessionId,
@@ -22,7 +21,7 @@ pub struct AnalyticsClient {
 
 impl AnalyticsClient {
 
-    pub fn new(write_key: String, anonymous_id: String, user_id: String, os: String, launcher_version: String) -> Self {
+    pub fn new(write_key: String, anonymous_id: String, os: String, launcher_version: String) -> Self {
         let client = HttpClient::default();
         let context = json!({"direct": true}); 
         let batcher = Batcher::new(Some(context));
@@ -31,7 +30,6 @@ impl AnalyticsClient {
 
         AnalyticsClient {
             anonymous_id,
-            user_id,
             os,
             session_id,
             launcher_version,
@@ -46,7 +44,6 @@ impl AnalyticsClient {
         properties["appId"] = Value::from_str(APP_ID)?;
 
         let user = User::Both {
-            user_id: self.user_id.clone(),
             anonymous_id: self.anonymous_id.clone()
         };
 
