@@ -1,4 +1,4 @@
-import { styled, LinearProgress } from 'decentraland-ui2';
+import { styled, LinearProgress, Button } from 'decentraland-ui2';
 
 export const Landscape = styled('div')(_props => ({
   position: 'absolute',
@@ -38,6 +38,13 @@ export const ErrorIcon = styled('img')(props => ({
   height: '62px',
   width: '62px',
 }));
+
+export const ErrorDialogButton = styled(Button)(props => ({
+  ...props,
+  width: '190px',
+  height: '46px',
+}));
+
 
 export const LoadingBar = styled(LinearProgress)(props => ({
   ...props,

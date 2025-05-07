@@ -1,11 +1,15 @@
-import React, { memo, useCallback, useEffect, useState } from 'react';
-import { Box, Button, Typography } from 'decentraland-ui2';
+import React, { memo, useEffect, useState } from 'react';
+import { Box, Typography } from 'decentraland-ui2';
 import { Status, BuildType } from './types';
-import { Landscape, LoadingBar, Logo } from './Home.styles';
+import { Landscape, LoadingBar, Logo, ErrorIcon, ErrorDialogButton } from './Home.styles';
+
 import LANDSCAPE_IMG from '../../assets/background.jpg';
 import LOGO_SVG from '../../assets/logo.svg';
+import ERROR_SVG from '../../assets/error.svg';
+
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { LogicalSize, getCurrentWindow } from '@tauri-apps/api/window';
+import { exit } from '@tauri-apps/plugin-process';
 
 type WindowSize = {
   width: number;
@@ -80,7 +84,7 @@ export const Home: React.FC = memo(() => {
             return renderLaunchStep();
         }
       case 'error':
-        return renderError(currentStatus.data.canRetry, currentStatus.data.message);
+        return renderError(currentStatus.data.message);
       default:
         return null;
     }
@@ -98,52 +102,73 @@ export const Home: React.FC = memo(() => {
   const renderLaunchStep = () =>
     renderStep('Launching Decentraland...');
 
-  const renderError = useCallback((shouldShowRetryButton: boolean, message: string) => {
+  const renderError = (message: string) => {
     resizeWindow(errorWindowSize);
-    message += '...';
-    if (shouldShowRetryButton) {
-      return (
-        <Box>
-          <Typography variant="h4" align="center">
-            {message}
-          </Typography>
-          <Box display="flex" justifyContent="center" marginTop={'10px'}>
-            <Button onClick={launchFlow}>Retry</Button>
-          </Box>
-        </Box>
-      );
-    }
-
     return (
-      <Box>
-        <Typography variant="h4" align="center">
-          Retrying...
-        </Typography>
-      </Box>
-    );
-  }, []);
-
-  const renderStep = (message: string, downloadingProgress: number | undefined = undefined) => {
-    resizeWindow(stateWindowSize);
-    return (
-      <Box display="flex" flexDirection="column" justifyContent="space-between" height="61px">
-        <Typography variant="h6" align="left"
+      <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+        <ErrorIcon src={ERROR_SVG} />
+        <Typography
+          variant="h5"
           sx={{
             fontFamily: 'Inter, sans-serif',
             fontWeight: 700,
-            fontSize: '20px',
-            lineHeight: '160%',
-            letterSpacing: '0px',
-            verticalAlign: 'middle'
+          }}
+        >
+          Error
+        </Typography>
+        <Typography
+          variant="h6"
+          sx={{
+            fontFamily: 'Inter, sans-serif',
           }}
         >
           {message}
         </Typography>
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <LoadingBar variant={downloadingProgress ? "determinate" : undefined} value={downloadingProgress ?? undefined} sx={{ mr: 1 }} />
-          {<Typography variant="body1" width="45px" visibility={downloadingProgress ? "visible" : "hidden"}>{`${Math.round(downloadingProgress ?? 0)}%`}</Typography>}
+        <Box display="flex" gap={2}>
+          <ErrorDialogButton
+            variant="contained"
+            style={{
+              backgroundColor: "rgba(0, 0, 0, 0.4)",
+            }}
+            onClick={() => exit()}
+          >
+            EXIT
+          </ErrorDialogButton>
+          <ErrorDialogButton
+            variant="contained"
+            onClick={launchFlow}
+          >
+            RETRY
+          </ErrorDialogButton>
         </Box>
       </Box>
+    );
+  };
+
+  const renderStep = (message: string, downloadingProgress: number | undefined = undefined) => {
+    resizeWindow(stateWindowSize);
+    return (
+      <>
+        <Logo src={LOGO_SVG} />
+        <Box display="flex" flexDirection="column" justifyContent="space-between" height="61px">
+          <Typography variant="h6" align="left"
+            sx={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 700,
+              fontSize: '20px',
+              lineHeight: '160%',
+              letterSpacing: '0px',
+              verticalAlign: 'middle'
+            }}
+          >
+            {message}
+          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <LoadingBar variant={downloadingProgress ? "determinate" : undefined} value={downloadingProgress ?? undefined} sx={{ mr: 1 }} />
+            {<Typography variant="body1" width="45px" visibility={downloadingProgress ? "visible" : "hidden"}>{`${Math.round(downloadingProgress ?? 0)}%`}</Typography>}
+          </Box>
+        </Box>
+      </>
     );
   };
 
@@ -152,7 +177,6 @@ export const Home: React.FC = memo(() => {
       <Landscape>
         <img src={LANDSCAPE_IMG} />
       </Landscape>
-      <Logo src={LOGO_SVG} />
       {renderStatusMessage()}
     </Box>
   );

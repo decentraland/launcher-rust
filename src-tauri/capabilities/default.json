@@ -8,6 +8,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-set-size",
-    "deep-link:default"
+    "deep-link:default",
+    "process:default"
   ]
 }
