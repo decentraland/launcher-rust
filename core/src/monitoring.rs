@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::Result;
-use log::error;
+use log::{error, info};
 
 use sentry::ClientOptions;
 use sentry_types::Dsn;
@@ -22,6 +22,7 @@ impl Monitoring {
                 Ok(())
             },
             Some(raw_dsn) => {
+                info!("sentry dns is proiveded via env variables successfully");
                 let dsn = Dsn::from_str(raw_dsn)?;
             
                 let opts = ClientOptions {
@@ -34,6 +35,7 @@ impl Monitoring {
                 let guard = sentry::init(opts);
                 // keeps guard for the whole lifetime of the app
                 std::mem::forget(guard);
+                info!("sentry dns initialized successfully");
                 Ok(())
             },
         }
