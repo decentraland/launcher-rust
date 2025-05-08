@@ -22,6 +22,8 @@ impl AppState {
 
         info!("Application setup start");
 
+        std::panic::set_hook(Box::new(|info| error!("Panic occurred: {:?}", info)));
+
         Monitoring::try_setup_sentry()?;
 
         let mut analytics = analytics::Analytics::new_from_env(); 
