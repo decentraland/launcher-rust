@@ -15,6 +15,11 @@ pub enum Event {
     DOWNLOAD_VERSION {
         version: String
     },
+    DOWNLOAD_VERSION_PROGRESS {
+        downloaded_file_url: String,
+        size_downloaded: u64,
+        size_remaining: u64,
+    },
     DOWNLOAD_VERSION_SUCCESS {
         version: String
     },
@@ -68,6 +73,7 @@ impl Display for Event {
             Event::LAUNCHER_OPEN {..} => "Launcher Open",
             Event::LAUNCHER_CLOSE {..} => "Launcher Close",
             Event::DOWNLOAD_VERSION {..} => "Download Version",
+            Event::DOWNLOAD_VERSION_PROGRESS {..} => "Download Version Progress",
             Event::DOWNLOAD_VERSION_SUCCESS {..} => "Download Version Success",
             Event::DOWNLOAD_VERSION_ERROR {..} => "Download Version Error",
             Event::DOWNLOAD_VERSION_CANCELLED {..} => "Download Version Cancelled",
