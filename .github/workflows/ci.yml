@@ -43,7 +43,8 @@ jobs:
     permissions:
       contents: write # Allows this job to create releases
     with:
-      dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' }}
+      # to build the actual release use manual-release.yml; dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' }}
+      dry-run: false
     needs: [ typechecking, tests ]
     uses: ./.github/workflows/release.yml
     secrets:
