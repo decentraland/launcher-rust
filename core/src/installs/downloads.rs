@@ -28,6 +28,8 @@ pub async fn download_file<T: EventChannel>(url: &str, path: &str, channel: &T, 
     let mut downloaded: u64 = 0;
     let mut stream = res.bytes_stream();
 
+    let mut analytics_guard = analytics.lock().await;
+
     while let Some(item) = stream.next().await {
         let chunk = item.context(format!("Error while downloading file"))?;
         file.write_all(&chunk)
@@ -35,16 +37,13 @@ pub async fn download_file<T: EventChannel>(url: &str, path: &str, channel: &T, 
         let new = min(downloaded + (chunk.len() as u64), total_size);
         downloaded = new;
 
-        {
-            let mut analytics_guard = analytics.lock().await;
-            let progress_event = Event::DOWNLOAD_VERSION_PROGRESS {
-                downloaded_file_url: url.to_string(),
-                size_downloaded: downloaded,
-                size_remaining: total_size - downloaded,
-            };
-            if let Err(e) = analytics_guard.track_and_flush(progress_event).await {
-                log::error!("Failed to track download progress event: {}", e);
-            }
+        let progress_event = Event::DOWNLOAD_VERSION_PROGRESS {
+            downloaded_file_url: url.to_owned(),
+            size_downloaded: downloaded,
+            size_remaining: total_size - downloaded,
+        };
+        if let Err(e) = analytics_guard.track_and_flush(progress_event).await {
+            log::error!("Failed to track download progress event: {}", e);
         }
 
         let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
