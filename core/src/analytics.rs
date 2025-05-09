@@ -27,6 +27,11 @@ pub enum Analytics {
 impl Analytics {
 
     pub fn new_from_env() -> Self {
+        if std::env::args().any(|e| e == "--skip-analytics") {
+            info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
+            return Self::new(None);
+        }
+
         let write_key: Option<&str> = option_env!("SEGMENT_API_KEY");
 
         let args: Option<CreateArgs> = match write_key {
