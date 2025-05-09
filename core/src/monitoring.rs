@@ -14,7 +14,7 @@ impl Monitoring {
 
     // To have logging enabled this must be call after the logger setup
     pub fn try_setup_sentry() -> Result<()> {
-        let dsn = None; //option_env!("SENTRY_DSN");
+        let dsn = option_env!("SENTRY_DSN");
 
         match dsn {
             None => {

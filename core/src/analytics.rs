@@ -28,7 +28,7 @@ pub enum Analytics {
 impl Analytics {
 
     pub fn new_from_env() -> Self {
-        let write_key = option_env!("SEGMENT_API_KEY");
+        let write_key: Option<&str> = None; //option_env!("SEGMENT_API_KEY");
 
         let args: Option<CreateArgs> = match write_key {
             Some(segment_key) => {
