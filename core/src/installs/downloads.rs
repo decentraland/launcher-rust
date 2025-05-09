@@ -13,8 +13,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 async fn track_download_progress(
-    analytics: &mut Analytics,
-    url: &str,
+    analytics: Arc<Mutex<Analytics>>,
+    url: String,
     downloaded: u64,
     total_size: u64,
 ) {
@@ -23,7 +23,8 @@ async fn track_download_progress(
         size_downloaded: downloaded,
         size_remaining: total_size - downloaded,
     };
-    if let Err(e) = analytics.track_and_flush(progress_event).await {
+    let mut analytics_guard = analytics.lock().await;
+    if let Err(e) = analytics_guard.track_and_flush(progress_event).await {
         log::error!("Failed to track download progress event: {}", e);
     }
 }
@@ -41,25 +42,25 @@ pub async fn download_file<T: EventChannel>(
         .get(url)
         .send()
         .await
-        .context(format!("Failed to GET from '{}'", &url))?;
+        .with_context(|| format!("Failed to GET from '{}'", &url))?;
     let total_size = res
         .content_length()
-        .context(format!("Failed to get content length from '{}'", &url))?;
+        .with_context(|| format!("Failed to get content length from '{}'", &url))?;
 
     let mut file = File::create(path).context(format!("Failed to create file '{}'", path))?;
     let mut downloaded: u64 = 0;
     let mut stream = res.bytes_stream();
 
-    let mut analytics_guard = analytics.lock().await;
-
     // We don't want to send too many analytics events, so we limit the rate at which we send them.
     let mut last_analytics_time: Option<std::time::Instant> = None;
     let duration = std::time::Duration::from_millis(500);
+    let mut tasks = Vec::new();
 
     while let Some(item) = stream.next().await {
-        let chunk = item.context(format!("Error while downloading file"))?;
+        let chunk = item.context("Error while downloading file")?;
         file.write_all(&chunk)
-            .context(format!("Error while writing to file"))?;
+            .context("Error while writing to file")?;
+
         let new = min(downloaded + (chunk.len() as u64), total_size);
         downloaded = new;
 
@@ -70,7 +71,13 @@ pub async fn download_file<T: EventChannel>(
 
         if should_send {
             last_analytics_time = Some(std::time::Instant::now());
-            track_download_progress(&mut analytics_guard, url, downloaded, total_size).await;
+            let task = tokio::spawn(track_download_progress(
+                analytics.clone(),
+                url.to_string(),
+                downloaded,
+                total_size,
+            ));
+            tasks.push(task);
         }
 
         let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
@@ -85,7 +92,11 @@ pub async fn download_file<T: EventChannel>(
             .context(format!("Cannot send event to channel"))?;
     }
 
-    track_download_progress(&mut analytics_guard, url, downloaded, total_size).await;
+    for task in tasks {
+        task.await.context("Failed to await analytics task")?;
+    }
+
+    track_download_progress(analytics, url.to_owned(), downloaded, total_size).await;
 
     return Ok(());
 }
