@@ -38,7 +38,7 @@ impl Analytics {
             Some(segment_key) => {
                 info!("SEGMENT_API_KEY is set successfully from environment variable, segment is available");                
                 let anonymous_id = config::user_id().unwrap_or_else(|e| {
-                    error!("Cannot get user id from config, fallback is used: {}", e);
+                    error!("Cannot get user id from config, fallback is used: {:#}", e);
                     "none".to_owned()
                 });
                 let launcher_version = app_version().to_owned();

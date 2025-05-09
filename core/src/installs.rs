@@ -60,7 +60,9 @@ fn get_app_base_path() -> PathBuf {
 }
 
 fn explorer_path() -> PathBuf {
-    get_app_base_path().join(APP_NAME)
+    let path = get_app_base_path().join(APP_NAME);
+    create_dir_all(&path).expect("Cannot create app directory");
+    path
 }
 
 fn explorer_downloads_path() -> PathBuf {
