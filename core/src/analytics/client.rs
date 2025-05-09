@@ -4,7 +4,7 @@ use log::error;
 use segment::{HttpClient, AutoBatcher, Batcher};
 use segment::message::{Track, User};
 use serde_json::{json, Value};
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::event::Event;
 use super::session::SessionId;
@@ -67,8 +67,8 @@ impl AnalyticsClient {
     pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         let properties = properties_from_event(&event);
         let event_name = format!("{}", event);
-        self.track(event_name, properties).await?;
-        self.flush().await?;
+        self.track(event_name, properties).await.context("Cannot track")?;
+        self.flush().await.context("Cannot flush")?;
         Ok(())
     }
 

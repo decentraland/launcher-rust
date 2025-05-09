@@ -8,7 +8,7 @@ use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
 use event::Event;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{config, utils::{ app_version, get_os_name}};
 
@@ -69,7 +69,7 @@ impl Analytics {
     pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         match self {
             Self::Client(client) => { 
-                client.track_and_flush(event).await?;
+                client.track_and_flush(event).await.context("Error on track_and_flush")?;
                 Ok(())
             },
             Self::Null(_) => Ok(())
