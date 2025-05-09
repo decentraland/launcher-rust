@@ -8,8 +8,7 @@ use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
 use event::Event;
-use serde_json::Value;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{config, utils::{ app_version, get_os_name}};
 
@@ -28,7 +27,12 @@ pub enum Analytics {
 impl Analytics {
 
     pub fn new_from_env() -> Self {
-        let write_key = option_env!("SEGMENT_API_KEY");
+        if std::env::args().any(|e| e == "--skip-analytics") {
+            info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
+            return Self::new(None);
+        }
+
+        let write_key: Option<&str> = option_env!("SEGMENT_API_KEY");
 
         let args: Option<CreateArgs> = match write_key {
             Some(segment_key) => {
@@ -70,7 +74,7 @@ impl Analytics {
     pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         match self {
             Self::Client(client) => { 
-                client.track_and_flush(event).await?;
+                client.track_and_flush(event).await.context("Error on track_and_flush")?;
                 Ok(())
             },
             Self::Null(_) => Ok(())

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::analytics::event::Event;
 use crate::analytics::Analytics;
@@ -24,10 +24,13 @@ impl AppState {
 
         std::panic::set_hook(Box::new(|info| error!("Panic occurred: {:?}", info)));
 
-        Monitoring::try_setup_sentry()?;
+        Monitoring::try_setup_sentry().context("Cannot setup monitoring")?;
 
         let mut analytics = analytics::Analytics::new_from_env(); 
-        analytics.track_and_flush(Event::LAUNCHER_OPEN { version: utils::app_version().to_owned() }).await?; 
+        analytics.track_and_flush(Event::LAUNCHER_OPEN { version: utils::app_version().to_owned() })
+            .await
+            .context("Cannot flush open event")?; 
+
         let analytics = Arc::new(Mutex::new(analytics));
         let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(analytics.clone())));
 
