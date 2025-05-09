@@ -247,7 +247,9 @@ impl LaunchStep for DownloadStep {
                     analytics.track_and_flush(Event::DOWNLOAD_VERSION { version: version.clone() }).await?;
                 }
 
-                let result = installs::downloads::download_file(url, path, channel, &mode, self.analytics.clone()).await;
+                let temp_test = Arc::new(Mutex::new(Analytics::new(None)));
+                let result = installs::downloads::download_file(url, path, channel, &mode, temp_test).await;
+                //let result = installs::downloads::download_file(url, path, channel, &mode, self.analytics.clone()).await;
 
                 let mut analytics = self.analytics.lock().await;
                 if let Err(e) = result {
