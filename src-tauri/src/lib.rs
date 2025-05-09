@@ -76,7 +76,7 @@ fn setup_deeplink(a: &mut App) {
 
 fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let app_state = tauri::async_runtime::block_on(AppState::setup())
-        .inspect_err(|e| error!("Error during setup: {}", e))?;
+        .inspect_err(|e| error!("Error during setup: {:#}", e))?;
 
     setup_deeplink(a);
 
