@@ -42,17 +42,10 @@ impl AnalyticsClient {
     }
 
     async fn track(&mut self, event: String, mut properties: Value) -> Result<()> {
-        properties["os"] = Value::from_str(&self.os)
-            .with_context(|| format!("Cannot parse os: {}", self.os))?;
-
-        properties["launcherVersion"] = Value::from_str(&self.launcher_version)
-            .with_context(|| format!("Cannot parse launcher version: {}", self.launcher_version))?;
-
-        properties["sessionId"] = Value::from_str(self.session_id.value())
-            .with_context(|| format!("Cannot parse session id: {}", self.session_id.value()))?;
-
-        properties["appId"] =Value::from_str(APP_ID)
-            .with_context(|| format!("Cannot parse app id: {}", APP_ID))?;
+        properties["os"] = Value::String(self.os.clone());
+        properties["launcherVersion"] = Value::String(self.launcher_version.clone());
+        properties["sessionId"] = Value::String(self.session_id.value().to_owned());
+        properties["appId"] =Value::String(APP_ID.to_owned());
 
         let user = User::AnonymousId {
             anonymous_id: self.anonymous_id.clone(),
