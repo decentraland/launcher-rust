@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
-use log::error;
-use segment::{HttpClient, AutoBatcher, Batcher};
-use segment::message::{Track, User};
-use serde_json::{json, Value};
 use anyhow::{Context, Result};
+use log::error;
+use segment::message::{Track, User};
+use segment::{AutoBatcher, Batcher, HttpClient};
+use serde_json::{Value, json};
 
 use super::event::Event;
 use super::session::SessionId;
@@ -20,10 +20,14 @@ pub struct AnalyticsClient {
 }
 
 impl AnalyticsClient {
-
-    pub fn new(write_key: String, anonymous_id: String, os: String, launcher_version: String) -> Self {
+    pub fn new(
+        write_key: String,
+        anonymous_id: String,
+        os: String,
+        launcher_version: String,
+    ) -> Self {
         let client = HttpClient::default();
-        let context = json!({"direct": true}); 
+        let context = json!({"direct": true});
         let batcher = Batcher::new(Some(context));
         let batcher = AutoBatcher::new(client, batcher, write_key.to_string());
         let session_id = SessionId::random();
@@ -38,13 +42,20 @@ impl AnalyticsClient {
     }
 
     async fn track(&mut self, event: String, mut properties: Value) -> Result<()> {
-        properties["os"] = Value::from_str(&self.os)?;
-        properties["launcherVersion"] = Value::from_str(&self.launcher_version)?;
-        properties["sessionId"] = Value::from_str(self.session_id.value())?;
-        properties["appId"] = Value::from_str(APP_ID)?;
+        properties["os"] = Value::from_str(&self.os)
+            .with_context(|| format!("Cannot parse os: {}", self.os))?;
+
+        properties["launcherVersion"] = Value::from_str(&self.launcher_version)
+            .with_context(|| format!("Cannot parse launcher version: {}", self.launcher_version))?;
+
+        properties["sessionId"] = Value::from_str(self.session_id.value())
+            .with_context(|| format!("Cannot parse session id: {}", self.session_id.value()))?;
+
+        properties["appId"] =Value::from_str(APP_ID)
+            .with_context(|| format!("Cannot parse app id: {}", APP_ID))?;
 
         let user = User::AnonymousId {
-            anonymous_id: self.anonymous_id.clone()
+            anonymous_id: self.anonymous_id.clone(),
         };
 
         let msg = Track {
@@ -54,12 +65,11 @@ impl AnalyticsClient {
             ..Default::default()
         };
 
-
-        self.batcher.push(msg).await?;
+        self.batcher.push(msg).await.context("Cannot push")?;
         Ok(())
     }
 
-    async fn flush(&mut self) -> Result<()>{
+    async fn flush(&mut self) -> Result<()> {
         self.batcher.flush().await?;
         Ok(())
     }
@@ -67,7 +77,9 @@ impl AnalyticsClient {
     pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         let properties = properties_from_event(&event);
         let event_name = format!("{}", event);
-        self.track(event_name, properties).await.context("Cannot track")?;
+        self.track(event_name, properties)
+            .await
+            .context("Cannot track")?;
         self.flush().await.context("Cannot flush")?;
         Ok(())
     }
@@ -84,28 +96,22 @@ impl AnalyticsClient {
 fn properties_from_event(event: &Event) -> Value {
     let result = serde_json::to_value(event);
     match result {
-        Ok(json) => {
-            match json.as_object() {
-                Some(map) => {
-                    match map.get("data") {
-                        Some(data) => {
-                            data.to_owned()
-                        },
-                        None => {
-                            error!("serialized event doesn't have data property");
-                            json!("{}")
-                        },
-                    }
-                },
+        Ok(json) => match json.as_object() {
+            Some(map) => match map.get("data") {
+                Some(data) => data.to_owned(),
                 None => {
-                    error!("serialized event is not an object");
+                    error!("serialized event doesn't have data property");
                     json!("{}")
-                },
+                }
+            },
+            None => {
+                error!("serialized event is not an object");
+                json!("{}")
             }
         },
         Err(error) => {
             error!("Cannot serialize event; {}", error);
             json!("{}")
-        },
+        }
     }
 }
