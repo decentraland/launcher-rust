@@ -25,7 +25,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "dmg",
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,6 +40,11 @@
     "macOS": {
       "dmg": {
         "background": "./images/background.png"
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installerIcon": "./icons/icon.ico"
       }
     }
   },
