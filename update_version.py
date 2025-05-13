@@ -8,7 +8,6 @@ PACKAGE_JSON: Final = 'package.json'
 PACKAGE_JSON_LOCK: Final = 'package-lock.json'
 APP_CONFIG_LOCK: Final = 'src-tauri/tauri.conf.json'
 APP_RS_TOML: Final = 'src-tauri/Cargo.toml'
-APP_RS_LOCK: Final = 'src-tauri/Cargo.lock'
 
 def bump_version(version, bump_type):
     if bump_type == 'major':
@@ -80,5 +79,4 @@ if __name__ == "__main__":
         update_version(PACKAGE_JSON_LOCK, bump_type)
         update_version(APP_CONFIG_LOCK, bump_type)
         update_version_toml(APP_RS_TOML, bump_type)
-        update_version_toml(APP_RS_LOCK, bump_type)
 
