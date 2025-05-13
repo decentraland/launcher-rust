@@ -18,6 +18,11 @@ def bump_version(version, bump_type):
         return version.bump_patch()
 
 def update_version_toml(toml_path, bump_type):
+
+    if sys.platform == 'darwin':
+        print('MacOS is not supported for TOML modification, for some reason the toml package breaks the file, please update the version manually')
+        return
+
     try:
         data = toml.load(toml_path)
     except Exception as e:
