@@ -9,6 +9,7 @@ use crate::monitoring::Monitoring;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use log::{error, info};
+use utils::app_version;
 
 pub struct AppState {
     pub flow: LaunchFlow,
@@ -20,7 +21,7 @@ impl AppState {
     pub async fn setup() -> Result<Self> {
         logs::dispath_logs()?;
 
-        info!("Application setup start");
+        info!("Application setup start. Version: {}", app_version());
 
         std::panic::set_hook(Box::new(|info| error!("Panic occurred: {:?}", info)));
 
