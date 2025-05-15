@@ -100,10 +100,10 @@ jobs:
           INPUT_PASSWORD: ${{ secrets.ES_PASSWORD }}
           INPUT_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
           INPUT_CREDENTIAL_ID: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
-          # S3 Params
-          AWS_ACCESS_KEY_ID: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
-          AWS_S3_BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
-          AWS_DEFAULT_REGION: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          # # S3 Params
+          # AWS_ACCESS_KEY_ID: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          # AWS_SECRET_ACCESS_KEY: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          # AWS_S3_BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
+          # AWS_DEFAULT_REGION: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
           # Additional params to build the launcher
           PROVIDER: ${{ matrix.store }}
