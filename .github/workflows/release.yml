@@ -44,13 +44,23 @@ on:
       SENTRY_DSN:
         description: 'Sentry DSN to perform the requests'
         required: true
-      EXPLORER_TEAM_S3_BUCKET:
-        required: true
       TAURI_SIGNING_PRIVATE_KEY:
         description: 'Private key used to sign the Tauri updater'
         required: true
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         description: 'Password to unlock the private key for Tauri updater'
+        required: true
+      EXPLORER_TEAM_AWS_ACCESS_KEY_ID:
+        description: 'AWS access key to upload artifacts to S3'
+        required: true
+      EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY:
+        description: 'AWS secret access key to upload artifacts to S3'
+        required: true
+      EXPLORER_TEAM_AWS_DEFAULT_REGION:
+        description: 'AWS region where the S3 bucket is located'
+        required: true
+      EXPLORER_TEAM_S3_BUCKET:
+        description: 'AWS S3 bucket name to upload artifacts'
         required: true
 
 concurrency:
@@ -75,7 +85,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ macos-latest, windows-latest ]
+        include:
+          - os: macos-latest
+            bundles: [dmg, macos]
+          - os: windows-latest
+            bundles: [nsis]
 
     runs-on: ${{ matrix.os }}
 
@@ -202,3 +216,56 @@ jobs:
         with:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
+
+      - name: Upload artifacts to S3
+        if: inputs.dry-run == false
+        env:
+          EXTENSIONS: "exe tar.gz dmg"
+          AWS_ACCESS_KEY_ID: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          AWS_S3_BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
+        run: |
+          upload_file() {
+            local file="$1"
+            local s3_path="$2"
+            if [[ -f "$file" ]]; then
+              echo "Uploading: $file"
+              aws s3 cp --no-progress "$file" "$s3_path"
+            else
+              echo "Skipping: $file does not exist"
+            fi
+          }
+
+          TARGET_DIR="${GITHUB_REPOSITORY##*/}"
+          BUNDLES=$(echo '${{ toJson(matrix.bundles) }}' | jq -r '.[]')
+          detected_version=$(find "$PROJECT_PATH" -type f -name 'Decentraland_*_*' | head -n1 | sed -E 's/^.*Decentraland_([0-9]+\.[0-9]+\.[0-9]+)_.*/\1/')
+          echo "Detected version: $detected_version"
+
+          for bundle in $BUNDLES; do
+            ARTIFACT_DIR="$PROJECT_PATH/target/release/bundle/$bundle"
+            if [[ -d "$ARTIFACT_DIR" ]]; then
+              echo "Renaming artifacts in $ARTIFACT_DIR"
+
+              for file in "$ARTIFACT_DIR"/*; do
+                if [[ -f "$file" && "$file" == *"Decentraland_${detected_version}_"* ]]; then
+                  filename=$(basename "$file")
+                  cleaned_name="${filename/Decentraland_${detected_version}_/Decentraland_}"
+                  echo "Renaming $filename -> $cleaned_name"
+                  mv "$ARTIFACT_DIR/$filename" "$ARTIFACT_DIR/$cleaned_name"
+                fi
+              done
+
+              cd "$ARTIFACT_DIR"
+              echo "Uploading artifacts from $ARTIFACT_DIR"
+              for ext in $EXTENSIONS; do
+                for file in *.$ext; do
+                  upload_file "$file" "s3://$AWS_S3_BUCKET/$TARGET_DIR/$file"
+                  upload_file "$file.sig" "s3://$AWS_S3_BUCKET/$TARGET_DIR/$file.sig"
+                done
+              done
+              cd -
+            fi
+          done
+
+          upload_file "./latest.json" "s3://$AWS_S3_BUCKET/$TARGET_DIR/latest.json"
