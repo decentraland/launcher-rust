@@ -62,6 +62,18 @@ on:
       EXPLORER_TEAM_S3_BUCKET:
         description: 'AWS S3 bucket name to upload artifacts'
         required: true
+      DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID:
+        description: 'DEV AWS access key to upload artifacts to S3'
+        required: true
+      DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY:
+        description: 'DEV AWS secret access key to upload artifacts to S3'
+        required: true
+      DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION:
+        description: 'DEV AWS region where the S3 bucket is located'
+        required: true
+      DEV_EXPLORER_TEAM_S3_BUCKET:
+        description: 'DEV AWS S3 bucket name to upload artifacts'
+        required: true
 
 concurrency:
   group: release-${{ github.ref }}
@@ -191,7 +203,7 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         with:
-          tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          tagName: app-v__VERSION__ # __VERSION__ is auto-replaced
           releaseName: "App v__VERSION__"
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
@@ -200,7 +212,7 @@ jobs:
           projectPath: ${{ env.PROJECT_PATH }}
 
       - name: Build Dry-Run
-        if: ${{ inputs.dry-run }}
+        if: ${{ inputs.dry-run == true }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -217,55 +229,22 @@ jobs:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
-      - name: Upload artifacts to S3
-        if: inputs.dry-run == false
-        env:
-          EXTENSIONS: "exe tar.gz dmg"
-          AWS_ACCESS_KEY_ID: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
-          AWS_S3_BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
-        run: |
-          upload_file() {
-            local file="$1"
-            local s3_path="$2"
-            if [[ -f "$file" ]]; then
-              echo "Uploading: $file"
-              aws s3 cp --no-progress "$file" "$s3_path"
-            else
-              echo "Skipping: $file does not exist"
-            fi
-          }
+      - name: Upload Release artifacts to S3
+        if: ${{ inputs.dry-run == false }}
+        uses: ./.github/actions/upload-to-s3
+        with:
+          aws-access-key-id: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          s3-bucket: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
+          target-dir: ${{ github.event.repository.name }}
 
-          TARGET_DIR="${GITHUB_REPOSITORY##*/}"
-          BUNDLES=$(echo '${{ toJson(matrix.bundles) }}' | jq -r '.[]')
-          detected_version=$(find "$PROJECT_PATH" -type f -name 'Decentraland_*_*' | head -n1 | sed -E 's/^.*Decentraland_([0-9]+\.[0-9]+\.[0-9]+)_.*/\1/')
-          echo "Detected version: $detected_version"
-
-          for bundle in $BUNDLES; do
-            ARTIFACT_DIR="$PROJECT_PATH/target/release/bundle/$bundle"
-            if [[ -d "$ARTIFACT_DIR" ]]; then
-              echo "Renaming artifacts in $ARTIFACT_DIR"
-
-              for file in "$ARTIFACT_DIR"/*; do
-                if [[ -f "$file" && "$file" == *"Decentraland_${detected_version}_"* ]]; then
-                  filename=$(basename "$file")
-                  cleaned_name="${filename/Decentraland_${detected_version}_/Decentraland_}"
-                  echo "Renaming $filename -> $cleaned_name"
-                  mv "$ARTIFACT_DIR/$filename" "$ARTIFACT_DIR/$cleaned_name"
-                fi
-              done
-
-              cd "$ARTIFACT_DIR"
-              echo "Uploading artifacts from $ARTIFACT_DIR"
-              for ext in $EXTENSIONS; do
-                for file in *.$ext; do
-                  upload_file "$file" "s3://$AWS_S3_BUCKET/$TARGET_DIR/$file"
-                  upload_file "$file.sig" "s3://$AWS_S3_BUCKET/$TARGET_DIR/$file.sig"
-                done
-              done
-              cd -
-            fi
-          done
-
-          upload_file "./latest.json" "s3://$AWS_S3_BUCKET/$TARGET_DIR/latest.json"
+      - name: Upload Dry-Run artifacts to S3
+        if: ${{ inputs.dry-run == true }}
+        uses: ./.github/actions/upload-to-s3
+        with:
+          aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+          s3-bucket: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
+          target-dir: dry-run-${{ github.event.repository.name || 'unknown-repo' }}/pr-${{ github.event.pull_request.number || 'na' }}/run-${{ github.run_number || '0' }}-${{ github.run_id || 'id' }}
