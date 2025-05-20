@@ -79,7 +79,6 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
-
 defaults:
   run:
     shell: 'bash'
@@ -90,7 +89,6 @@ env:
 
 jobs:
   draft_release:
-
     permissions:
       contents: write # Allows this job to create releases
 
@@ -135,9 +133,7 @@ jobs:
         env:
           MODE: production
           DRY_RUN: ${{ inputs.dry-run }}
-          # Segment API Key
           VITE_SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
-          # Sentry AUTH Token
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
@@ -154,18 +150,8 @@ jobs:
           search_commit_body: true
           user_format_type: "json"
 
-      # Download 'SSLcom/esigner-codesign' to a folder called 'esigner-codesign' in the root of the project
-      - name: Checkout esigner-codesign repository (Windows)
-        if: ${{github.ref == 'refs/heads/main' && matrix.os == 'windows-latest' && !inputs.dry-run}}
-        uses: actions/checkout@v3
-        with:
-          repository: 'SSLcom/esigner-codesign'
-          path: esigner-codesign
-
-      - name: import Apple Developer Certificate
-        # Prevents keychain from locking automatically for 3600 seconds.
-        # temporary commenting this->> if: matrix.os == 'macos-latest' && github.ref == 'refs/heads/main' && !inputs.dry-run
-        if: matrix.os == 'macos-latest'  # MacOS Only <<-temporary adding this
+      - name: Import Apple Developer certificate
+        if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
@@ -179,9 +165,9 @@ jobs:
           security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
           security find-identity -v -p codesigning build.keychain
-  
-      - name: verify certificate
-        if: matrix.os == 'macos-latest' # MacOS Only
+
+      - name: Verify Apple certificate
+        if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
@@ -203,7 +189,7 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         with:
-          tagName: app-v__VERSION__ # __VERSION__ is auto-replaced
+          tagName: app-v__VERSION__
           releaseName: "App v__VERSION__"
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
@@ -228,6 +214,48 @@ jobs:
         with:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
+
+      - name: List Tauri build outputs
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
+        id: list-bundles
+        run: |
+          ls -R src-tauri/target/release/bundle
+          EXE=$(find src-tauri/target/release/bundle/nsis -name '*.exe' | head -n1)
+          echo "file_path=$EXE" >> $GITHUB_OUTPUT
+          echo "File path: $EXE"
+
+      - name: Sign Windows artifact
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
+        uses: sslcom/esigner-codesign@main
+        with:
+          command: sign
+          username: ${{ secrets.ES_USERNAME }}
+          password: "${{ secrets.ES_PASSWORD }}"
+          credential_id: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+          totp_secret: ${{ secrets.ES_TOTP_SECRET }}
+          file_path: ${{ steps.list-bundles.outputs.file_path }}
+          malware_block: false
+          override: true
+          signing_method: v2
+
+      - name: Verify Windows signature
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
+        run: |
+          SIGNED_EXE="${{ steps.list-bundles.outputs.file_path }}"
+          echo "Built artifact: $SIGNED_EXE"
+          if [[ -f "$SIGNED_EXE" ]]; then
+            echo "Checking signature..."
+            powershell.exe -Command "Get-AuthenticodeSignature '$SIGNED_EXE'"
+            SIGNATURE_STATUS=$(powershell.exe -Command "(Get-AuthenticodeSignature '$SIGNED_EXE').Status")
+            echo "Signature status: $SIGNATURE_STATUS"
+            if [[ "$SIGNATURE_STATUS" != "Valid" ]]; then
+              echo "❌ EXE is not signed or signature is invalid"
+              exit 1
+            fi
+          else
+            echo "❌ Signed EXE not found"
+            exit 1
+          fi
 
       - name: Upload Release artifacts to S3
         if: ${{ inputs.dry-run == false }}
