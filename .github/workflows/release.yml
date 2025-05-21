@@ -265,7 +265,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
           s3-bucket: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
-          target-dir: ${{ github.event.repository.name }}
+          target-dir: ${{ github.event.repository.name }}${{ (github.event_name != 'push' || github.ref_name != 'main') && '-temp' || '' }}
 
       - name: Upload Dry-Run artifacts to S3
         if: ${{ inputs.dry-run == true }}
