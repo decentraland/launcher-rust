@@ -1,10 +1,11 @@
-use dcl_launcher_core::log::error;
-use dcl_launcher_core::types::FlowError;
+use dcl_launcher_core::log::{error, info};
+use dcl_launcher_core::types::{FlowError, LauncherUpdate};
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::sync::Arc;
 use tauri::async_runtime::Mutex;
 use tauri::{ipc::Channel, App, AppHandle, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_updater::UpdaterExt;
 
 type MutState = Arc<Mutex<AppState>>;
 
@@ -17,12 +18,19 @@ impl EventChannel for StatusChannel {
     }
 }
 
-fn notify_error<T: EventChannel>(flow_error: &FlowError, channel: &T) {
-    let send_result = channel.send(flow_error.into());
-    if let Err(e) = send_result {
-        error!("Error during the message sending: {}", e.to_string());
+trait EventChannelExt: EventChannel {
+    fn send_silent(&self, status: types::Status) {
+        if let Err(e) = self.send(status) {
+            error!("Error during the message sending: {}", e.to_string());
+        }
+    }
+
+    fn notify_error(&self, flow_error: &FlowError) {
+        self.send_silent(flow_error.into());
     }
 }
+
+impl<T: EventChannel + ?Sized> EventChannelExt for T {}
 
 #[tauri::command]
 async fn launch(
@@ -35,18 +43,68 @@ async fn launch(
 
     let flow_state = guard.state.clone();
 
+    update_if_needed_and_restart(&app, &guard, &status_channel)
+        .await
+        .map_err(|e|{
+            error!("Cannot update the launcher: {}", e);
+
+            let flow_error = FlowError {
+                can_retry: true,
+                user_message: "Failed to update the launcher, please try again later".to_owned()
+            };
+            status_channel.notify_error(&flow_error);
+            e.to_string()
+        })?;
+
     guard
         .flow
         .launch(&status_channel, flow_state)
         .await
         .map_err(|e| {
-            notify_error(&e, &status_channel);
+            status_channel.notify_error(&e);
             e.user_message
         })?;
 
     guard.cleanup().await;
     app.cleanup_before_exit();
     app.exit(0);
+
+    Ok(())
+}
+
+async fn update_if_needed_and_restart(app: &AppHandle, app_state: &AppState, channel: &StatusChannel) -> tauri_plugin_updater::Result<()> {
+    channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
+    if let Some(update) = app.updater()?.check().await? {
+        let mut downloaded = 0;
+
+        let content = update.download(
+            |chunk_length, content_length| {
+                downloaded += chunk_length;
+                info!("downloaded {downloaded} from {content_length:?}");
+                match content_length {
+                    Some(l) => {
+                        let progress: u8 = ((downloaded as f64 / l as f64) * 100.0) as u8;
+                        channel.send_silent(LauncherUpdate::Downloading { progress: Some(progress) }.into());
+                    },
+                    None => {
+                        channel.send_silent(LauncherUpdate::Downloading { progress: None }.into());
+                    },
+                }
+            },
+            || {
+                info!("download finished");
+                channel.send_silent(LauncherUpdate::DownloadFinished.into());
+            },
+        ).await?;
+
+        channel.send_silent(LauncherUpdate::InstallingUpdate.into());
+        update.install(content)?;
+        info!("update installed");
+
+        channel.send_silent(LauncherUpdate::RestartingApp.into());
+        app_state.cleanup().await;
+        app.restart();
+    }
 
     Ok(())
 }
