@@ -72,6 +72,23 @@ export const Home: React.FC = memo(() => {
     switch (currentStatus.event) {
       case "state":
         switch (currentStatus.data.step.event) {
+          case "launcherUpdate": {
+            const data = currentStatus.data.step.data;
+            switch (data.event) {
+              case "checkingForUpdate":
+                return renderStep("Checking for update...");
+              case "downloading": {
+                const progress = data.data.progress ?? undefined;
+                return renderStep("Downloading update...", progress);
+              }
+              case "downloadFinished":
+                return renderStep("Update downloaded...");
+              case "installingUpdate":
+                return renderStep("Installing update...");
+              case "restartingApp":
+                return renderStep("Restarting app...");
+            }
+          }
           case "fetching":
             return renderFetchStep();
           case "downloading": {
