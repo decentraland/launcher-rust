@@ -3,7 +3,15 @@ export enum BuildType {
   Update = "update",
 }
 
+export type LauncherUpdate =
+  | { event: "checkingForUpdate"; data: {} }
+  | { event: "downloading"; data: { progress: number | null } }
+  | { event: "downloadFinished"; data: {} }
+  | { event: "installingUpdate"; data: {} }
+  | { event: "restartingApp"; data: {} };
+
 export type Step =
+  | { event: "launcherUpdate"; data: LauncherUpdate }
   | { event: "fetching"; data: {} }
   | { event: "downloading"; data: { progress: number; buildType: BuildType } }
   | { event: "installing"; data: { buildType: BuildType } }
