@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
 
-use crate::analytics::event::Event;
 use crate::analytics::Analytics;
+use crate::analytics::event::Event;
 use crate::flow::{LaunchFlow, LaunchFlowState};
-use crate::{analytics, logs, utils};
 use crate::installs;
 use crate::monitoring::Monitoring;
+use crate::{analytics, logs, utils};
+use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use log::{error, info};
 use utils::app_version;
 
 pub struct AppState {
@@ -27,8 +27,11 @@ impl AppState {
 
         Monitoring::try_setup_sentry().context("Cannot setup monitoring")?;
 
-        let mut analytics = analytics::Analytics::new_from_env(); 
-        analytics.track_and_flush_silent(Event::LAUNCHER_OPEN { version: utils::app_version().to_owned() })
+        let mut analytics = analytics::Analytics::new_from_env();
+        analytics
+            .track_and_flush_silent(Event::LAUNCHER_OPEN {
+                version: utils::app_version().to_owned(),
+            })
             .await;
 
         let analytics = Arc::new(Mutex::new(analytics));
@@ -39,7 +42,7 @@ impl AppState {
         let app_state = AppState {
             flow,
             state: Arc::new(Mutex::new(flow_state)),
-            analytics
+            analytics,
         };
 
         info!("Application setup complete");
@@ -49,6 +52,10 @@ impl AppState {
 
     pub async fn cleanup(&self) {
         let mut guard = self.analytics.lock().await;
-        guard.track_and_flush_silent(Event::LAUNCHER_CLOSE { version: utils::app_version().to_owned() }).await; 
+        guard
+            .track_and_flush_silent(Event::LAUNCHER_CLOSE {
+                version: utils::app_version().to_owned(),
+            })
+            .await;
     }
 }

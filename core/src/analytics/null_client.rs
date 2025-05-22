@@ -5,7 +5,6 @@ pub struct NullClient {
 }
 
 impl NullClient {
-    
     pub fn new() -> Self {
         NullClient {
             session_id: SessionId::random(),

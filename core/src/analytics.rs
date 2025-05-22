@@ -1,21 +1,24 @@
-pub mod event;
 mod client;
+pub mod event;
 mod null_client;
 mod session;
 
+use anyhow::{Context, Result};
 use client::AnalyticsClient;
+use event::Event;
 use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
-use event::Event;
-use anyhow::{Context, Result};
 
-use crate::{config, utils::{ app_version, get_os_name}};
+use crate::{
+    config,
+    utils::{app_version, get_os_name},
+};
 
 pub struct CreateArgs {
-    write_key: String, 
+    write_key: String,
     anonymous_id: String,
-    os: String, 
+    os: String,
     launcher_version: String,
 }
 
@@ -25,7 +28,6 @@ pub enum Analytics {
 }
 
 impl Analytics {
-
     pub fn new_from_env() -> Self {
         if std::env::args().any(|e| e == "--skip-analytics") {
             info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
@@ -36,7 +38,9 @@ impl Analytics {
 
         let args: Option<CreateArgs> = match write_key {
             Some(segment_key) => {
-                info!("SEGMENT_API_KEY is set successfully from environment variable, segment is available");                
+                info!(
+                    "SEGMENT_API_KEY is set successfully from environment variable, segment is available"
+                );
                 let anonymous_id = config::user_id().unwrap_or_else(|e| {
                     error!("Cannot get user id from config, fallback is used: {:#}", e);
                     "none".to_owned()
@@ -50,11 +54,13 @@ impl Analytics {
                     launcher_version,
                 };
                 Some(args)
-            },
+            }
             None => {
-                error!("SEGMENT_API_KEY is not set to environment variable, segment is not available");
+                error!(
+                    "SEGMENT_API_KEY is not set to environment variable, segment is not available"
+                );
                 None
-            },
+            }
         };
         Analytics::new(args)
     }
@@ -62,22 +68,24 @@ impl Analytics {
     pub fn new(args: Option<CreateArgs>) -> Self {
         match args {
             Some(a) => {
-                let client = AnalyticsClient::new(a.write_key, a.anonymous_id, a.os, a.launcher_version);
+                let client =
+                    AnalyticsClient::new(a.write_key, a.anonymous_id, a.os, a.launcher_version);
                 Analytics::Client(client)
-            },
-            None => {
-                Analytics::Null(NullClient::new())
-            },
+            }
+            None => Analytics::Null(NullClient::new()),
         }
     }
 
     async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         match self {
-            Self::Client(client) => { 
-                client.track_and_flush(event).await.context("Error on track_and_flush")?;
+            Self::Client(client) => {
+                client
+                    .track_and_flush(event)
+                    .await
+                    .context("Error on track_and_flush")?;
                 Ok(())
-            },
-            Self::Null(_) => Ok(())
+            }
+            Self::Null(_) => Ok(()),
         }
     }
 

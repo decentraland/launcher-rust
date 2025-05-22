@@ -87,7 +87,7 @@ pub async fn download_file<T: EventChannel>(
         };
         channel
             .send(event)
-            .context(format!("Cannot send event to channel"))?;
+            .context("Cannot send event to channel")?;
     }
 
     for task in tasks {
@@ -96,5 +96,5 @@ pub async fn download_file<T: EventChannel>(
 
     track_download_progress(analytics, url.to_owned(), downloaded, total_size).await;
 
-    return Ok(());
+    Ok(())
 }

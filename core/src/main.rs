@@ -2,7 +2,7 @@ use anyhow::{Context, Ok, Result};
 use dcl_launcher_core::{app::AppState, channel::EventChannel};
 use log::info;
 
-struct ConsoleChannel(); 
+struct ConsoleChannel();
 
 impl EventChannel for ConsoleChannel {
     fn send(&self, status: dcl_launcher_core::types::Status) -> Result<()> {
@@ -16,6 +16,9 @@ impl EventChannel for ConsoleChannel {
 async fn main() -> Result<()> {
     let app_state = AppState::setup().await.context("Cannot setup state")?;
     let channel = ConsoleChannel();
-    app_state.flow.launch(&channel, app_state.state).await
+    app_state
+        .flow
+        .launch(&channel, app_state.state)
+        .await
         .map_err(|e| anyhow::anyhow!(e.user_message))
 }

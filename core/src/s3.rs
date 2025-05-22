@@ -1,11 +1,10 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Result, anyhow};
+use reqwest;
 use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
-use reqwest;
 
 use crate::environment::AppEnvironment;
 use crate::utils::get_os_name;
-
 
 pub const RELEASE_PREFIX: &str = "@dcl/unity-explorer/releases";
 
@@ -16,8 +15,8 @@ struct LatestRelease {
 
 #[derive(Deserialize, Debug)]
 pub struct ReleaseResponse {
-  pub browser_download_url: String,
-  pub version: String,
+    pub browser_download_url: String,
+    pub version: String,
 }
 
 async fn fetch_explorer_latest_release() -> Result<LatestRelease> {
@@ -39,9 +38,11 @@ async fn fetch_explorer_latest_release() -> Result<LatestRelease> {
     let response = reqwest::get(&url).await?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("HTTP error with status code: {}", response.status()).into());
+        return Err(anyhow!(
+            "HTTP error with status code: {}",
+            response.status()
+        ));
     }
-
 
     let data = response.json::<LatestRelease>().await?;
     println!(

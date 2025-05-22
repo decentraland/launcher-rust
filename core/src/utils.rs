@@ -1,6 +1,6 @@
+use regex::Regex;
 use std::collections::HashMap;
 use std::env;
-use regex::Regex;
 
 pub fn get_os_name() -> &'static str {
     let os = std::env::consts::OS;
@@ -58,7 +58,7 @@ pub fn get_version(args: &HashMap<String, String>) -> Option<&String> {
         }
     }
 
-    return None;
+    None
 }
 
 pub fn app_version() -> &'static str {
@@ -76,10 +76,11 @@ pub fn should_run_dev_version(args: &HashMap<String, String>) -> bool {
     if let Some(value) = args.get("version") {
         return value == "dev";
     }
-    if let Some(_) = args.get("downloadedfilepath") {
+    if args.get("downloadedfilepath").is_some() {
         return true;
     }
-    return false;
+
+    false
 }
 
 /*
@@ -91,7 +92,7 @@ pub fn is_prerelease(args: &HashMap<String, String>) -> bool {
         return value == "true";
     }
 
-    return false;
+    false
 }
 
 /*

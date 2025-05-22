@@ -36,7 +36,9 @@ pub enum LauncherUpdate {
 
 impl Into<Status> for LauncherUpdate {
     fn into(self) -> Status {
-        Status::State { step: Step::LauncherUpdate(self) }
+        Status::State {
+            step: Step::LauncherUpdate(self),
+        }
     }
 }
 
@@ -50,7 +52,7 @@ pub enum BuildType {
 }
 
 pub struct FlowError {
-    pub user_message: String, 
+    pub user_message: String,
     pub can_retry: bool,
 }
 
