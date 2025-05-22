@@ -1,6 +1,6 @@
+use regex::Regex;
 use std::collections::HashMap;
 use std::env;
-use regex::Regex;
 
 pub fn get_os_name() -> &'static str {
     let os = std::env::consts::OS;

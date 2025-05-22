@@ -1,4 +1,3 @@
-
 use anyhow::{Context, Result};
 use log::error;
 use segment::message::{Track, User};
@@ -44,7 +43,7 @@ impl AnalyticsClient {
         properties["os"] = Value::String(self.os.clone());
         properties["launcherVersion"] = Value::String(self.launcher_version.clone());
         properties["sessionId"] = Value::String(self.session_id.value().to_owned());
-        properties["appId"] =Value::String(APP_ID.to_owned());
+        properties["appId"] = Value::String(APP_ID.to_owned());
 
         let user = User::AnonymousId {
             anonymous_id: self.anonymous_id.clone(),

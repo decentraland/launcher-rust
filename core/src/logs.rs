@@ -1,7 +1,7 @@
-use anyhow::Result;
-use sentry_log::SentryLogger;
 use crate::installs;
-use log::{info, Metadata, Record};
+use anyhow::Result;
+use log::{Metadata, Record, info};
+use sentry_log::SentryLogger;
 
 pub fn dispath_logs() -> Result<()> {
     let path = installs::log_file_path()?;
@@ -13,24 +13,23 @@ pub fn dispath_logs() -> Result<()> {
         // Perform allocation-free log formatting
         .format(|out, message, record| {
             out.finish(format_args!(
-                    "[{} {} {}] {}",
-                    humantime::format_rfc3339(std::time::SystemTime::now()),
-                    record.level(),
-                    record.target(),
-                    message
+                "[{} {} {}] {}",
+                humantime::format_rfc3339(std::time::SystemTime::now()),
+                record.level(),
+                record.target(),
+                message
             ))
         })
-    .level(log::LevelFilter::Trace)
+        .level(log::LevelFilter::Trace)
         .chain(std::io::stdout())
         .chain(log_file)
         .into_log();
-
 
     let sentry_log = new_sentry_log();
 
     let log = CombinedLog {
         fern: fern_log,
-        sentry: sentry_log
+        sentry: sentry_log,
     };
 
     log::set_boxed_logger(Box::new(log))?;
@@ -54,7 +53,6 @@ struct CombinedLog {
 }
 
 impl log::Log for CombinedLog {
-
     fn enabled(&self, metadata: &Metadata) -> bool {
         self.fern.enabled(metadata) && self.sentry.enabled(metadata)
     }
@@ -68,5 +66,4 @@ impl log::Log for CombinedLog {
         self.fern.flush();
         self.sentry.flush();
     }
-
 }

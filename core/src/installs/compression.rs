@@ -1,8 +1,15 @@
-use std::{fs, path::{Path, PathBuf}, io::{Cursor, Read, Write}};
-use zip::read::ZipArchive;
+use std::{
+    fs,
+    io::{Cursor, Read, Write},
+    path::{Path, PathBuf},
+};
 use tar::Archive;
+use zip::read::ZipArchive;
 
-pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub fn decompress_file(
+    source_path: &PathBuf,
+    destination_path: &PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
     if !source_path.exists() {
         return Err("Source file does not exist".into());
     }
@@ -30,7 +37,7 @@ pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> Res
     // If a TAR file was found inside the ZIP, extract it
     if let Some(tar_file_data) = tar_file_data {
         let mut archive = Archive::new(tar_file_data.as_slice());
-        
+
         // Extract the TAR contents
         for entry in archive.entries()? {
             let mut entry = entry?;
@@ -65,4 +72,3 @@ pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> Res
 
     Ok(())
 }
-

@@ -6,9 +6,9 @@ use std::os::windows::process::CommandExt;
 use windows_sys::Win32::System::Threading::{CREATE_NEW_CONSOLE, DETACHED_PROCESS};
 
 #[cfg(unix)]
-use std::os::unix::process::CommandExt;
-#[cfg(unix)]
 use nix::unistd::setsid;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 pub trait CommandExtDetached {
     fn detached(&mut self) -> &mut Self;
@@ -16,7 +16,6 @@ pub trait CommandExtDetached {
 
 impl CommandExtDetached for Command {
     fn detached(&mut self) -> &mut Self {
-
         #[cfg(unix)]
         {
             unsafe {

@@ -5,28 +5,26 @@ use log::error;
 static PROTOCOL_STATE: Mutex<Option<String>> = Mutex::new(None);
 const PROTOCOL_PREFIX: &str = "decentraland://";
 
-pub struct Protocol {
-
-}
+pub struct Protocol {}
 
 impl Protocol {
-
     pub fn value() -> Option<String> {
         let result = PROTOCOL_STATE.lock();
         match result {
-            Ok(guard) => {
-                guard.clone()
-            },
+            Ok(guard) => guard.clone(),
             Err(e) => {
                 error!("cannot acquire mutex of PROTOCOL_STATE: {}", e);
                 None
-            },
+            }
         }
     }
 
     pub fn try_assign_value(value: String) {
         if !value.starts_with(PROTOCOL_PREFIX) {
-            error!("trying assing value that doesn't start with prefix protocol {}: {}", PROTOCOL_PREFIX, value);
+            error!(
+                "trying assing value that doesn't start with prefix protocol {}: {}",
+                PROTOCOL_PREFIX, value
+            );
             return;
         }
 
@@ -35,10 +33,10 @@ impl Protocol {
             Ok(guard) => {
                 let mut guard = guard;
                 *guard = Some(value);
-            },
+            }
             Err(e) => {
                 error!("cannot acquire mutex of PROTOCOL_STATE: {}", e);
-            },
+            }
         }
     }
 
@@ -46,10 +44,13 @@ impl Protocol {
         for v in value {
             if v.starts_with(PROTOCOL_PREFIX) {
                 Self::try_assign_value(v.to_owned());
-                return
+                return;
             }
         }
 
-        error!("none of values starts with prefix protocol {}: {:?}", PROTOCOL_PREFIX, value);
+        error!(
+            "none of values starts with prefix protocol {}: {:?}",
+            PROTOCOL_PREFIX, value
+        );
     }
 }

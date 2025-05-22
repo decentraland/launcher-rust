@@ -1,24 +1,24 @@
+use crate::analytics::Analytics;
+use crate::analytics::event::Event;
+use crate::environment::AppEnvironment;
+use crate::processes::CommandExtDetached;
+use crate::protocols::Protocol;
+use anyhow::{Context, Error, Result, anyhow};
+use semver::Version;
+use serde_json::{Map, Value};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 use std::{fs, fs::create_dir_all};
-use std::path::PathBuf;
-use serde_json::{Map, Value};
-use anyhow::{anyhow, Context, Error, Result};
-use semver::Version;
 use tokio::sync::Mutex;
-use crate::analytics::Analytics;
-use crate::processes::CommandExtDetached;
-use crate::environment::AppEnvironment;
-use crate::protocols::Protocol;
-use crate::analytics::event::Event;
 
 #[cfg(target_os = "macos")]
 use std::os::unix::fs::PermissionsExt;
 
-pub mod downloads;
 pub mod compression;
+pub mod downloads;
 
 const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
@@ -53,8 +53,7 @@ pub fn config_path() -> PathBuf {
 }
 
 fn get_app_base_path() -> PathBuf {
-    dirs::data_local_dir()
-        .expect("Failed to get current directory")
+    dirs::data_local_dir().expect("Failed to get current directory")
 }
 
 fn explorer_path() -> PathBuf {
@@ -66,7 +65,7 @@ fn explorer_path() -> PathBuf {
 fn explorer_downloads_path() -> PathBuf {
     let dir = explorer_path().join("downloads");
     create_dir_all(&dir).expect("Cannot create downloads directory");
-    dir 
+    dir
 }
 
 fn explorer_version_path() -> PathBuf {
@@ -74,9 +73,11 @@ fn explorer_version_path() -> PathBuf {
 }
 
 fn explorer_latest_version_path() -> Result<PathBuf> {
-    let data  = get_version_data()?;
+    let data = get_version_data()?;
     let path = &data["path"];
-    let value = path.as_str().context("cannot get string value from path property")?;
+    let value = path
+        .as_str()
+        .context("cannot get string value from path property")?;
     Ok(PathBuf::from(value))
 }
 
@@ -89,9 +90,12 @@ fn get_version_data() -> Result<Value> {
     if path.exists() {
         let data = fs::read_to_string(path).context("Failed to read version.json")?;
         return serde_json::from_str::<serde_json::Value>(&data).context("Failed to parse JSON");
-    } 
+    }
 
-    Err(anyhow!(format!("File doesn't exists: {}", path.to_str().unwrap_or("no path"))))
+    Err(anyhow!(format!(
+        "File doesn't exists: {}",
+        path.to_str().unwrap_or("no path")
+    )))
 }
 
 fn get_version_data_or_empty() -> Value {
@@ -136,7 +140,7 @@ fn move_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
             if src_path.is_dir() {
                 move_recursive(&src_path, &dst_path)?;
             } else {
-                fs::rename(&src_path, &dst_path)?; 
+                fs::rename(&src_path, &dst_path)?;
             }
         }
 
@@ -163,10 +167,10 @@ async fn cleanup_versions() -> Result<()> {
         };
         let file_name = entry.file_name();
         let entry_name = file_name.to_str().context("no file name on entry")?;
-        
+
         if let Ok(version) = Version::parse(&entry_name) {
             installations.push(version);
-        } 
+        }
     }
 
     if installations.is_empty() {
@@ -193,12 +197,8 @@ async fn cleanup_versions() -> Result<()> {
 fn is_app_updated(version: &str) -> bool {
     let result = get_version_data();
     match result {
-        Ok(data) => {
-            data["version"] == version
-        },
-        Err(_) => {
-            false
-        },
+        Ok(data) => data["version"] == version,
+        Err(_) => false,
     }
 }
 
@@ -220,10 +220,14 @@ pub fn target_download_path() -> PathBuf {
 
 pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> Result<()> {
     let branch_path = explorer_path().join(version);
-    let file_path = downloaded_file_path.unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
+    let file_path = downloaded_file_path
+        .unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
 
     if !file_path.exists() {
-        return Err(anyhow!(format!("Downloaded explorer file not found: {}", file_path.to_string_lossy())));
+        return Err(anyhow!(format!(
+            "Downloaded explorer file not found: {}",
+            file_path.to_string_lossy()
+        )));
     }
 
     compression::decompress_file(&file_path, &branch_path)
@@ -231,7 +235,6 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 
     #[cfg(target_os = "macos")]
     {
-
         let from = &branch_path.join("build");
         let to = &branch_path;
 
@@ -247,7 +250,12 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     }
 
     let mut version_data = get_version_data_or_empty();
-    version_data[version] = Value::from(std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?.as_secs().to_string());
+    version_data[version] = Value::from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)?
+            .as_secs()
+            .to_string(),
+    );
     if version != "dev" {
         version_data["version"] = Value::String(version.to_string());
     }
@@ -261,21 +269,20 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 
     // Remove the downloaded file
     fs::remove_file(file_path).context("Cannot remove the downloaded file")?;
-    cleanup_versions().await.context("Cannot clean up the old versions")?;
+    cleanup_versions()
+        .await
+        .context("Cannot clean up the old versions")?;
 
     Ok(())
 }
 
 pub struct InstallsHub {
-   analytics: Arc<Mutex<Analytics>>,
+    analytics: Arc<Mutex<Analytics>>,
 }
 
 impl InstallsHub {
-
     pub fn new(analytics: Arc<Mutex<Analytics>>) -> Self {
-        InstallsHub {
-            analytics,
-        }
+        InstallsHub { analytics }
     }
 
     async fn explorer_params(&self) -> Vec<String> {
@@ -299,20 +306,19 @@ impl InstallsHub {
 
     fn readable_version(version: Option<&str>) -> String {
         match version {
-            Some(v) => {v.to_owned()},
+            Some(v) => v.to_owned(),
             None => {
                 let result = get_version_data_or_empty();
                 if let Some(map) = result.as_object() {
                     if let Some(v) = map.get("version") {
                         if let Some(str_version) = v.as_str() {
-                            return str_version.to_owned()
+                            return str_version.to_owned();
                         }
                     }
-
                 }
-            
+
                 "latest".to_owned()
-            },
+            }
         }
     }
 
@@ -324,13 +330,22 @@ impl InstallsHub {
     pub async fn launch_explorer(&self, preferred_version: Option<&str>) -> Result<()> {
         let readable_version = InstallsHub::readable_version(preferred_version.clone());
 
-        self.send_analytics_event(Event::LAUNCH_CLIENT_START { version: readable_version.clone() }).await;
+        self.send_analytics_event(Event::LAUNCH_CLIENT_START {
+            version: readable_version.clone(),
+        })
+        .await;
         let result = self.launch_explorer_internal(preferred_version).await;
         if let Err(e) = &result {
-            self.send_analytics_event(Event::LAUNCH_CLIENT_ERROR { version: readable_version, error: e.to_string() }).await;
-        }
-        else {
-            self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS { version: readable_version }).await;
+            self.send_analytics_event(Event::LAUNCH_CLIENT_ERROR {
+                version: readable_version,
+                error: e.to_string(),
+            })
+            .await;
+        } else {
+            self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS {
+                version: readable_version,
+            })
+            .await;
         }
 
         result
@@ -354,12 +369,15 @@ impl InstallsHub {
         }
 
         // Ensure binary is executable
-        fs::metadata(&explorer_bin_path)
-            .context("Failed to access explorer binary")?;
+        fs::metadata(&explorer_bin_path).context("Failed to access explorer binary")?;
 
         // Prepare explorer parameters
         let explorer_params = self.explorer_params().await;
-        log::info!("Opening Explorer at {:?} with params: {:?}", explorer_bin_path, explorer_params);
+        log::info!(
+            "Opening Explorer at {:?} with params: {:?}",
+            explorer_bin_path,
+            explorer_params
+        );
 
         let mut child = Command::new(&explorer_bin_path)
             .current_dir(&explorer_bin_dir)
@@ -369,7 +387,12 @@ impl InstallsHub {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| anyhow!("Failed to start explorer process: {}", e))
-            .with_context(|| format!("Dir: {:?}, Bin: {:?} Args: {:?}", explorer_bin_dir, explorer_bin_path, explorer_params))?;
+            .with_context(|| {
+                format!(
+                    "Dir: {:?}, Bin: {:?} Args: {:?}",
+                    explorer_bin_dir, explorer_bin_path, explorer_params
+                )
+            })?;
 
         log::info!("Process run with id: {}", child.id());
 
@@ -385,7 +408,10 @@ impl InstallsHub {
         thread::sleep(ALIVE_TIMEOUT);
         let exit_code = child.try_wait()?;
         if let Some(exit_status) = exit_code {
-            return Err(anyhow!("Process died shorly after its start with code: {}", exit_status));
+            return Err(anyhow!(
+                "Process died shorly after its start with code: {}",
+                exit_status
+            ));
         }
 
         Ok(())
