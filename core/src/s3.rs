@@ -38,7 +38,10 @@ async fn fetch_explorer_latest_release() -> Result<LatestRelease> {
     let response = reqwest::get(&url).await?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("HTTP error with status code: {}", response.status()).into());
+        return Err(anyhow!(
+            "HTTP error with status code: {}",
+            response.status()
+        ));
     }
 
     let data = response.json::<LatestRelease>().await?;

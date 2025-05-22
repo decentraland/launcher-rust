@@ -22,7 +22,11 @@ pub mod downloads;
 
 const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
+
+#[cfg(target_os = "macos")]
 const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
+
+#[cfg(target_os = "windows")]
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
 
 pub fn log_file_path() -> Result<PathBuf> {
@@ -168,7 +172,7 @@ async fn cleanup_versions() -> Result<()> {
         let file_name = entry.file_name();
         let entry_name = file_name.to_str().context("no file name on entry")?;
 
-        if let Ok(version) = Version::parse(&entry_name) {
+        if let Ok(version) = Version::parse(entry_name) {
             installations.push(version);
         }
     }
@@ -178,7 +182,7 @@ async fn cleanup_versions() -> Result<()> {
     }
 
     // Sort versions
-    installations.sort_by(|a, b| a.cmp(&b));
+    installations.sort_by(|a, b| a.cmp(b));
 
     // Keep the latest 2 versions and delete the rest
     for version in installations.iter().take(installations.len() - 2) {
@@ -231,7 +235,7 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     }
 
     compression::decompress_file(&file_path, &branch_path)
-        .map_err(|e| anyhow::Error::msg(format!("Cannot decompress file {}", e.to_string())))?;
+        .map_err(|e| anyhow::Error::msg(format!("Cannot decompress file {}", e)))?;
 
     #[cfg(target_os = "macos")]
     {
@@ -328,7 +332,7 @@ impl InstallsHub {
     }
 
     pub async fn launch_explorer(&self, preferred_version: Option<&str>) -> Result<()> {
-        let readable_version = InstallsHub::readable_version(preferred_version.clone());
+        let readable_version = InstallsHub::readable_version(preferred_version);
 
         self.send_analytics_event(Event::LAUNCH_CLIENT_START {
             version: readable_version.clone(),
@@ -380,7 +384,7 @@ impl InstallsHub {
         );
 
         let mut child = Command::new(&explorer_bin_path)
-            .current_dir(&explorer_bin_dir)
+            .current_dir(explorer_bin_dir)
             .args(&explorer_params)
             .detached()
             .stdout(Stdio::piped())

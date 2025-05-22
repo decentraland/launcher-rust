@@ -68,6 +68,7 @@ pub trait LaunchStep {
     }
 }
 
+#[derive(Default)]
 pub struct LaunchFlowState {
     latest_release: Option<ReleaseResponse>,
     recent_download: Option<RecentDownload>,
@@ -78,16 +79,6 @@ pub struct LaunchFlowState {
 struct RecentDownload {
     version: String,
     downloaded_path: PathBuf,
-}
-
-impl Default for LaunchFlowState {
-    fn default() -> Self {
-        LaunchFlowState {
-            latest_release: None,
-            recent_download: None,
-            attempts: Attempts::default(),
-        }
-    }
 }
 
 pub struct LaunchFlow {
@@ -218,12 +209,11 @@ struct DownloadStep {
 impl DownloadStep {
     pub fn mode() -> BuildType {
         let any_installed = crate::installs::is_explorer_installed(None);
-        let mode = if any_installed {
+        if any_installed {
             BuildType::Update
         } else {
             BuildType::New
-        };
-        mode
+        }
     }
 
     async fn version_from_url(&self, url: &str) -> Result<String> {

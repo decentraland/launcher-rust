@@ -15,12 +15,13 @@ pub trait CommandExtDetached {
 }
 
 impl CommandExtDetached for Command {
+    #[allow(deprecated)]
     fn detached(&mut self) -> &mut Self {
         #[cfg(unix)]
         {
             unsafe {
                 self.before_exec(|| {
-                    unsafe { setsid() };
+                    let _ = setsid();
                     Ok(())
                 });
             }
