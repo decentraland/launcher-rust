@@ -71,4 +71,23 @@ runs:
           fi
         done
 
+        DOMAIN="https://explorer-artifacts.decentraland.org"
+        TARGET_PATH="launcher-rust"
+        FILENAME_TAR="Decentraland.app.tar.gz"
+        FILENAME_EXE="Decentraland_x64-setup.exe"
+
+        if [[ -f "./latest.json" ]]; then
+          echo "Found latest.json at ./latest.json"
+
+          jq --arg tar_url "$DOMAIN/$TARGET_PATH/$FILENAME_TAR" \
+             --arg exe_url "$DOMAIN/$TARGET_PATH/$FILENAME_EXE" \
+            '.platforms["darwin-aarch64"].url = $tar_url |
+             .platforms["windows-x86_64"].url = $exe_url' \
+            ./latest.json > ./latest.json.tmp
+
+          mv ./latest.json.tmp ./latest.json
+          echo "Updated URLs in latest.json:"
+          cat ./latest.json
+        fi
+
         upload_file "./latest.json" "s3://${{ inputs.s3-bucket }}/${{ inputs.target-dir }}/latest.json"
