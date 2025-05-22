@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Context, Ok, Result};
 use log::info;
-use segment::message;
-use std::{error::Error, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use crate::{analytics::{self, event::Event, Analytics}, attempts::Attempts, environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, FlowError, Status, Step, StepError}};
+use crate::{analytics::{event::Event, Analytics}, attempts::Attempts, environment::AppEnvironment, installs::{self, InstallsHub}, s3::{self, ReleaseResponse}, types::{BuildType, FlowError, Status, Step, StepError}};
 use crate::channel::EventChannel;
 use regex::Regex;
 use sentry_anyhow::capture_anyhow;
