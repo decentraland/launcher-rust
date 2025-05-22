@@ -194,8 +194,8 @@ impl DownloadStep {
             None => {
                 let mut guard = self.analytics.lock().await;
                 guard
-                    .track_and_flush(Event::DOWNLOAD_VERSION_ERROR { version: None, error: "No version provided".to_owned() })
-                    .await?;
+                    .track_and_flush_silent(Event::DOWNLOAD_VERSION_ERROR { version: None, error: "No version provided".to_owned() })
+                    .await;
                 Err(anyhow!("url doesn't contain version"))
             },
         }
@@ -244,17 +244,17 @@ impl LaunchStep for DownloadStep {
 
                 {
                     let mut analytics = self.analytics.lock().await;
-                    analytics.track_and_flush(Event::DOWNLOAD_VERSION { version: version.clone() }).await?;
+                    analytics.track_and_flush_silent(Event::DOWNLOAD_VERSION { version: version.clone() }).await;
                 }
 
                 let result = installs::downloads::download_file(url, path, channel, &mode, self.analytics.clone()).await;
 
                 let mut analytics = self.analytics.lock().await;
                 if let Err(e) = result {
-                    analytics.track_and_flush(Event::DOWNLOAD_VERSION_ERROR { version: Some(version.clone()), error: e.to_string() }).await?;
+                    analytics.track_and_flush_silent(Event::DOWNLOAD_VERSION_ERROR { version: Some(version.clone()), error: e.to_string() }).await;
                 }
                 else {
-                    analytics.track_and_flush(Event::DOWNLOAD_VERSION_SUCCESS { version: version.clone() }).await?;
+                    analytics.track_and_flush_silent(Event::DOWNLOAD_VERSION_SUCCESS { version: version.clone() }).await;
                 }
 
                 guard.recent_download = Some(
@@ -318,19 +318,19 @@ impl LaunchStep for InstallStep {
         match recent_download {
             Some(download) => {
                 let version = download.version.clone();
-                analytics.track_and_flush(Event::INSTALL_VERSION_START { version: version.clone() }).await?;
+                analytics.track_and_flush_silent(Event::INSTALL_VERSION_START { version: version.clone() }).await;
                 let result = InstallStep::execute_internal(download).await;
                 if let Err(e) = &result {
-                    analytics.track_and_flush(Event::INSTALL_VERSION_ERROR { version: Some(version), error: e.to_string() }).await?;
+                    analytics.track_and_flush_silent(Event::INSTALL_VERSION_ERROR { version: Some(version), error: e.to_string() }).await;
                 }
                 else {
-                    analytics.track_and_flush(Event::INSTALL_VERSION_SUCCESS { version }).await?;
+                    analytics.track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version }).await;
                 }
                 result
             },
             None => {
                 const ERROR_MESSAGE: &str = "Downloaded archive not found";
-                analytics.track_and_flush(Event::INSTALL_VERSION_ERROR { version: None, error: ERROR_MESSAGE.to_owned() }).await?;
+                analytics.track_and_flush_silent(Event::INSTALL_VERSION_ERROR { version: None, error: ERROR_MESSAGE.to_owned() }).await;
                 Err(anyhow!(ERROR_MESSAGE))
             },
         }
