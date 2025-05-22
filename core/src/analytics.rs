@@ -71,13 +71,19 @@ impl Analytics {
         }
     }
 
-    pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
+    async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         match self {
             Self::Client(client) => { 
                 client.track_and_flush(event).await.context("Error on track_and_flush")?;
                 Ok(())
             },
             Self::Null(_) => Ok(())
+        }
+    }
+
+    pub async fn track_and_flush_silent(&mut self, event: Event) {
+        if let Err(e) = self.track_and_flush(event).await {
+            error!("Cannot send event: {:#?}", e)
         }
     }
 

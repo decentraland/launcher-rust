@@ -24,9 +24,7 @@ async fn track_download_progress(
         size_remaining: total_size - downloaded,
     };
     let mut analytics_guard = analytics.lock().await;
-    if let Err(e) = analytics_guard.track_and_flush(progress_event).await {
-        log::error!("Failed to track download progress event: {}", e);
-    }
+    analytics_guard.track_and_flush_silent(progress_event).await;
 }
 
 pub async fn download_file<T: EventChannel>(

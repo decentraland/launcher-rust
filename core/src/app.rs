@@ -28,9 +28,8 @@ impl AppState {
         Monitoring::try_setup_sentry().context("Cannot setup monitoring")?;
 
         let mut analytics = analytics::Analytics::new_from_env(); 
-        analytics.track_and_flush(Event::LAUNCHER_OPEN { version: utils::app_version().to_owned() })
-            .await
-            .context("Cannot flush open event")?; 
+        analytics.track_and_flush_silent(Event::LAUNCHER_OPEN { version: utils::app_version().to_owned() })
+            .await;
 
         let analytics = Arc::new(Mutex::new(analytics));
         let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(analytics.clone())));
@@ -50,9 +49,6 @@ impl AppState {
 
     pub async fn cleanup(&self) {
         let mut guard = self.analytics.lock().await;
-        let result = guard.track_and_flush(Event::LAUNCHER_CLOSE { version: utils::app_version().to_owned() }).await; 
-        if let Err(e) = result {
-            error!("Cannot flush launcher close event {}", e);
-        }
+        guard.track_and_flush_silent(Event::LAUNCHER_CLOSE { version: utils::app_version().to_owned() }).await; 
     }
 }
