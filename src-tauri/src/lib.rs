@@ -43,18 +43,9 @@ async fn launch(
 
     let flow_state = guard.state.clone();
 
-    update_if_needed_and_restart(&app, &guard, &status_channel)
-        .await
-        .map_err(|e|{
-            error!("Cannot update the launcher: {}", e);
-
-            let flow_error = FlowError {
-                can_retry: true,
-                user_message: "Failed to update the launcher, please try again later".to_owned()
-            };
-            status_channel.notify_error(&flow_error);
-            e.to_string()
-        })?;
+    if let Err(e) = update_if_needed_and_restart(&app, &guard, &status_channel).await {
+        error!("Cannot update the launcher: {}", e);
+    }
 
     guard
         .flow
