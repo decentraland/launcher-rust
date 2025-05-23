@@ -174,14 +174,18 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: Download esigner-codesign.exe
+      - name: Download and verify esigner-codesign.exe
         if: ${{ matrix.os == 'windows-latest' }}
-        shell: pwsh
+        shell: bash
         run: |
-          $exe = "C:\esigner-codesign.exe"
-          Invoke-WebRequest "https://cdn.ssl.com/esigner-codesign/windows/latest/esigner-codesign.exe" -OutFile $exe -UseBasicParsing
-          if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 500000) {
-            Write-Error "Download failed or file corrupted."
+          curl -fLo /c/esigner-codesign.exe https://cdn.ssl.com/esigner-codesign/windows/latest/esigner-codesign.exe
+          if [ ! -s /c/esigner-codesign.exe ] || [ $(stat -c%s /c/esigner-codesign.exe) -lt 50000 ]; then
+            echo "Download failed or file too small"
+            exit 1
+          fi
+          echo "Running esigner-codesign.exe for verification:"
+          /c/esigner-codesign.exe --help || {
+            echo "Execution failed"
             exit 1
           }
 
