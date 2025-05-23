@@ -174,7 +174,7 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: Download and setup esigner-codesign
+      - name: Setup esigner-codesign
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
@@ -182,7 +182,14 @@ jobs:
           $exe = "C:\esigner\esigner-codesign.exe"
           Invoke-WebRequest "https://github.com/SSLcom/esigner-codesign/archive/refs/tags/v1.3.1.zip" -OutFile $zip
           Expand-Archive $zip -DestinationPath "C:\esigner" -Force
-          Copy-Item (Get-ChildItem -Recurse -Filter esigner-codesign.exe -Path "C:\esigner").FullName $exe -Force
+
+          $found = Get-ChildItem -Recurse -Path "C:\esigner" -Filter "esigner-codesign.exe" | Select-Object -First 1
+          if (-not $found) {
+            Write-Error "❌ esigner-codesign.exe not found in extracted folder"
+            exit 1
+          }
+
+          Copy-Item $found.FullName $exe -Force
           & $exe --help; if ($LASTEXITCODE) { exit 1 }
 
       - name: Build Release
