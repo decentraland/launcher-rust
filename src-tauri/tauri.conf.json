@@ -56,7 +56,7 @@
     },
     "updater": {
       "endpoints": [
-        "http://explorer-artifacts.decentraland.org/launcher-rust/latest.json"
+        "https://explorer-artifacts.decentraland.org/launcher-rust/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdEQUYxQkMxMUZCMTk1N0MKUldSOGxiRWZ3UnV2ZlIrVWl2Z3B1QVNzYStXOGc2eFBiNVhEZ1F3QTdnS01MWHg2OVNla1Z6bzkK"
     }
