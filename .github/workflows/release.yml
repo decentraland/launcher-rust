@@ -174,29 +174,25 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: Download and verify esigner-codesign
+      - name: Download CodeSignTool
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
-          $zip = "C:\esigner.zip"
-          $dist = "C:\esigner"
-          $entry = "C:\esigner\esigner-codesign-1.3.1\dist\index.js"
+          $version = "v1.3.0"
+          $url = "https://github.com/SSLcom/CodeSignTool/releases/download/$version/CodeSignTool-$version-windows.zip"
+          $zipPath = "C:\CodeSignTool.zip"
+          $extractPath = "C:\CodeSignTool"
 
-          Invoke-WebRequest "https://github.com/SSLcom/esigner-codesign/archive/refs/tags/v1.3.1.zip" -OutFile $zip
-          Expand-Archive $zip -DestinationPath $dist -Force
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
 
-          if (-not (Test-Path $entry)) {
-            Write-Error "index.js not found at $entry"
+          $jarPath = Get-ChildItem -Path $extractPath -Filter "code_sign_tool-*.jar" -Recurse | Select-Object -First 1
+          if (-not $jarPath) {
+            Write-Error "CodeSignTool JAR not found"
             exit 1
           }
 
-          echo "ESIGNER_JS_PATH=$entry" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-          node $entry --help
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "esigner index.js failed to run"
-            exit 1
-          }
+          echo "CODESIGN_JAR=$($jarPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
