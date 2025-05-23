@@ -20,7 +20,7 @@ def bump_version(version, bump_type):
 def update_version_toml(toml_path, bump_type):
 
     if sys.platform == 'darwin':
-        print('MacOS is not supported for TOML modification, for some reason the toml package breaks the file, please update the version manually')
+        print('MacOS is not supported for TOML modification, for some reason the toml package breaks the file, please update the version manually in ./core and ./src-tauri toml files')
         return
 
     try:
