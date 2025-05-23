@@ -41,6 +41,13 @@
       }
     },
     "windows": {
+      "signCommand": {
+        "cmd": "powershell",
+        "args": [
+          "-Command",
+          "./scripts/sign.ps1 %1"
+        ]
+      },
       "nsis": {
         "installerIcon": "./icons/icon.ico"
       }

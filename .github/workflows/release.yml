@@ -174,6 +174,12 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
+      - name: Download eSigner CLI
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: |
+          curl -Lo esigner-codesign.exe https://cdn.ssl.com/esigner-codesign/windows/latest/esigner-codesign.exe
+          echo "$PWD" >> $GITHUB_PATH
+
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
         uses: tauri-apps/tauri-action@v0
@@ -188,10 +194,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          WINDOWS_CERTIFICATE_ID: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
-          WINDOWS_CERTIFICATE_USERNAME: ${{ secrets.ES_USERNAME }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ES_PASSWORD }}
-          WINDOWS_CERTIFICATE_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+          ES_USERNAME: ${{ secrets.ES_USERNAME }}
+          ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+          ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
         with:
           tagName: app-v__VERSION__
           releaseName: "App v__VERSION__"
