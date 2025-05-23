@@ -188,6 +188,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          WINDOWS_CERTIFICATE_ID: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+          WINDOWS_CERTIFICATE_USERNAME: ${{ secrets.ES_USERNAME }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          WINDOWS_CERTIFICATE_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
         with:
           tagName: app-v__VERSION__
           releaseName: "App v__VERSION__"
@@ -224,19 +228,19 @@ jobs:
           echo "file_path=$EXE" >> $GITHUB_OUTPUT
           echo "File path: $EXE"
 
-      - name: Sign Windows artifact
-        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
-        uses: sslcom/esigner-codesign@main
-        with:
-          command: sign
-          username: ${{ secrets.ES_USERNAME }}
-          password: "${{ secrets.ES_PASSWORD }}"
-          credential_id: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
-          totp_secret: ${{ secrets.ES_TOTP_SECRET }}
-          file_path: ${{ steps.list-bundles.outputs.file_path }}
-          malware_block: false
-          override: true
-          signing_method: v2
+      # - name: Sign Windows artifact
+      #   if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
+      #   uses: sslcom/esigner-codesign@main
+      #   with:
+      #     command: sign
+      #     username: ${{ secrets.ES_USERNAME }}
+      #     password: "${{ secrets.ES_PASSWORD }}"
+      #     credential_id: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+      #     totp_secret: ${{ secrets.ES_TOTP_SECRET }}
+      #     file_path: ${{ steps.list-bundles.outputs.file_path }}
+      #     malware_block: false
+      #     override: true
+      #     signing_method: v2
 
       - name: Verify Windows signature
         if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}

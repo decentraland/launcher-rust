@@ -3,3 +3,4 @@ dist/
 *.pem
 *.key
 output.log
+.DS_Store
