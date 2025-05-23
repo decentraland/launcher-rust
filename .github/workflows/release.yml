@@ -182,8 +182,8 @@ jobs:
           $exe = "C:\esigner\esigner-codesign.exe"
           Invoke-WebRequest "https://github.com/SSLcom/esigner-codesign/archive/refs/tags/v1.3.1.zip" -OutFile $zip
           Expand-Archive $zip -DestinationPath "C:\esigner" -Force
-          Copy-Item -Path (Get-ChildItem -Recurse -Filter esigner-codesign.exe -Path "C:\esigner").FullName -Destination $exe -Force
-          & $exe --help || (Write-Error "❌ esigner-codesign failed to run" ; exit 1)
+          Copy-Item (Get-ChildItem -Recurse -Filter esigner-codesign.exe -Path "C:\esigner").FullName $exe -Force
+          & $exe --help; if ($LASTEXITCODE) { exit 1 }
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
