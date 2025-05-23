@@ -45,7 +45,8 @@
         "cmd": "powershell",
         "args": [
           "-ExecutionPolicy", "Bypass",
-          "-File", "./scripts/sign.ps1", "%1"
+          "-File", "scripts/sign.ps1",
+          "%1"
         ]
       },
       "nsis": {

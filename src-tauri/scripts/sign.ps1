@@ -1,8 +1,12 @@
-param($filePath)
+param (
+  [string]$filePath
+)
 
-Write-Host "Signing $filePath using esigner-codesign..."
-Write-Host "Current directory: $(Get-Location)"
+Write-Host "🚀 Starting signing process..."
+Write-Host "🔹 File path: $filePath"
+Write-Host "🔹 Current directory: $(Get-Location)"
 
+# Execute the signing tool
 .\esigner-codesign.exe sign `
   --username "$env:ES_USERNAME" `
   --password "$env:ES_PASSWORD" `
@@ -13,16 +17,23 @@ Write-Host "Current directory: $(Get-Location)"
   --malware_block false `
   --signing_method v2
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Signing failed with exit code $LASTEXITCODE"
-    exit $LASTEXITCODE
-} else {
-    Write-Host "Signing completed successfully."
+$exitCode = $LASTEXITCODE
+
+if ($exitCode -ne 0) {
+  Write-Host "❌ esigner-codesign failed with exit code $exitCode"
+  exit $exitCode
 }
-# Check if the file is signed
-$signature = Get-AuthenticodeSignature $filePath
-if ($signature.Status -eq 'Valid') {
-    Write-Host "The file is signed."
-} else {
-    Write-Host "The file is not signed. Status: $($signature.Status)"
+
+Write-Host "✅ Signing tool completed successfully."
+
+# Validate signature
+$signature = Get-AuthenticodeSignature -FilePath $filePath
+Write-Host "🔍 Signature Status: $($signature.Status)"
+Write-Host "🔍 Signer Certificate: $($signature.SignerCertificate.Subject)"
+
+if ($signature.Status -ne 'Valid') {
+  Write-Host "❌ Signature is NOT valid. Failing the step."
+  exit 1
 }
+
+Write-Host "✅ File is properly signed."
