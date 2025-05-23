@@ -177,8 +177,7 @@ jobs:
       - name: Download eSigner CLI
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
-          curl -Lo esigner-codesign.exe https://cdn.ssl.com/esigner-codesign/windows/latest/esigner-codesign.exe
-          echo "$PWD" >> $GITHUB_PATH
+          curl -Lo C:\esigner-codesign.exe https://cdn.ssl.com/esigner-codesign/windows/latest/esigner-codesign.exe
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
