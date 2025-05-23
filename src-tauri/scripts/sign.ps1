@@ -6,7 +6,7 @@ Write-Host "Starting signing process..."
 Write-Host "File path: $filePath"
 Write-Host "Current directory: $(Get-Location)"
 
-$js = "C:\esigner\dist\index.js"
+$js = "C:\esigner\esigner-codesign-1.3.1\dist\index.js"
 
 if (-not (Test-Path $js)) {
   Write-Error "Signing script not found at $js"
