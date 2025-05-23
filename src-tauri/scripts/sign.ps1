@@ -6,14 +6,15 @@ Write-Host "Starting signing process..."
 Write-Host "File path: $filePath"
 Write-Host "Current directory: $(Get-Location)"
 
-$esigner = "C:\esigner\esigner-codesign.exe"
+$js = "C:\esigner\dist\index.js"
 
-if (-Not (Test-Path $esigner)) {
-  Write-Error "esigner-codesign.exe not found at $esigner"
+if (-not (Test-Path $js)) {
+  Write-Error "Signing script not found at $js"
   exit 1
 }
 
-& "C:\esigner\esigner-codesign.exe" sign `
+# Run the Node-based signing tool
+node $js sign `
   --username "$env:ES_USERNAME" `
   --password "$env:ES_PASSWORD" `
   --credential_id "$env:WINDOWS_CREDENTIAL_ID_SIGNER" `
@@ -24,10 +25,11 @@ if (-Not (Test-Path $esigner)) {
   --signing_method v2
 
 if ($LASTEXITCODE -ne 0) {
-  Write-Error "esigner-codesign.exe failed with exit code $LASTEXITCODE"
+  Write-Error "Signing process failed with exit code $LASTEXITCODE"
   exit $LASTEXITCODE
 }
 
+# Validate the signature
 $signature = Get-AuthenticodeSignature -FilePath $filePath
 Write-Host "Signature Status: $($signature.Status)"
 Write-Host "Signer Certificate: $($signature.SignerCertificate.Subject)"
@@ -37,4 +39,4 @@ if ($signature.Status -ne 'Valid') {
   exit 1
 }
 
-Write-Host "File is properly signed."
+Write-Host "File is properly signed and verified."

@@ -174,23 +174,30 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: Setup esigner-codesign
+      - name: Download and prepare esigner CLI
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
           $zip = "C:\esigner.zip"
-          $exe = "C:\esigner\esigner-codesign.exe"
+          $dist = "C:\esigner\dist"
+          $entry = "C:\esigner\dist\index.js"
+
           Invoke-WebRequest "https://github.com/SSLcom/esigner-codesign/archive/refs/tags/v1.3.1.zip" -OutFile $zip
           Expand-Archive $zip -DestinationPath "C:\esigner" -Force
 
-          $found = Get-ChildItem -Recurse -Path "C:\esigner" -Filter "esigner-codesign.exe" | Select-Object -First 1
-          if (-not $found) {
-            Write-Error "❌ esigner-codesign.exe not found in extracted folder"
+          $jsPath = Get-ChildItem -Path "C:\esigner" -Recurse -Filter index.js | Select-Object -First 1
+          if (-not $jsPath) {
+            Write-Error "❌ index.js not found"
             exit 1
           }
 
-          Copy-Item $found.FullName $exe -Force
-          & $exe --help; if ($LASTEXITCODE) { exit 1 }
+          echo "ESIGNER_JS_PATH=$($jsPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          node $jsPath.FullName --help
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "❌ esigner index.js failed to run"
+            exit 1
+          }
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
