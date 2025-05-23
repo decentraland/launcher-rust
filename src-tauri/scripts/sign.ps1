@@ -1,6 +1,7 @@
 param($filePath)
 
 Write-Host "Signing $filePath using esigner-codesign..."
+Write-Host "Current directory: $(Get-Location)"
 
 .\esigner-codesign.exe sign `
   --username "$env:ES_USERNAME" `

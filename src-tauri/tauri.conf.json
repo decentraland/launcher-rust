@@ -44,8 +44,8 @@
       "signCommand": {
         "cmd": "powershell",
         "args": [
-          "-Command",
-          "./scripts/sign.ps1 %1"
+          "-ExecutionPolicy", "Bypass",
+          "-File", "./scripts/sign.ps1", "%1"
         ]
       },
       "nsis": {
