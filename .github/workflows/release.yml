@@ -174,26 +174,16 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: Download esigner-codesign.exe with PowerShell
+      - name: Download and setup esigner-codesign
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
-          $url = "https://cdn.ssl.com/esigner-codesign/windows/latest/esigner-codesign.exe"
-          $out = "C:\esigner-codesign.exe"
-          $headers = @{ "User-Agent" = "Mozilla/5.0" }
-
-          Invoke-WebRequest -Uri $url -OutFile $out -Headers $headers -UseBasicParsing
-
-          if (-not (Test-Path $out) -or (Get-Item $out).Length -lt 50000) {
-            Write-Error "Download failed or file too small"
-            exit 1
-          }
-
-          & $out --help
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "esigner-codesign.exe execution failed"
-            exit 1
-          }
+          $zip = "C:\esigner.zip"
+          $exe = "C:\esigner\esigner-codesign.exe"
+          Invoke-WebRequest "https://github.com/SSLcom/esigner-codesign/archive/refs/tags/v1.3.1.zip" -OutFile $zip
+          Expand-Archive $zip -DestinationPath "C:\esigner" -Force
+          Copy-Item -Path (Get-ChildItem -Recurse -Filter esigner-codesign.exe -Path "C:\esigner").FullName -Destination $exe -Force
+          & $exe --help || (Write-Error "❌ esigner-codesign failed to run" ; exit 1)
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
