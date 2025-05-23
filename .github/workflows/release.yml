@@ -174,10 +174,16 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: Download eSigner CLI
+      - name: Download esigner-codesign.exe
         if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
         run: |
-          curl -Lo C:\esigner-codesign.exe https://cdn.ssl.com/esigner-codesign/windows/latest/esigner-codesign.exe
+          $exe = "C:\esigner-codesign.exe"
+          Invoke-WebRequest "https://cdn.ssl.com/esigner-codesign/windows/latest/esigner-codesign.exe" -OutFile $exe -UseBasicParsing
+          if (-not (Test-Path $exe) -or (Get-Item $exe).Length -lt 500000) {
+            Write-Error "Download failed or file corrupted."
+            exit 1
+          }
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
