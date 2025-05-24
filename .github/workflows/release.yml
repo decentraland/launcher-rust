@@ -189,12 +189,11 @@ jobs:
           Get-Content $signScript | ForEach-Object { Write-Host $_ }
           Write-Host "-----------------------------"
 
-          # Normalize and re-write the file using StreamWriter with BOM
-          $normalizedContent = (Get-Content -Raw $signScript) -replace "`r?`n", "`r`n"
-          $utf8BOM = New-Object System.Text.UTF8Encoding($true)
-          $writer = [System.IO.StreamWriter]::new($signScript, $false, $utf8BOM)
-          $writer.Write($normalizedContent)
-          $writer.Close()
+          # Normalize line endings to CRLF and encode with UTF-8 BOM
+          $scriptPath = $signScript.ToString()
+          $rawText = [System.IO.File]::ReadAllText($scriptPath) -replace "`r?`n", "`r`n"
+          $utf8bom = New-Object System.Text.UTF8Encoding($true)
+          [System.IO.File]::WriteAllText($scriptPath, $rawText, $utf8bom)
 
           # Re-check for BOM
           $bytes = [System.IO.File]::ReadAllBytes($signScript)
@@ -205,7 +204,7 @@ jobs:
           }
 
           # Invoke script
-          & "pwsh" "-NoProfile" "-ExecutionPolicy" "Bypass" "-File" "$signScript" "$testFile"
+          pwsh -NoProfile -ExecutionPolicy Bypass -Command "& { & '$signScript' '$testFile' }"
 
       - uses: swatinem/rust-cache@v2
         with:
