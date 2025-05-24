@@ -174,7 +174,7 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: Download CodeSignTool
+      - name: Download and test CodeSignTool
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
         run: |
@@ -193,6 +193,19 @@ jobs:
           }
 
           echo "CODESIGN_JAR=$($jarPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "CodeSignTool JAR set to: $($jarPath.FullName)"
+
+          # Run a dry test of the signing script with a known file (e.g., PowerShell itself)
+          $testFile = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+          Write-Host "Testing sign.ps1 with: $testFile"
+
+          $signScript = "$(Resolve-Path src-tauri\scripts\sign.ps1)"
+          if (-not (Test-Path $signScript)) {
+            Write-Error "sign.ps1 not found at $signScript"
+            exit 1
+          }
+
+          powershell -ExecutionPolicy Bypass -File $signScript $testFile
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}

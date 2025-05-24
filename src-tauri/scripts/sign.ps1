@@ -1,9 +1,18 @@
+trap { 
+  Write-Error "SIGN SCRIPT: Unexpected failure - $($_.Exception.Message)"
+  Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
+  exit 1 
+}
+
 param (
   [string]$filePath
 )
 
+Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
 Write-Host "Signing file: $filePath"
 Write-Host "Current dir: $(Get-Location)"
+Write-Host "JAR: $env:CODESIGN_JAR"
+Get-ChildItem -Recurse | Out-String | Write-Host
 
 $jar = $env:CODESIGN_JAR
 if (-not $jar -or -not (Test-Path $jar)) {
