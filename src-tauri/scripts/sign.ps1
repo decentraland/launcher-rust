@@ -20,15 +20,15 @@ if (-not $jar -or -not (Test-Path $jar)) {
   exit 1
 }
 
-java -jar $jar sign `
-  --username "$env:ES_USERNAME" `
-  --password "$env:ES_PASSWORD" `
-  --credential_id "$env:WINDOWS_CREDENTIAL_ID_SIGNER" `
-  --totp_secret "$env:ES_TOTP_SECRET" `
-  --file_path "$filePath" `
-  --override true `
-  --malware_block false `
-  --signing_method v2
+& java -jar $jar sign `
+  "--username=$env:ES_USERNAME" `
+  "--password=$env:ES_PASSWORD" `
+  "--credential_id=$env:WINDOWS_CREDENTIAL_ID_SIGNER" `
+  "--totp_secret=$env:ES_TOTP_SECRET" `
+  "--file_path=$filePath" `
+  "--override=true" `
+  "--malware_block=false" `
+  "--signing_method=v2"
 
 if ($LASTEXITCODE -ne 0) {
   Write-Error "Signing failed with exit code $LASTEXITCODE"
