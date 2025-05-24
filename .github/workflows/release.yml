@@ -109,6 +109,51 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Diagnose sign.ps1 script
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          $script = Resolve-Path "src-tauri\scripts\sign.ps1"
+          Write-Host "Script path: $script"
+
+          # Check extension
+          if ($script -notmatch '\.ps1$') {
+            Write-Warning "File does not end with .ps1 extension"
+          } else {
+            Write-Host "✅ .ps1 extension confirmed"
+          }
+
+          # Check file attributes
+          $file = Get-Item $script
+          Write-Host "File attributes: $($file.Attributes)"
+          if (-not $file.Exists) {
+            Write-Error "File does not exist"
+          }
+
+          # Check execution policy
+          Write-Host "ExecutionPolicy: $(Get-ExecutionPolicy -List | Out-String)"
+
+          # Check for rogue characters
+          $bytes = [System.IO.File]::ReadAllBytes($script)
+          if ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            Write-Host "✅ UTF-8 BOM detected"
+          } else {
+            Write-Warning "⚠️ No UTF-8 BOM detected"
+          }
+
+          # Search for non-printable characters (e.g., zero-width space)
+          $raw = Get-Content $script -Raw
+          $zwsp = $raw -match "\u200B"
+          if ($zwsp) {
+            Write-Warning "⚠️ Zero-width space detected in script"
+          } else {
+            Write-Host "✅ No zero-width space found"
+          }
+
+          # Output first few lines
+          Write-Host "Preview of script (first 10 lines):"
+          Get-Content $script -TotalCount 10 | ForEach-Object { Write-Host $_ }
+
       - name: Download and test CodeSignTool
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
@@ -144,10 +189,12 @@ jobs:
           Get-Content $signScript | ForEach-Object { Write-Host $_ }
           Write-Host "-----------------------------"
 
-          # Normalize line endings to CRLF and save with UTF-8 BOM
-          $utf8BOM = [System.Text.UTF8Encoding]::new($true)
-          $content = (Get-Content $signScript -Raw) -replace "`r?`n", "`r`n"
-          [System.IO.File]::WriteAllText($signScript, $content, $utf8BOM)
+          # Normalize and re-write the file using StreamWriter with BOM
+          $normalizedContent = (Get-Content -Raw $signScript) -replace "`r?`n", "`r`n"
+          $utf8BOM = New-Object System.Text.UTF8Encoding($true)
+          $writer = [System.IO.StreamWriter]::new($signScript, $false, $utf8BOM)
+          $writer.Write($normalizedContent)
+          $writer.Close()
 
           # Re-check for BOM
           $bytes = [System.IO.File]::ReadAllBytes($signScript)
