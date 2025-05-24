@@ -140,11 +140,18 @@ jobs:
             exit 1
           }
 
-          $normalized = (Get-Content -Raw $signScript) -replace "`r?`n", "`r`n"
-          Set-Content -Path $signScript -Value $normalized -Encoding UTF8
+          # $normalized = (Get-Content -Raw $signScript) -replace "`r?`n", "`r`n"
+          # Set-Content -Path $signScript -Value $normalized -Encoding UTF8
           Write-Host "----- sign.ps1 Preview -----"
           Get-Content $signScript | ForEach-Object { Write-Host $_ }
           Write-Host "-----------------------------"
+          $file = Get-Content -Path $signScript -Encoding Byte
+          if ($file[0] -eq 0xEF -and $file[1] -eq 0xBB -and $file[2] -eq 0xBF) {
+            Write-Host "UTF-8 BOM detected"
+          } else {
+            Write-Warning "No BOM detected"
+          }
+
           pwsh -NoProfile -ExecutionPolicy Bypass -File "$signScript" "$testFile"
 
       - uses: swatinem/rust-cache@v2
