@@ -145,7 +145,7 @@ jobs:
           Write-Host "----- sign.ps1 Preview -----"
           Get-Content $signScript | ForEach-Object { Write-Host $_ }
           Write-Host "-----------------------------"
-          $file = Get-Content -Path $signScript -Encoding Byte
+          $file = [System.IO.File]::ReadAllBytes($signScript)
           if ($file[0] -eq 0xEF -and $file[1] -eq 0xBB -and $file[2] -eq 0xBF) {
             Write-Host "UTF-8 BOM detected"
           } else {
