@@ -140,6 +140,7 @@ jobs:
             exit 1
           }
 
+          (Get-Content -Raw $signScript) -replace "`n", "`r`n" | Set-Content -NoNewline $signScript
           pwsh -NoProfile -ExecutionPolicy Bypass -File "$signScript" "$testFile"
 
       - uses: swatinem/rust-cache@v2
