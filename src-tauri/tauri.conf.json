@@ -44,8 +44,8 @@
       "signCommand": {
         "cmd": "powershell",
         "args": [
-          "Start-Process",
-          "D:\\a\\launcher-rust\\launcher-rust\\src-tauri\\scripts\\sign.ps1",
+          "-ExecutionPolicy", "Bypass",
+          "-File", "D:\\a\\launcher-rust\\launcher-rust\\src-tauri\\scripts\\sign.ps1",
           "%1"
         ]
       },
