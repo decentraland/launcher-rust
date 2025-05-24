@@ -1,12 +1,12 @@
+param (
+  [string]$filePath
+)
+
 trap { 
   Write-Error "SIGN SCRIPT: Unexpected failure - $($_.Exception.Message)"
   Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
   exit 1 
 }
-
-param (
-  [string]$filePath
-)
 
 Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
 Write-Host "Signing file: $filePath"

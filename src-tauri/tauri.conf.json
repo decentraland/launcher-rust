@@ -42,10 +42,11 @@
     },
     "windows": {
       "signCommand": {
-        "cmd": "powershell",
+        "cmd": "pwsh",
         "args": [
+          "-NoProfile",
           "-ExecutionPolicy", "Bypass",
-          "D:\\a\\launcher-rust\\launcher-rust\\src-tauri\\scripts\\sign.ps1",
+          "-File", "D:\\a\\launcher-rust\\launcher-rust\\src-tauri\\scripts\\sign.ps1",
           "%1"
         ]
       },
