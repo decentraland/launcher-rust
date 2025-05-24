@@ -96,8 +96,8 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - os: macos-latest
-            bundles: [dmg, macos]
+          # - os: macos-latest
+          #   bundles: [dmg, macos]
           - os: windows-latest
             bundles: [nsis]
 
@@ -134,31 +134,31 @@ jobs:
           $testFile = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
           Write-Host "Testing sign.ps1 with: $testFile"
 
-          $signScript = "$(Resolve-Path src-tauri\scripts\sign.ps1)"
+          $signScript = Resolve-Path "src-tauri\scripts\sign.ps1"
           if (-not (Test-Path $signScript)) {
             Write-Error "sign.ps1 not found at $signScript"
             exit 1
           }
 
-          # $normalized = (Get-Content -Raw $signScript) -replace "`r?`n", "`r`n"
-          # Set-Content -Path $signScript -Value $normalized -Encoding UTF8
           Write-Host "----- sign.ps1 Preview -----"
           Get-Content $signScript | ForEach-Object { Write-Host $_ }
           Write-Host "-----------------------------"
 
-          # Normalize to UTF-8 with BOM
-          $content = Get-Content $signScript -Raw
-          [System.IO.File]::WriteAllText($signScript, $content, [System.Text.Encoding]::UTF8)
+          # Normalize line endings to CRLF and save with UTF-8 BOM
+          $utf8BOM = [System.Text.UTF8Encoding]::new($true)
+          $content = (Get-Content $signScript -Raw) -replace "`r?`n", "`r`n"
+          [System.IO.File]::WriteAllText($signScript, $content, $utf8BOM)
 
           # Re-check for BOM
-          $file = [System.IO.File]::ReadAllBytes($signScript)
-          if ($file[0] -eq 0xEF -and $file[1] -eq 0xBB -and $file[2] -eq 0xBF) {
-            Write-Host "✅ UTF-8 BOM confirmed"
+          $bytes = [System.IO.File]::ReadAllBytes($signScript)
+          if ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            Write-Host "UTF-8 BOM confirmed"
           } else {
-            Write-Warning "⚠️ No BOM found after normalization"
+            Write-Warning "No BOM found after normalization"
           }
 
-          pwsh -NoProfile -ExecutionPolicy Bypass -File "$signScript" "$testFile"
+          # Invoke script
+          & "pwsh" "-NoProfile" "-ExecutionPolicy" "Bypass" "-File" "$signScript" "$testFile"
 
       - uses: swatinem/rust-cache@v2
         with:
