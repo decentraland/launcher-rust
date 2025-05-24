@@ -109,6 +109,39 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Download and test CodeSignTool
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          $version = "v1.3.0"
+          $url = "https://github.com/SSLcom/CodeSignTool/releases/download/$version/CodeSignTool-$version-windows.zip"
+          $zipPath = "C:\CodeSignTool.zip"
+          $extractPath = "C:\CodeSignTool"
+
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+          $jarPath = Get-ChildItem -Path $extractPath -Filter "code_sign_tool-*.jar" -Recurse | Select-Object -First 1
+          if (-not $jarPath) {
+            Write-Error "CodeSignTool JAR not found"
+            exit 1
+          }
+
+          echo "CODESIGN_JAR=$($jarPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "CodeSignTool JAR set to: $($jarPath.FullName)"
+
+          # Run a dry test of the signing script with a known file (e.g., PowerShell itself)
+          $testFile = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+          Write-Host "Testing sign.ps1 with: $testFile"
+
+          $signScript = "$(Resolve-Path src-tauri\scripts\sign.ps1)"
+          if (-not (Test-Path $signScript)) {
+            Write-Error "sign.ps1 not found at $signScript"
+            exit 1
+          }
+
+          & $signScript $testFile
+
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -173,39 +206,6 @@ jobs:
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
-
-      - name: Download and test CodeSignTool
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: pwsh
-        run: |
-          $version = "v1.3.0"
-          $url = "https://github.com/SSLcom/CodeSignTool/releases/download/$version/CodeSignTool-$version-windows.zip"
-          $zipPath = "C:\CodeSignTool.zip"
-          $extractPath = "C:\CodeSignTool"
-
-          Invoke-WebRequest -Uri $url -OutFile $zipPath
-          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-
-          $jarPath = Get-ChildItem -Path $extractPath -Filter "code_sign_tool-*.jar" -Recurse | Select-Object -First 1
-          if (-not $jarPath) {
-            Write-Error "CodeSignTool JAR not found"
-            exit 1
-          }
-
-          echo "CODESIGN_JAR=$($jarPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "CodeSignTool JAR set to: $($jarPath.FullName)"
-
-          # Run a dry test of the signing script with a known file (e.g., PowerShell itself)
-          $testFile = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
-          Write-Host "Testing sign.ps1 with: $testFile"
-
-          $signScript = "$(Resolve-Path src-tauri\scripts\sign.ps1)"
-          if (-not (Test-Path $signScript)) {
-            Write-Error "sign.ps1 not found at $signScript"
-            exit 1
-          }
-
-          powershell -ExecutionPolicy Bypass -File $signScript $testFile
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
