@@ -175,11 +175,10 @@ jobs:
           echo "CODESIGN_JAR=$($jarPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "CodeSignTool JAR set to: $($jarPath.FullName)"
 
-          # Run a dry test of the signing script with a known file (e.g., PowerShell itself)
           $testFile = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
           Write-Host "Testing sign.ps1 with: $testFile"
 
-          $signScript = Resolve-Path "src-tauri\scripts\sign.ps1"
+          $signScript = (Resolve-Path "src-tauri\scripts\sign.ps1").ToString()
           if (-not (Test-Path $signScript)) {
             Write-Error "sign.ps1 not found at $signScript"
             exit 1
@@ -189,13 +188,10 @@ jobs:
           Get-Content $signScript | ForEach-Object { Write-Host $_ }
           Write-Host "-----------------------------"
 
-          # Normalize line endings to CRLF and encode with UTF-8 BOM
-          $scriptPath = $signScript.ToString()
-          $rawText = [System.IO.File]::ReadAllText($scriptPath) -replace "`r?`n", "`r`n"
+          $rawText = [System.IO.File]::ReadAllText($signScript) -replace "`r?`n", "`r`n"
           $utf8bom = New-Object System.Text.UTF8Encoding($true)
-          [System.IO.File]::WriteAllText($scriptPath, $rawText, $utf8bom)
+          [System.IO.File]::WriteAllText($signScript, $rawText, $utf8bom)
 
-          # Re-check for BOM
           $bytes = [System.IO.File]::ReadAllBytes($signScript)
           if ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
             Write-Host "UTF-8 BOM confirmed"
@@ -203,8 +199,8 @@ jobs:
             Write-Warning "No BOM found after normalization"
           }
 
-          # Invoke script
-          & $signScript $testFile
+          Write-Host "Invoking sign.ps1 via Start-Process..."
+          Start-Process pwsh -Wait -NoNewWindow -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $signScript, $testFile
 
       - uses: swatinem/rust-cache@v2
         with:
