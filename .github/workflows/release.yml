@@ -140,7 +140,11 @@ jobs:
             exit 1
           }
 
-          (Get-Content -Raw $signScript) -replace "`n", "`r`n" | Set-Content -NoNewline $signScript
+          $normalized = (Get-Content -Raw $signScript) -replace "`r?`n", "`r`n"
+          Set-Content -Path $signScript -Value $normalized -Encoding UTF8
+          Write-Host "----- sign.ps1 Preview -----"
+          Get-Content $signScript | ForEach-Object { Write-Host $_ }
+          Write-Host "-----------------------------"
           pwsh -NoProfile -ExecutionPolicy Bypass -File "$signScript" "$testFile"
 
       - uses: swatinem/rust-cache@v2
