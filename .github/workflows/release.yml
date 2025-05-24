@@ -145,11 +145,17 @@ jobs:
           Write-Host "----- sign.ps1 Preview -----"
           Get-Content $signScript | ForEach-Object { Write-Host $_ }
           Write-Host "-----------------------------"
+
+          # Normalize to UTF-8 with BOM
+          $content = Get-Content $signScript -Raw
+          [System.IO.File]::WriteAllText($signScript, $content, [System.Text.Encoding]::UTF8)
+
+          # Re-check for BOM
           $file = [System.IO.File]::ReadAllBytes($signScript)
           if ($file[0] -eq 0xEF -and $file[1] -eq 0xBB -and $file[2] -eq 0xBF) {
-            Write-Host "UTF-8 BOM detected"
+            Write-Host "✅ UTF-8 BOM confirmed"
           } else {
-            Write-Warning "No BOM detected"
+            Write-Warning "⚠️ No BOM found after normalization"
           }
 
           pwsh -NoProfile -ExecutionPolicy Bypass -File "$signScript" "$testFile"

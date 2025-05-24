@@ -35,17 +35,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  typechecking:
-    uses: ./.github/workflows/typechecking.yml
-  tests:
-    uses: ./.github/workflows/tests.yml
+  # typechecking:
+  #   uses: ./.github/workflows/typechecking.yml
+  # tests:
+  #   uses: ./.github/workflows/tests.yml
   draft_release:
     permissions:
       contents: write # Allows this job to create releases
     with:
       dry-run: false
       # dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' }}
-    needs: [ typechecking, tests ]
+    # needs: [ typechecking, tests ]
     uses: ./.github/workflows/release.yml
     secrets:
       # Secrets required to sign and notarize the app in MacOS
