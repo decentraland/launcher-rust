@@ -140,7 +140,7 @@ jobs:
             exit 1
           }
 
-          & $signScript $testFile
+          pwsh -NoProfile -ExecutionPolicy Bypass -File "$signScript" "$testFile"
 
       - uses: swatinem/rust-cache@v2
         with:
