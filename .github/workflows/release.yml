@@ -204,7 +204,7 @@ jobs:
           }
 
           # Invoke script
-          pwsh -NoProfile -ExecutionPolicy Bypass -Command "& { & '$signScript' '$testFile' }"
+          & $signScript $testFile
 
       - uses: swatinem/rust-cache@v2
         with:
