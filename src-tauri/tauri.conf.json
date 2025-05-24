@@ -42,9 +42,10 @@
     },
     "windows": {
       "signCommand": {
-        "cmd": "powershell",
+        "cmd": "pwsh",
         "args": [
-          "-NoProfile", "-ExecutionPolicy", "Bypass",
+          "-NoProfile",
+          "-ExecutionPolicy", "Bypass",
           "-File", "src-tauri\\scripts\\sign.ps1",
           "$1"
         ]
