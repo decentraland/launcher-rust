@@ -174,6 +174,34 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
+      - name: Download CodeSignTool
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          $extractPath = "C:\CodeSignTool"
+          $version = "v1.3.2"
+          $url = "https://github.com/SSLcom/CodeSignTool/releases/download/$version/CodeSignTool-$version-windows.zip"
+          $zipPath = "C:\CodeSignTool.zip"
+
+          Invoke-WebRequest -Uri $url -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+          $jarPath = Get-ChildItem -Path $extractPath -Filter "code_sign_tool-*.jar" -Recurse | Select-Object -First 1
+          $javaExe = Get-ChildItem -Path $extractPath -Filter java.exe -Recurse | Select-Object -First 1
+          if (-not $jarPath) {
+            Write-Error "Could not find CodeSignTool JAR"
+            exit 1
+          }
+          if (-not $javaExe) {
+            Write-Error "Could not find java.exe"
+            exit 1
+          }
+
+          Write-Output "CODESIGN_JAR=$($jarPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Output "CODESIGN_JAVA=$($javaExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Set CODESIGN_JAR to $($jarPath.FullName)"
+          Write-Host "Set CODESIGN_JAVA to $($javaExe.FullName)"
+
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
         uses: tauri-apps/tauri-action@v0
@@ -188,6 +216,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ES_USERNAME: ${{ secrets.ES_USERNAME }}
+          ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+          ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+          CODESIGN_JAR: ${{ env.CODESIGN_JAR }}
+          CODESIGN_JAVA: ${{ env.CODESIGN_JAVA }}
         with:
           tagName: app-v__VERSION__
           releaseName: "App v__VERSION__"
@@ -215,33 +249,10 @@ jobs:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
-      - name: List Tauri build outputs
-        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
-        id: list-bundles
-        run: |
-          ls -R src-tauri/target/release/bundle
-          EXE=$(find src-tauri/target/release/bundle/nsis -name '*.exe' | head -n1)
-          echo "file_path=$EXE" >> $GITHUB_OUTPUT
-          echo "File path: $EXE"
-
-      - name: Sign Windows artifact
-        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
-        uses: sslcom/esigner-codesign@main
-        with:
-          command: sign
-          username: ${{ secrets.ES_USERNAME }}
-          password: "${{ secrets.ES_PASSWORD }}"
-          credential_id: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
-          totp_secret: ${{ secrets.ES_TOTP_SECRET }}
-          file_path: ${{ steps.list-bundles.outputs.file_path }}
-          malware_block: false
-          override: true
-          signing_method: v2
-
       - name: Verify Windows signature
         if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         run: |
-          SIGNED_EXE="${{ steps.list-bundles.outputs.file_path }}"
+          SIGNED_EXE=$(find src-tauri/target/release/bundle/nsis -name '*.exe' | head -n1)
           echo "Built artifact: $SIGNED_EXE"
           if [[ -f "$SIGNED_EXE" ]]; then
             echo "Checking signature..."
