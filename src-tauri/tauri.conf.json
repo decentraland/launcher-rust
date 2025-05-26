@@ -41,6 +41,14 @@
       }
     },
     "windows": {
+      "signCommand": {
+        "cmd": "pwsh",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy", "Bypass",
+          "-File", "D:\\a\\launcher-rust\\launcher-rust\\src-tauri\\scripts\\sign.ps1", "%1"
+        ]
+      },
       "nsis": {
         "installerIcon": "./icons/icon.ico"
       }
