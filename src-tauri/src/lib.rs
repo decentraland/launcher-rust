@@ -1,6 +1,8 @@
 use dcl_launcher_core::log::{error, info};
 use dcl_launcher_core::types::{FlowError, LauncherUpdate};
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
+use tauri::Url;
+use std::env;
 use std::sync::Arc;
 use tauri::async_runtime::Mutex;
 use tauri::{ipc::Channel, App, AppHandle, Manager, State};
@@ -63,9 +65,41 @@ async fn launch(
     Ok(())
 }
 
+fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
+    const KEY_UPDATER_URL: &str = "--use-updater-url";
+    const KEY_ALWAYS_TRIGGER_UPDATER: &str = "--always-trigger-updater";
+
+    let args: Vec<String> = env::args().collect();
+
+    if let Some(pos) = args.iter().position(|a| a == KEY_UPDATER_URL) {
+        let url = args.get(pos + 1);
+        match url {
+            Some(url) => {
+                info!("Use custom updater by flag {} with its value {}", KEY_UPDATER_URL, url);
+                let parsed_url: Url = Url::parse(url)?;
+
+                let builder = app.updater_builder()
+                    .endpoints(vec![parsed_url])?;
+
+                if args.iter().any(|a| a == KEY_ALWAYS_TRIGGER_UPDATER) {
+                    info!("Always trigger updater by flag {}", KEY_UPDATER_URL);
+                    return builder.version_comparator(|_, _| true).build();
+                }
+
+                return builder.build()
+            }
+            None => {
+                error!("Flag {} is provided but its value is missed", KEY_UPDATER_URL)
+            },
+        }
+    }
+
+    app.updater()
+}
+
 async fn update_if_needed_and_restart(app: &AppHandle, app_state: &AppState, channel: &StatusChannel) -> tauri_plugin_updater::Result<()> {
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
-    if let Some(update) = app.updater()?.check().await? {
+    if let Some(update) = current_updater(app)?.check().await? {
         let mut downloaded = 0;
 
         let content = update.download(
