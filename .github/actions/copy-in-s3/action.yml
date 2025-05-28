@@ -1,0 +1,50 @@
+name: Copy artifacts in S3
+
+inputs:
+  aws-access-key-id:
+    required: true
+    description: "AWS Access Key ID"
+  aws-secret-access-key:
+    required: true
+    description: "AWS Secret Access Key"
+  aws-region:
+    required: true
+    description: "AWS Region"
+  s3-bucket:
+    required: true
+    description: "S3 Bucket name"
+  source-dir:
+    required: true
+    description: "Source S3 directory"
+  dest-dir:
+    required: true
+    description: "Destination S3 directory"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Copy artifacts in S3
+      shell: bash
+      run: |
+        set -e
+
+        export AWS_ACCESS_KEY_ID="${{ inputs.aws-access-key-id }}"
+        export AWS_SECRET_ACCESS_KEY="${{ inputs.aws-secret-access-key }}"
+        export AWS_DEFAULT_REGION="${{ inputs.aws-region }}"
+
+        # List files in source-dir
+        echo "Listing files to copy from: ${{
+          inputs.source-dir }}/"
+        files=$(aws s3 ls "s3://${{ inputs.s3-bucket }}/${{ inputs.source-dir }}/" | awk '{print $4}' || true)
+        if [[ -z "$files" ]]; then
+          echo "::error title=Copy artifacts in S3::No files found to copy in ./${{ inputs.source-dir }}/"
+          exit 1
+        fi
+
+        for file in $files; do
+          echo "Copying $file"
+          aws s3 cp "s3://${{ inputs.s3-bucket }}/${{ inputs.source-dir }}/$file" \
+                   "s3://${{ inputs.s3-bucket }}/${{ inputs.dest-dir }}/$file" --no-progress > /dev/null
+        done
+
+        echo "Copy complete."

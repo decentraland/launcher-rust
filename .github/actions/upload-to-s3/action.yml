@@ -64,7 +64,6 @@ runs:
             for ext in $EXTENSIONS; do
               for file in *.$ext; do
                 upload_file "$file" "s3://${{ inputs.s3-bucket }}/${{ inputs.target-dir }}/$file"
-                upload_file "$file.sig" "s3://${{ inputs.s3-bucket }}/${{ inputs.target-dir }}/$file.sig"
               done
             done
             cd -

@@ -1,0 +1,39 @@
+name: Get Short SHA
+
+description: |
+  Consistently gets the short (7-char) commit SHA for both pull_request and other workflows,
+  or uses a manually supplied value if provided.
+
+inputs:
+  manual_short_sha:
+    description: "Optional 7-char commit SHA provided manually"
+    required: false
+
+outputs:
+  short_sha:
+    description: "The 7-character commit SHA"
+    value: ${{ steps.set_short_sha.outputs.short_sha }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: set_short_sha
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.manual_short_sha }}" ]; then
+          short_sha="${{ inputs.manual_short_sha }}"
+          if [[ ! "$short_sha" =~ ^[0-9a-fA-F]{7}$ ]]; then
+            echo "❌ Error: Provided manual_short_sha '$short_sha' is not a valid 7-character SHA."
+            exit 1
+          fi
+          echo "Using manually provided short SHA: $short_sha"
+        else
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            short_sha=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
+          else
+            short_sha=$(echo "$GITHUB_SHA" | cut -c1-7)
+          fi
+          echo "Calculated short SHA: $short_sha"
+        fi
+        echo "short_sha=$short_sha" >> $GITHUB_OUTPUT
+        echo "Short SHA: $short_sha"
