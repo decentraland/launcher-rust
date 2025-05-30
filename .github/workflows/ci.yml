@@ -16,6 +16,7 @@ on:
       - '!.github/workflows/tests.yml'
       - '!.github/workflows/release.yml'
       - '!.github/workflows/pr-deploy-status.yml'
+      - '!.github/workflows/auto-label-issues.yml'
       - '**.md'
       - .editorconfig
       - .gitignore
@@ -29,6 +30,7 @@ on:
       - '!.github/workflows/tests.yml'
       - '!.github/workflows/release.yml'
       - '!.github/workflows/pr-deploy-status.yml'
+      - '!.github/workflows/auto-label-issues.yml'
       - '**.md'
       - .editorconfig
       - .gitignore
