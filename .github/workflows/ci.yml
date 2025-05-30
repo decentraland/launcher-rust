@@ -12,6 +12,7 @@ on:
       - '!.github/workflows/typechecking.yml'
       - '!.github/workflows/tests.yml'
       - '!.github/workflows/release.yml'
+      - '!.github/workflows/pr-deploy-status.yml'
       - '**.md'
       - .editorconfig
       - .gitignore
@@ -24,6 +25,7 @@ on:
       - '!.github/workflows/typechecking.yml'
       - '!.github/workflows/tests.yml'
       - '!.github/workflows/release.yml'
+      - '!.github/workflows/pr-deploy-status.yml'
       - '**.md'
       - .editorconfig
       - .gitignore
@@ -37,13 +39,16 @@ concurrency:
 jobs:
   typechecking:
     uses: ./.github/workflows/typechecking.yml
+
   tests:
     uses: ./.github/workflows/tests.yml
+
   draft_release:
     permissions:
       contents: write # Allows this job to create releases
     with:
       dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' }}
+      pr-number: ${{ github.event.pull_request.number || 'na' }}
     needs: [ typechecking, tests ]
     uses: ./.github/workflows/release.yml
     secrets:
