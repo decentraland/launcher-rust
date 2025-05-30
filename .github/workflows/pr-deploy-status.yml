@@ -1,87 +1,62 @@
 name: Comment Deploy Status on PR
 
 on:
-  workflow_run:
-    workflows: ["Release"]
-    types:
-      - requested
-      - completed
-    branches-ignore:
-      - main
+  workflow_call:
+    inputs:
+      pr-number:
+        required: true
+        type: string
+      head-sha:
+        required: true
+        type: string
+      run-id:
+        required: true
+        type: string
+      run-number:
+        required: true
+        type: string
+      status:
+        required: true
+        type: string
+      conclusion:
+        required: false
+        type: string
 
 permissions:
   pull-requests: write
 
 jobs:
   pr-comment:
-    if: >
-      github.event.workflow_run.conclusion == 'success' ||
-      github.event.workflow_run.conclusion == 'failure' ||
-      github.event.workflow_run.status == 'requested'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Extract PR metadata
-        id: extract
-        run: |
-          EVENT_JSON='${{ toJSON(github.event.workflow_run) }}'
-          echo "$EVENT_JSON" > event.json
-
-          PR=$(jq -r '.pull_requests[0].number // (.inputs["pr-number"] // "")' event.json)
-          SHA=$(jq -r '.pull_requests[0].head.sha // .head_sha' event.json)
-          DATE=$(jq -r '.updated_at' event.json)
-
-          echo "pr_number=$PR" >> $GITHUB_OUTPUT
-          echo "head_sha=$SHA" >> $GITHUB_OUTPUT
-          echo "build_date=$DATE" >> $GITHUB_OUTPUT
-
-      - name: Skip if other matrix jobs are still running
-        if: github.event.workflow_run.conclusion == 'success'
-        id: matrix-check
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ steps.extract.outputs.head_sha }}
-        run: |
-          echo "Checking check-runs for SHA $SHA"
-
-          CHECKS=$(gh api /repos/${{ github.repository }}/commits/$SHA/check-runs \
-            -q '.check_runs[] | select(.name == "Release") | .status')
-
-          echo "Release job statuses: $CHECKS"
-
-          if echo "$CHECKS" | grep -q "in_progress"; then
-            echo "skip_comment=true" >> $GITHUB_OUTPUT
-            echo "Detected in_progress check-runs, skipping comment."
-          else
-            echo "skip_comment=false" >> $GITHUB_OUTPUT
-            echo "All Release jobs are done, continuing with comment."
-          fi
-          echo "skip_comment: $(grep skip_comment $GITHUB_OUTPUT)"
-
       - name: Find existing comment
         id: find
-        if: steps.extract.outputs.pr_number != ''
         uses: peter-evans/find-comment@v3
         with:
-          issue-number: ${{ steps.extract.outputs.pr_number }}
+          issue-number: ${{ inputs.pr-number }}
           comment-author: github-actions[bot]
           body-includes: '<!-- deploy-status -->'
 
+      - name: Get current UTC timestamp
+        id: timestamp
+        run: echo "build_timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
       - name: Generate comment body
         id: body
-        if: steps.extract.outputs.pr_number != '' && steps.matrix-check.outputs.skip_comment != 'true'
         env:
-          STATUS: ${{ github.event.workflow_run.status }}
-          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          PR: ${{ steps.extract.outputs.pr_number }}
-          SHA: ${{ steps.extract.outputs.head_sha }}
-          DATE: ${{ steps.extract.outputs.build_date }}
-          REPO: ${{ github.event.repository.name }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          RUN_NUM: ${{ github.event.workflow_run.run_number }}
+          STATUS: ${{ inputs.status }}
+          CONCLUSION: ${{ inputs.conclusion }}
+          PR: ${{ inputs.pr-number }}
+          SHA: ${{ inputs.head-sha }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run-id }}
+          RUN_NUM: ${{ inputs.run-number }}
+          BUILD_TIMESTAMP: ${{ steps.timestamp.outputs.build_timestamp }}
         run: |
           DOMAIN="https://explorer-artifacts.decentraland.zone"
-          PATH="dry-run-${REPO}/pr-${PR}/run-${RUN_NUM}-${RUN_ID}"
+          REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
+          PATH="dry-run-${REPO_NAME}/pr-${PR}/run-${RUN_NUM}-${RUN_ID}"
 
           if [[ "$STATUS" == "requested" ]]; then
             {
@@ -127,7 +102,7 @@ jobs:
               echo "| Commit              | ${SHA}                    |"
               echo "| Download Windows S3 | [Decentraland_x64-setup.exe](${WIN_URL}) |"
               echo "| Download Mac S3     | [Decentraland_aarch64.dmg](${MAC_URL})   |"
-              echo "| Built on            | ${DATE}                   |"
+              echo "| Built on            | ${BUILD_TIMESTAMP}        |"
               echo ""
               echo "[badge]: https://img.shields.io/badge/Build-Success!-3fb950?logo=github&style=for-the-badge"
               echo "EOF"
@@ -136,10 +111,10 @@ jobs:
           fi
 
       - name: Create or update PR comment
-        if: steps.extract.outputs.pr_number != '' && steps.body.outputs.body != ''
+        if: steps.body.outputs.body != ''
         uses: peter-evans/create-or-update-comment@v4
         with:
           comment-id: ${{ steps.find.outputs.comment-id }}
-          issue-number: ${{ steps.extract.outputs.pr_number }}
+          issue-number: ${{ inputs.pr-number }}
           body: ${{ steps.body.outputs.body }}
           edit-mode: replace
