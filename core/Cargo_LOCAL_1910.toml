@@ -1,0 +1,60 @@
+[package]
+name = "dcl-launcher-core"
+version = "1.0.14"
+edition = "2024"
+
+[lib]
+name = "dcl_launcher_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dcl_launcher_core"
+path = "src/main.rs"
+
+[profile.dev]
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = true # Ensures debug symbols are removed.
+
+[dependencies]
+# fix for the issue: https://github.com/ebarnard/rust-plist/issues/151
+deranged = "=0.4.0"
+plist = "=1.7.0"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+regex = "1.11.1"
+anyhow = "1.0.97"
+
+futures-util = "0.3.14"
+tokio = { version = "1.44.1", features = ["full"] }
+
+semver = "1.0.26"
+
+dirs = "5.0"
+tar = "0.4.44"
+zip = "2.5.0"
+flate2 = "1.1.0"
+
+log = "0.4"
+fern = "0.7.1"
+pretty_env_logger = "0.5.0"
+humantime = "2.2.0"
+
+segment = "0.2.6"
+uuid = { version = "1.16.0", features = ["v4"] }
+
+nix =  { version = "0.29.0", features = ["process"] }
+
+sentry = { version = "0.37.0", features = ["anyhow", "log", "reqwest", "backtrace"] }
+sentry-anyhow = { version = "0.37.0" }
+sentry-log = "0.37.0"
+sentry-types = "0.37.0"
+
+windows-sys = { version = "0.59.0", features = ["Win32_System_Threading"] }

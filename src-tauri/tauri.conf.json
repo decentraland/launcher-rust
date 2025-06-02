@@ -16,7 +16,8 @@
         "title": "Decentraland",
         "width": 600,
         "height": 156,
-        "resizable": false
+        "resizable": false,
+        "center": true
       }
     ],
     "security": {
