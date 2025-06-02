@@ -25,6 +25,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "Decentraland Foundation",
     "targets": [
       "app",
       "dmg",
