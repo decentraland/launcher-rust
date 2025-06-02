@@ -60,7 +60,7 @@ jobs:
       status: "requested"
 
   draft_release:
-    needs: [typechecking, tests, comment_start]
+    needs: [typechecking, tests]
     permissions:
       contents: write # Allows this job to create releases
     uses: ./.github/workflows/release.yml
