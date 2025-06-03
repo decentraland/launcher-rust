@@ -8,7 +8,7 @@ The **Decentraland Launcher (Rust)** is a cross-platform desktop application tha
 
 - Automatic updates for Decentraland Explorer
 - Cross-platform support (Windows, macOS)
-- Lightweight using Rust and native system WebViews
+- Lightweight architecture using Rust and native system WebViews
 - URI scheme support: `decentraland://`
 - Secure download and launch process
 - Unified frontend-backend communication via single union-type enum
@@ -16,7 +16,7 @@ The **Decentraland Launcher (Rust)** is a cross-platform desktop application tha
 ## Architecture Overview
 
 The architecture uses:
-- **Rust (core)**: Handles all system-level logic like update checks, downloads, and launching the Explorer.
+- **Rust (core)**: Handles system-level logic such as update checks, downloads, and launching the Explorer.
 - **Frontend (TypeScript)**: Renders the UI via Tauri using web technologies.
 - **Tauri bridge**: Facilitates IPC between frontend and backend.
 
