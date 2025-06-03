@@ -3,8 +3,10 @@ use std::str::FromStr;
 use anyhow::Result;
 use log::{error, info};
 
-use sentry::ClientOptions;
+use sentry::{ClientOptions, protocol::User};
 use sentry_types::Dsn;
+
+use crate::config;
 
 pub struct Monitoring {}
 
@@ -35,6 +37,18 @@ impl Monitoring {
                 // keeps guard for the whole lifetime of the app
                 std::mem::forget(guard);
                 info!("sentry dns initialized successfully");
+
+                // Set user scope
+                let user_id = config::user_id_or_none();
+                info!("sentry user_id {}", user_id);
+
+                sentry::configure_scope(|scope| {
+                    scope.set_user(Some(User {
+                        id: Some(user_id),
+                        ..Default::default()
+                    }));
+                });
+
                 Ok(())
             }
         }
