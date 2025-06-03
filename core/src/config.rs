@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use log::error;
 use serde_json::{Map, Value};
 
 use crate::installs::config_path;
@@ -21,7 +22,7 @@ fn write_config(value: Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
-pub fn user_id() -> Result<String> {
+fn user_id() -> Result<String> {
     const KEY: &str = "analytics-user-id";
     let config = config_content()?;
     if let Some(id) = config.get(KEY) {
@@ -41,4 +42,11 @@ pub fn user_id() -> Result<String> {
     config.insert(KEY.to_owned(), Value::String(id.clone()));
     write_config(config)?;
     Ok(id)
+}
+
+pub fn user_id_or_none() -> String {
+    user_id().unwrap_or_else(|e| {
+        error!("Cannot get user id from config, fallback is used: {:#}", e);
+        "none".to_owned()
+    })
 }
