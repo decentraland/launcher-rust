@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use log::error;
+use log::{error, warn};
 
 static PROTOCOL_STATE: Mutex<Option<String>> = Mutex::new(None);
 const PROTOCOL_PREFIX: &str = "decentraland://";
@@ -48,7 +48,7 @@ impl Protocol {
             }
         }
 
-        error!(
+        warn!(
             "none of values starts with prefix protocol {}: {:?}",
             PROTOCOL_PREFIX, value
         );
