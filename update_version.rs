@@ -2,7 +2,7 @@
 //! ```cargo
 //! [dependencies]
 //! serde = { version = "1.0", features = ["derive"] }
-//! serde_json = "1.0"
+//! serde_json = { version = "1.0", features = ["preserve_order"] }
 //! toml_edit = "0.22"
 //! semver = "1.0"
 //! anyhow = "1.0"
