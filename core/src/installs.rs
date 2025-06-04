@@ -232,9 +232,6 @@ async fn cleanup_versions() -> Result<()> {
         let file_name = entry.file_name();
         let entry_name = file_name.to_str().context("no file name on entry")?;
 
-        // Strip leading 'v' if present, semver doesn't recognise this prefix
-        let entry_name = entry_name.strip_prefix('v').unwrap_or(entry_name);
-
         if let Some(version) = EntryVersion::from_str(entry_name) {
             installations.push(version);
         }
