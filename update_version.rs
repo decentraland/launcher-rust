@@ -8,7 +8,7 @@
 //! anyhow = "1.0"
 //! ```
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use semver::{Version};
 use std::{env, fs};
 use toml_edit::{DocumentMut, value};
@@ -27,11 +27,12 @@ enum BumpType {
 }
 
 impl BumpType {
-    fn from_str(s: &str) -> Self {
+    fn from_str(s: &str) -> Result<Self> {
         match s {
-            "major" => BumpType::Major,
-            "minor" => BumpType::Minor,
-            _ => BumpType::Patch,
+            "major" => Ok(BumpType::Major),
+            "minor" => Ok(BumpType::Minor),
+            "patch" => Ok(BumpType::Patch),
+            _ => Err(anyhow!("Bump type '{}' is not recognized, use [patch|minor|major]", s))
         }
     }
 
@@ -90,7 +91,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let bump = BumpType::from_str(&args[1]);
+    let bump = BumpType::from_str(&args[1])?;
 
     update_json_version(PACKAGE_JSON, &bump).context("Cannot bump PACKAGE_JSON")?;
     update_json_version(PACKAGE_JSON_LOCK, &bump).context("Cannot bump PACKAGE_JSON_LOCK")?;
