@@ -1,0 +1,114 @@
+name: Cleanup Draft S3 Artifacts
+
+on:
+  schedule:
+    - cron: '0 11 * * 2'  # Every Tuesday at 11:00 UTC
+  workflow_dispatch:
+
+jobs:
+  cleanup-drafts:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+      S3_BUCKET: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
+      REPO_NAME: ${{ github.event.repository.name }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - name: Fetch all published short SHAs and commit dates from GitHub tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "[INFO] Fetching all tags from GitHub and their commit SHAs..."
+          gh api --paginate repos/$GITHUB_REPOSITORY/tags \
+            | jq -r '.[] | "\(.name) \(.commit.sha)"' > tags_and_shas.txt
+
+          echo "[INFO] Fetching commit dates for each tag SHA..."
+          > published_shas.txt
+          > published_sha_dates.txt
+          while read tag sha; do
+            commit_date=$(gh api repos/$GITHUB_REPOSITORY/commits/$sha | jq -r .commit.committer.date)
+            echo "[TAG] $tag $sha $commit_date"
+            echo "$sha $commit_date" >> published_sha_dates.txt
+            echo "$sha" | cut -c1-7 >> published_shas.txt
+          done < tags_and_shas.txt
+
+          echo "[INFO] Published short SHAs (for exclusion):"
+          cat published_shas.txt
+
+          # Find the latest published commit date
+          latest_published_commit_date=$(sort -k2 published_sha_dates.txt | tail -n1 | awk '{print $2}')
+          echo "[INFO] Latest published commit date:"
+          echo "$latest_published_commit_date"
+          echo "$latest_published_commit_date" > latest_published_commit_date.txt
+
+      - name: List all draft-release S3 folders and extract SHAs
+        run: |
+          echo "[INFO] Listing all draft-release S3 prefixes..."
+          aws s3api list-objects-v2 \
+            --bucket "$S3_BUCKET" \
+            --prefix "draft-release-${REPO_NAME}-" \
+            --delimiter "/" \
+          | jq -r '.CommonPrefixes[].Prefix' > all_drafts.txt
+
+          echo "[INFO] Found the following draft-release prefixes:"
+          cat all_drafts.txt
+
+          grep -Eo "draft-release-${REPO_NAME}-([a-f0-9]{7})/" all_drafts.txt | \
+            sed -E "s/draft-release-${REPO_NAME}-([a-f0-9]{7})\//\1/" > draft_shas.txt
+
+          echo "[INFO] All draft-release SHAs detected:"
+          cat draft_shas.txt
+
+      - name: Get commit dates for all draft SHAs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "[INFO] Fetching commit dates for each draft-release SHA..."
+          > draft_sha_dates.txt
+          while read sha; do
+            [ -z "$sha" ] && continue
+            commit_date=$(gh api repos/$GITHUB_REPOSITORY/commits/$sha | jq -r .commit.committer.date)
+            echo "[DRAFT] $sha $commit_date"
+            echo "$sha $commit_date" >> draft_sha_dates.txt
+          done < draft_shas.txt
+
+      - name: Determine SHAs to delete
+        run: |
+          echo "[INFO] Calculating which SHAs to keep and which to delete..."
+
+          latest_published_commit_date=$(cat latest_published_commit_date.txt)
+          echo "[INFO] Latest published commit date for reference:"
+          echo "$latest_published_commit_date"
+
+          echo "[INFO] Excluding published short SHAs:"
+          grep -Ff published_shas.txt draft_shas.txt || true
+
+          # Exclude published SHAs (short)
+          grep -vFf published_shas.txt draft_shas.txt > unpublished_drafts.txt
+
+          echo "[INFO] Unpublished draft-release SHAs:"
+          cat unpublished_drafts.txt
+
+          echo "[INFO] Evaluating each unpublished draft SHA against latest published commit date..."
+          > delete_candidates.txt
+          while read sha commit_date; do
+            if [[ "$commit_date" > "$latest_published_commit_date" ]]; then
+              echo "[KEEP] $sha (commit $commit_date newer than $latest_published_commit_date)"
+            else
+              echo "[DELETE] $sha (commit $commit_date <= $latest_published_commit_date)"
+              echo "$sha" >> delete_candidates.txt
+            fi
+          done < <(grep -Ff unpublished_drafts.txt draft_sha_dates.txt)
+
+          echo "[INFO] Final list of draft-release SHAs to delete (not published, not newer than latest published tag):"
+          cat delete_candidates.txt
+
+          while read shortsha; do
+            prefix="draft-release-${REPO_NAME}-${shortsha}/"
+            echo ">>> Would delete: $prefix"
+            # aws s3 rm "s3://$S3_BUCKET/$prefix" --recursive
+          done < delete_candidates.txt
