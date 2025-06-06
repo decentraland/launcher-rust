@@ -1,6 +1,7 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::environment::AppEnvironment;
+use crate::instances::RunningInstances;
 use crate::processes::CommandExtDetached;
 use crate::protocols::Protocol;
 use anyhow::{Context, Error, Result, anyhow};
@@ -59,6 +60,10 @@ pub fn log_file_path() -> Result<PathBuf> {
 
 pub fn config_path() -> PathBuf {
     explorer_path().join("config.json")
+}
+
+pub fn running_instances_path() -> PathBuf {
+    explorer_path().join("running-instances.json")
 }
 
 fn get_app_base_path() -> PathBuf {
@@ -287,11 +292,12 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 
 pub struct InstallsHub {
     analytics: Arc<Mutex<Analytics>>,
+    running_instances: Arc<Mutex<RunningInstances>>
 }
 
 impl InstallsHub {
-    pub fn new(analytics: Arc<Mutex<Analytics>>) -> Self {
-        InstallsHub { analytics }
+    pub fn new(analytics: Arc<Mutex<Analytics>>, running_instances: Arc<Mutex<RunningInstances>>) -> Self {
+        InstallsHub { analytics, running_instances }
     }
 
     async fn explorer_params(&self) -> Vec<String> {
@@ -403,7 +409,10 @@ impl InstallsHub {
                 )
             })?;
 
-        log::info!("Process run with id: {}", child.id());
+        {
+            let guard = self.running_instances.lock().await;
+            guard.register_instance(child.id());
+        }
 
         const WAIT_TIMEOUT: Duration = Duration::from_secs(3);
         const CHECK_INTERVAL: Duration = Duration::from_millis(100);

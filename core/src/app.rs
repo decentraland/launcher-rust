@@ -4,6 +4,7 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
+use crate::instances::RunningInstances;
 use crate::monitoring::Monitoring;
 use crate::{analytics, logs, utils};
 use log::{error, info};
@@ -35,7 +36,8 @@ impl AppState {
             .await;
 
         let analytics = Arc::new(Mutex::new(analytics));
-        let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(analytics.clone())));
+        let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
+        let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(analytics.clone(), running_instances.clone())));
 
         let flow = LaunchFlow::new(installs_hub, analytics.clone());
         let flow_state = LaunchFlowState::default();

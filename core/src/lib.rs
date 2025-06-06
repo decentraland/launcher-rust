@@ -13,5 +13,6 @@ pub mod protocols;
 pub mod s3;
 pub mod types;
 pub mod utils;
+pub mod instances;
 
 pub use log;
