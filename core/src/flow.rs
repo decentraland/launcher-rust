@@ -349,8 +349,7 @@ impl InstallStep {
             &recent_download.version,
             Some(recent_download.downloaded_path),
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     async fn recent_download_and_update_state(
