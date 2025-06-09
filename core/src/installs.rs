@@ -353,16 +353,19 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 pub struct InstallsHub {
     analytics: Arc<Mutex<Analytics>>,
     running_instances: Arc<Mutex<RunningInstances>>,
+    protocol: Protocol,
 }
 
 impl InstallsHub {
     pub fn new(
         analytics: Arc<Mutex<Analytics>>,
         running_instances: Arc<Mutex<RunningInstances>>,
+        protocol: Protocol,
     ) -> Self {
         InstallsHub {
             analytics,
             running_instances,
+            protocol,
         }
     }
 
@@ -378,7 +381,7 @@ impl InstallsHub {
             AppEnvironment::provider(),
         ];
 
-        if let Some(value) = Protocol::value() {
+        if let Some(value) = self.protocol.value() {
             output.insert(0, value);
         }
 
