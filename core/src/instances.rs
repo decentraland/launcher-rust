@@ -1,19 +1,22 @@
-use std::{collections::HashMap, fs::{File, OpenOptions}, io::{BufReader, BufWriter}, path::PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    fs::{File, OpenOptions},
+    io::{BufReader, BufWriter},
+    path::PathBuf,
+};
 use sysinfo::Pid;
 
 use crate::installs;
 
 pub struct RunningInstances {
-   path: PathBuf
+    path: PathBuf,
 }
 
-#[derive(Serialize)]
-#[derive(Deserialize)]
-#[derive(Default)]
+#[derive(Serialize, Deserialize, Default)]
 struct Storage {
-    pub processes: HashMap<u32, String>
+    pub processes: HashMap<u32, String>,
 }
 
 impl RunningInstances {
@@ -58,8 +61,10 @@ impl RunningInstances {
                         } else {
                             dead_process_pids.push(id);
                         }
-                    },
-                    None => { dead_process_pids.push(id); },
+                    }
+                    None => {
+                        dead_process_pids.push(id);
+                    }
                 }
             } else {
                 dead_process_pids.push(id);
@@ -110,8 +115,9 @@ impl RunningInstances {
 
 impl Default for RunningInstances {
     fn default() -> Self {
+        //TODO clean dead processes in json file on start
         Self {
-            path: installs::running_instances_path()
+            path: installs::running_instances_path(),
         }
     }
 }

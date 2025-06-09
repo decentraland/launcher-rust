@@ -352,12 +352,18 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 
 pub struct InstallsHub {
     analytics: Arc<Mutex<Analytics>>,
-    running_instances: Arc<Mutex<RunningInstances>>
+    running_instances: Arc<Mutex<RunningInstances>>,
 }
 
 impl InstallsHub {
-    pub fn new(analytics: Arc<Mutex<Analytics>>, running_instances: Arc<Mutex<RunningInstances>>) -> Self {
-        InstallsHub { analytics, running_instances }
+    pub fn new(
+        analytics: Arc<Mutex<Analytics>>,
+        running_instances: Arc<Mutex<RunningInstances>>,
+    ) -> Self {
+        InstallsHub {
+            analytics,
+            running_instances,
+        }
     }
 
     async fn explorer_params(&self) -> Vec<String> {
@@ -488,9 +494,8 @@ impl InstallsHub {
 
         for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
             if let Some(exit_status) = child.try_wait()? {
-
                 if exit_status == GRACEFUL_EXIT_CODE {
-                    return Ok(())
+                    return Ok(());
                 }
 
                 #[cfg(windows)]
@@ -498,7 +503,10 @@ impl InstallsHub {
                     break;
                 }
 
-                return Err(anyhow!("Child process died shorly after launch with code: {}", exit_status));
+                return Err(anyhow!(
+                    "Child process died shorly after launch with code: {}",
+                    exit_status
+                ));
             }
 
             thread::sleep(CHECK_INTERVAL);

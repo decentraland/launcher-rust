@@ -37,7 +37,10 @@ impl AppState {
 
         let analytics = Arc::new(Mutex::new(analytics));
         let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
-        let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(analytics.clone(), running_instances.clone())));
+        let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(
+            analytics.clone(),
+            running_instances.clone(),
+        )));
 
         let flow = LaunchFlow::new(installs_hub, analytics.clone());
         let flow_state = LaunchFlowState::default();
