@@ -7,6 +7,9 @@ use crate::protocols::Protocol;
 use anyhow::{Context, Error, Result, anyhow};
 use semver::Version;
 use serde_json::{Map, Value};
+use std::cmp::Ordering;
+use std::fmt;
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Arc;
@@ -166,13 +169,70 @@ fn move_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
     Ok(())
 }
 
+struct EntryVersion {
+    version: Version,
+    v_prefixed: bool,
+}
+
+impl EntryVersion {
+    pub fn from_str(entry: &str) -> Option<Self> {
+        let strip = entry.strip_prefix('v');
+        let v_prefixed = strip.is_some();
+
+        let unprefixed_entry = strip.unwrap_or(entry);
+
+        if let Ok(version) = Version::parse(unprefixed_entry) {
+            return Some(EntryVersion {
+                version,
+                v_prefixed,
+            });
+        }
+
+        None
+    }
+
+    pub fn to_restored(&self) -> String {
+        if self.v_prefixed {
+            format!("v{}", self.version)
+        } else {
+            self.version.to_string()
+        }
+    }
+}
+
+impl PartialEq for EntryVersion {
+    fn eq(&self, other: &Self) -> bool {
+        self.version == other.version
+    }
+}
+
+impl Eq for EntryVersion {}
+
+impl PartialOrd for EntryVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.version.partial_cmp(&other.version)
+    }
+}
+
+impl Ord for EntryVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.version.cmp(&other.version)
+    }
+}
+
+impl Display for EntryVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.version.fmt(f)
+    }
+}
+
 async fn cleanup_versions() -> Result<()> {
     let entries = match fs::read_dir(explorer_path()) {
         Ok(entries) => entries,
         Err(err) => return Err(Error::msg(err.to_string())),
     };
 
-    let mut installations: Vec<Version> = Vec::new();
+    let mut installations: Vec<EntryVersion> = Vec::new();
 
     for entry in entries {
         let entry = match entry {
@@ -182,7 +242,7 @@ async fn cleanup_versions() -> Result<()> {
         let file_name = entry.file_name();
         let entry_name = file_name.to_str().context("no file name on entry")?;
 
-        if let Ok(version) = Version::parse(entry_name) {
+        if let Some(version) = EntryVersion::from_str(entry_name) {
             installations.push(version);
         }
     }
@@ -196,11 +256,11 @@ async fn cleanup_versions() -> Result<()> {
 
     // Keep the latest 2 versions and delete the rest
     for version in installations.iter().take(installations.len() - 2) {
-        let folder_path = explorer_path().join(version.to_string());
+        let folder_path = explorer_path().join(version.to_restored());
         if folder_path.exists() {
             match fs::remove_dir_all(&folder_path) {
-                Ok(_) => println!("Removed old version: {}", version),
-                Err(err) => eprintln!("Failed to remove {}: {}", version, err),
+                Ok(_) => log::info!("Removed old version: {}", version),
+                Err(err) => log::error!("Failed to remove {}: {}", version, err),
             }
         }
     }
