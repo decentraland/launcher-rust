@@ -1,6 +1,7 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::environment::AppEnvironment;
+use crate::errors::{StepError, StepResult};
 use crate::processes::CommandExtDetached;
 use crate::protocols::Protocol;
 use anyhow::{Context, Error, Result, anyhow};
@@ -287,20 +288,19 @@ pub fn target_download_path() -> PathBuf {
     explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
 }
 
-pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> Result<()> {
+pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
     let branch_path = explorer_path().join(version);
     let file_path = downloaded_file_path
         .unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
 
     if !file_path.exists() {
-        return Err(anyhow!(format!(
-            "Downloaded explorer file not found: {}",
-            file_path.to_string_lossy()
-        )));
+        return StepError::E1001_FILE_NOT_FOUND {
+            expected_path: file_path.to_string_lossy().into_owned(),
+        }
+        .into();
     }
 
-    compression::decompress_file(&file_path, &branch_path)
-        .map_err(|e| anyhow::Error::msg(format!("Cannot decompress file {}", e)))?;
+    compression::decompress_file(&file_path, &branch_path)?;
 
     #[cfg(target_os = "macos")]
     {
@@ -321,7 +321,8 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     let mut version_data = get_version_data_or_empty();
     version_data[version] = Value::from(
         std::time::SystemTime::now()
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)?
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .context("Cannot convert time")?
             .as_secs()
             .to_string(),
     );
@@ -332,7 +333,8 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     version_data["path"] = branch_path.to_string_lossy().into();
 
     // Write version data to file
-    let version_data_str = serde_json::to_string(&version_data)?;
+    let version_data_str =
+        serde_json::to_string(&version_data).context("Cannot serialize version_data")?;
     let version_path = explorer_version_path();
     fs::write(version_path, version_data_str).context("Cannot write version data")?;
 
@@ -479,9 +481,8 @@ impl InstallsHub {
 
         for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
             if let Some(exit_status) = child.try_wait()? {
-
                 if exit_status == GRACEFUL_EXIT_CODE {
-                    return Ok(())
+                    return Ok(());
                 }
 
                 #[cfg(windows)]
@@ -489,7 +490,10 @@ impl InstallsHub {
                     break;
                 }
 
-                return Err(anyhow!("Child process died shorly after launch with code: {}", exit_status));
+                return Err(anyhow!(
+                    "Child process died shorly after launch with code: {}",
+                    exit_status
+                ));
             }
 
             thread::sleep(CHECK_INTERVAL);

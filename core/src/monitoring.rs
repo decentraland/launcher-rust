@@ -30,6 +30,7 @@ impl Monitoring {
                     release: sentry::release_name!(),
                     dsn: Some(dsn),
                     attach_stacktrace: true,
+                    auto_session_tracking: true,
                     debug: cfg!(debug_assertions),
                     ..Default::default()
                 };
