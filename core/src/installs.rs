@@ -295,7 +295,7 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 
     if !file_path.exists() {
         return StepError::E1001_FILE_NOT_FOUND {
-            expected_path: file_path.to_string_lossy().into_owned(),
+            expected_path: Some(file_path.to_string_lossy().into_owned()),
         }
         .into();
     }

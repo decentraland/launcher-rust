@@ -10,7 +10,7 @@ use zip::read::ZipArchive;
 pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> StepResult {
     if !source_path.exists() {
         return StepError::E1001_FILE_NOT_FOUND {
-            expected_path: source_path.to_string_lossy().into_owned(),
+            expected_path: Some(source_path.to_string_lossy().into_owned()),
         }
         .into();
     }

@@ -1,6 +1,6 @@
+use anyhow::anyhow;
 use std::{collections::HashMap, fmt::Display};
 use thiserror::Error;
-use anyhow::anyhow;
 
 use super::types::Status;
 
@@ -36,6 +36,7 @@ pub enum StepError {
     },
 
     E1001_FILE_NOT_FOUND {
+        expected_path: Option<String>,
     },
     E1002_CORRUPTED_ARCHIVE {
         file_path: String,
@@ -46,8 +47,7 @@ pub enum StepError {
         #[source]
         inner_error: anyhow::Error,
     },
-    E1004_DISK_FULL {
-    },
+    E1004_DISK_FULL {},
     E1005_DECOMPRESS_OUT_OF_MEMORY {
         #[source]
         inner_error: anyhow::Error,
@@ -161,12 +161,12 @@ impl From<std::io::Error> for StepError {
                 inner_error: value.into(),
             },
             NotFound => StepError::E1001_FILE_NOT_FOUND {
+                expected_path: None,
             },
             PermissionDenied => StepError::E1003_DECOMPRESS_ACCESS_DENIED {
                 inner_error: value.into(),
             },
-            WriteZero | StorageFull => StepError::E1004_DISK_FULL {
-            },
+            WriteZero | StorageFull => StepError::E1004_DISK_FULL {},
             _ => StepError::E0000_GENERIC_ERROR {
                 error: value.into(),
                 user_message: None,
