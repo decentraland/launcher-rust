@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 use thiserror::Error;
+use anyhow::anyhow;
 
 use super::types::Status;
 
@@ -35,7 +36,6 @@ pub enum StepError {
     },
 
     E1001_FILE_NOT_FOUND {
-        expected_path: String,
     },
     E1002_CORRUPTED_ARCHIVE {
         file_path: String,
@@ -43,13 +43,10 @@ pub enum StepError {
         inner_error: anyhow::Error,
     },
     E1003_DECOMPRESS_ACCESS_DENIED {
-        file_path: String,
         #[source]
         inner_error: anyhow::Error,
     },
     E1004_DISK_FULL {
-        available_space_mb: u64,
-        destination_path: String,
     },
     E1005_DECOMPRESS_OUT_OF_MEMORY {
         #[source]
@@ -157,22 +154,18 @@ impl From<anyhow::Error> for StepError {
 
 impl From<std::io::Error> for StepError {
     fn from(value: std::io::Error) -> Self {
-        use std::io::ErrorKind;
         use std::io::ErrorKind::*;
 
         match value.kind() {
             OutOfMemory => StepError::E1005_DECOMPRESS_OUT_OF_MEMORY {
-                inner_error: value,
+                inner_error: value.into(),
             },
             NotFound => StepError::E1001_FILE_NOT_FOUND {
-                file_path: "".to_owned(),
-                inner_error: value,
             },
             PermissionDenied => StepError::E1003_DECOMPRESS_ACCESS_DENIED {
-                inner_error: value,
+                inner_error: value.into(),
             },
             WriteZero | StorageFull => StepError::E1004_DISK_FULL {
-                inner_error: value,
             },
             _ => StepError::E0000_GENERIC_ERROR {
                 error: value.into(),
