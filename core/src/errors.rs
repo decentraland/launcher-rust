@@ -161,20 +161,48 @@ impl From<std::io::Error> for StepError {
         use std::io::ErrorKind;
         use std::io::ErrorKind::*;
 
-        todo!()
-        /*match value.kind() {
-            OutOfMemory => {
-
+        match value.kind() {
+            OutOfMemory => StepError::E1005_DECOMPRESS_OUT_OF_MEMORY {
+                inner_error: value,
             },
-            ErrorKind::NotFound {}
-        }*/
+            NotFound => StepError::E1001_FILE_NOT_FOUND {
+                file_path: "".to_owned(),
+                inner_error: value,
+            },
+            PermissionDenied => StepError::E1003_DECOMPRESS_ACCESS_DENIED {
+                inner_error: value,
+            },
+            WriteZero | StorageFull => StepError::E1004_DISK_FULL {
+                inner_error: value,
+            },
+            _ => StepError::E0000_GENERIC_ERROR {
+                error: value.into(),
+                user_message: None,
+            },
+        }
     }
 }
 
 impl From<zip::result::ZipError> for StepError {
     fn from(value: zip::result::ZipError) -> Self {
-        todo!()
-        //match value {
-        //}
+        match value {
+            zip::result::ZipError::Io(io_err) => StepError::from(io_err),
+            zip::result::ZipError::InvalidArchive(msg) => StepError::E1002_CORRUPTED_ARCHIVE {
+                file_path: "".to_owned(),
+                inner_error: anyhow!("Invalid archive: {}", msg),
+            },
+            zip::result::ZipError::UnsupportedArchive(msg) => StepError::E1002_CORRUPTED_ARCHIVE {
+                file_path: "".to_owned(),
+                inner_error: anyhow!("Unsupported archive: {}", msg),
+            },
+            zip::result::ZipError::FileNotFound => StepError::E1002_CORRUPTED_ARCHIVE {
+                file_path: "".to_owned(),
+                inner_error: anyhow!("File not found in archive"),
+            },
+            _ => StepError::E0000_GENERIC_ERROR {
+                error: anyhow!(value),
+                user_message: None,
+            },
+        }
     }
 }
