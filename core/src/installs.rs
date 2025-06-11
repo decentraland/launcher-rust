@@ -336,10 +336,10 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     let version_data_str =
         serde_json::to_string(&version_data).context("Cannot serialize version_data")?;
     let version_path = explorer_version_path();
-    fs::write(version_path, version_data_str).context("Cannot write version data")?;
+    fs::write(version_path, version_data_str)?;
 
     // Remove the downloaded file
-    fs::remove_file(file_path).context("Cannot remove the downloaded file")?;
+    fs::remove_file(file_path)?;
     cleanup_versions()
         .await
         .context("Cannot clean up the old versions")?;

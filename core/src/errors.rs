@@ -28,7 +28,6 @@ impl From<StepError> for StepResult {
 #[allow(non_camel_case_types)]
 #[derive(Error, Debug)]
 pub enum StepError {
-    // TODO pass error descriptions
     E0000_GENERIC_ERROR {
         #[source]
         error: anyhow::Error,
