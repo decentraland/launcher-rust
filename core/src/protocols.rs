@@ -8,7 +8,11 @@ const PROTOCOL_PREFIX: &str = "decentraland://";
 pub struct Protocol {}
 
 impl Protocol {
-    pub fn value() -> Option<String> {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn value(&self) -> Option<String> {
         let result = PROTOCOL_STATE.lock();
         match result {
             Ok(guard) => guard.clone(),
@@ -19,7 +23,7 @@ impl Protocol {
         }
     }
 
-    pub fn try_assign_value(value: String) {
+    pub fn try_assign_value(&self, value: String) {
         if !value.starts_with(PROTOCOL_PREFIX) {
             error!(
                 "trying assing value that doesn't start with prefix protocol {}: {}",
@@ -40,10 +44,10 @@ impl Protocol {
         }
     }
 
-    pub fn try_assign_value_from_vec(value: &Vec<String>) {
+    pub fn try_assign_value_from_vec(&self, value: &Vec<String>) {
         for v in value {
             if v.starts_with(PROTOCOL_PREFIX) {
-                Self::try_assign_value(v.to_owned());
+                self.try_assign_value(v.to_owned());
                 return;
             }
         }

@@ -1,6 +1,7 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::environment::AppEnvironment;
+use crate::instances::RunningInstances;
 use crate::processes::CommandExtDetached;
 use crate::protocols::Protocol;
 use anyhow::{Context, Error, Result, anyhow};
@@ -62,6 +63,10 @@ pub fn log_file_path() -> Result<PathBuf> {
 
 pub fn config_path() -> PathBuf {
     explorer_path().join("config.json")
+}
+
+pub fn running_instances_path() -> PathBuf {
+    explorer_path().join("running-instances.json")
 }
 
 fn get_app_base_path() -> PathBuf {
@@ -347,11 +352,21 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 
 pub struct InstallsHub {
     analytics: Arc<Mutex<Analytics>>,
+    running_instances: Arc<Mutex<RunningInstances>>,
+    protocol: Protocol,
 }
 
 impl InstallsHub {
-    pub fn new(analytics: Arc<Mutex<Analytics>>) -> Self {
-        InstallsHub { analytics }
+    pub fn new(
+        analytics: Arc<Mutex<Analytics>>,
+        running_instances: Arc<Mutex<RunningInstances>>,
+        protocol: Protocol,
+    ) -> Self {
+        InstallsHub {
+            analytics,
+            running_instances,
+            protocol,
+        }
     }
 
     async fn explorer_params(&self) -> Vec<String> {
@@ -366,7 +381,7 @@ impl InstallsHub {
             AppEnvironment::provider(),
         ];
 
-        if let Some(value) = Protocol::value() {
+        if let Some(value) = self.protocol.value() {
             output.insert(0, value);
         }
 
@@ -463,7 +478,10 @@ impl InstallsHub {
                 )
             })?;
 
-        log::info!("Process run with id: {}", child.id());
+        {
+            let guard = self.running_instances.lock().await;
+            guard.register_instance(child.id());
+        }
 
         const WAIT_TIMEOUT: Duration = Duration::from_secs(3);
         const CHECK_INTERVAL: Duration = Duration::from_millis(100);
@@ -479,9 +497,8 @@ impl InstallsHub {
 
         for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
             if let Some(exit_status) = child.try_wait()? {
-
                 if exit_status == GRACEFUL_EXIT_CODE {
-                    return Ok(())
+                    return Ok(());
                 }
 
                 #[cfg(windows)]
@@ -489,7 +506,10 @@ impl InstallsHub {
                     break;
                 }
 
-                return Err(anyhow!("Child process died shorly after launch with code: {}", exit_status));
+                return Err(anyhow!(
+                    "Child process died shorly after launch with code: {}",
+                    exit_status
+                ));
             }
 
             thread::sleep(CHECK_INTERVAL);

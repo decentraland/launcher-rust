@@ -6,6 +6,7 @@ mod config;
 pub mod environment;
 pub mod flow;
 pub mod installs;
+pub mod instances;
 mod logs;
 mod monitoring;
 mod processes;

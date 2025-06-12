@@ -1,6 +1,6 @@
 [package]
 name = "dcl-launcher-core"
-version = "1.0.18"
+version = "1.1.0"
 edition = "2024"
 
 [lib]
@@ -36,6 +36,8 @@ futures-util = "0.3.14"
 tokio = { version = "1.44.1", features = ["full"] }
 
 semver = "1.0.26"
+
+sysinfo = "0.35.2"
 
 dirs = "5.0"
 tar = "0.4.44"

@@ -15,6 +15,8 @@ pub enum Step {
     #[serde(rename_all = "camelCase")]
     LauncherUpdate(LauncherUpdate),
     #[serde(rename_all = "camelCase")]
+    DeeplinkOpening,
+    #[serde(rename_all = "camelCase")]
     Fetching,
     #[serde(rename_all = "camelCase")]
     Downloading { progress: u8, build_type: BuildType },
