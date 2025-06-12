@@ -35,6 +35,8 @@ anyhow = "1.0.97"
 futures-util = "0.3.14"
 tokio = { version = "1.44.1", features = ["full"] }
 
+thiserror = "2"
+
 semver = "1.0.26"
 
 dirs = "5.0"
