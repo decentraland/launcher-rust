@@ -20,9 +20,11 @@ impl From<&FlowError> for Status {
 
 pub type StepResult = std::result::Result<(), StepError>;
 
-impl From<StepError> for StepResult {
+pub type StepResultTyped<T> = std::result::Result<T, StepError>;
+
+impl<T> From<StepError> for StepResultTyped<T> {
     fn from(value: StepError) -> Self {
-        Self::Err(value)
+        StepResultTyped::Err(value)
     }
 }
 
@@ -59,8 +61,9 @@ pub enum StepError {
     },
 
     E2001_DOWNLOAD_FAILED {
-        url: String,
-        inner_error_message: String,
+        url: Option<String>,
+        #[source]
+        error: reqwest::Error,
     },
     E2002_MISSING_CONTENT_LENGTH {
         url: String,
@@ -71,6 +74,10 @@ pub enum StepError {
         bytes_downloaded: u64,
         destination_path: String,
         inner_error_message: String,
+    },
+    E2004_DOWNLOAD_FAILED_HTTP_CODE {
+        url: String,
+        code: u16,
     },
 }
 
@@ -132,6 +139,9 @@ impl StepError {
             }
             Self::E2003_NETWORK_WRITE_ERROR { .. } => {
                 "There was an error while saving the downloaded file. Please make sure you have enough disk space and permission to write to the folder."
+            }
+            Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => {
+                "There was an error while downloading Decentraland. Please check your internet connection and try again."
             }
         }
     }
@@ -196,5 +206,12 @@ impl From<zip::result::ZipError> for StepError {
                 user_message: None,
             },
         }
+    }
+}
+
+impl From<reqwest::Error> for StepError {
+    fn from(value: reqwest::Error) -> Self {
+        let url: Option<String> = value.url().map_or(None, |e| Some(e.as_str().to_owned()));
+        StepError::E2001_DOWNLOAD_FAILED { url, error: value }
     }
 }

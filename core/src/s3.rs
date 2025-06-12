@@ -1,9 +1,9 @@
-use anyhow::{Result, anyhow};
 use reqwest;
 use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::environment::AppEnvironment;
+use crate::errors::{StepError, StepResultTyped};
 use crate::utils::get_os_name;
 
 pub const RELEASE_PREFIX: &str = "@dcl/unity-explorer/releases";
@@ -19,7 +19,7 @@ pub struct ReleaseResponse {
     pub version: String,
 }
 
-async fn fetch_explorer_latest_release() -> Result<LatestRelease> {
+async fn fetch_explorer_latest_release() -> StepResultTyped<LatestRelease> {
     let bucket_url = AppEnvironment::bucket_url();
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -38,10 +38,11 @@ async fn fetch_explorer_latest_release() -> Result<LatestRelease> {
     let response = reqwest::get(&url).await?;
 
     if !response.status().is_success() {
-        return Err(anyhow!(
-            "HTTP error with status code: {}",
-            response.status()
-        ));
+        return StepError::E2004_DOWNLOAD_FAILED_HTTP_CODE {
+            url,
+            code: response.status().into(),
+        }
+        .into();
     }
 
     let data = response.json::<LatestRelease>().await?;
@@ -53,7 +54,7 @@ async fn fetch_explorer_latest_release() -> Result<LatestRelease> {
     Ok(data)
 }
 
-pub async fn get_latest_explorer_release() -> Result<ReleaseResponse> {
+pub async fn get_latest_explorer_release() -> StepResultTyped<ReleaseResponse> {
     let url = AppEnvironment::bucket_url();
     let latest_release = fetch_explorer_latest_release().await?;
     let os = get_os_name();
