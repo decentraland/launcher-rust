@@ -204,6 +204,12 @@ jobs:
           Write-Output "CODESIGN_JAVA=$($javaExe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "Set CODESIGN_JAR to $($jarPath.FullName)"
           Write-Host "Set CODESIGN_JAVA to $($javaExe.FullName)"
+          
+      - name: Patch sign.ps1 path in tauri.conf.json
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: |
+          SIGN_SCRIPT_PATH="${GITHUB_WORKSPACE}/src-tauri/scripts/sign.ps1"
+          sed -i.bak "s|\"sign.ps1\"|\"${SIGN_SCRIPT_PATH//\\/\/}\"|g" src-tauri/tauri.conf.json
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
