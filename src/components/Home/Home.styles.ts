@@ -43,6 +43,7 @@ export const ErrorDialogButton = styled(Button)((props) => ({
   ...props,
   width: "190px",
   height: "46px",
+  borderRadius: "12px",
 }));
 
 export const LoadingBar = styled(LinearProgress)((props) => ({
