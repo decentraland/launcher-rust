@@ -1,11 +1,5 @@
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery
-)]
-
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![deny(
-    clippy::unsafe_code,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
@@ -24,7 +18,7 @@ struct ConsoleChannel();
 impl EventChannel for ConsoleChannel {
     fn send(&self, status: dcl_launcher_core::types::Status) -> Result<()> {
         let s = serde_json::to_string_pretty(&status)?;
-        info!("{}", s);
+        info!("{s}");
         Ok(())
     }
 }

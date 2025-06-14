@@ -321,12 +321,9 @@ impl InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> Option<RecentDownload> {
         let mut guard = state.lock().await;
-        let recent_download = guard.recent_download.clone();
-        if recent_download.is_none() {
-            return None;
-        }
+        let recent_download = guard.recent_download.clone()?;
         guard.recent_download = None;
-        recent_download
+        Some(recent_download)
     }
 }
 
