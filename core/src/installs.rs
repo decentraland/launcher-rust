@@ -135,6 +135,7 @@ fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
     Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
 }
 
+#[cfg(target_os = "macos")]
 fn move_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
     if !src.exists() {
         return Err(anyhow!("Source path does not exist"));
@@ -487,7 +488,7 @@ impl InstallsHub {
         let graceful_exit_code: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
 
         #[cfg(windows)]
-        let STILL_ACTIVE_EXIT_CODE: ExitStatus = std::process::ExitStatus::from_raw(259);
+        let still_active_exit_code: ExitStatus = std::process::ExitStatus::from_raw(259);
 
         for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
             if let Some(exit_status) = child.try_wait()? {
@@ -496,7 +497,7 @@ impl InstallsHub {
                 }
 
                 #[cfg(windows)]
-                if exit_status == STILL_ACTIVE_EXIT_CODE {
+                if exit_status == still_active_exit_code {
                     break;
                 }
 

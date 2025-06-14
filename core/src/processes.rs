@@ -1,10 +1,5 @@
 use std::process::Command;
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
-use windows_sys::Win32::System::Threading::{CREATE_NEW_CONSOLE, DETACHED_PROCESS};
-
 #[cfg(unix)]
 use nix::unistd::setsid;
 #[cfg(unix)]
