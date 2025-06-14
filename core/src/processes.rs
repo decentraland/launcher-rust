@@ -19,14 +19,16 @@ impl CommandExtDetached for Command {
     fn detached(&mut self) -> &mut Self {
         #[cfg(unix)]
         {
+            #![allow(unsafe_code)]
             unsafe {
                 self.before_exec(|| {
                     let _ = setsid();
                     Ok(())
-                });
+                })
             }
         }
 
+        #[cfg(windows)]
         self
     }
 }

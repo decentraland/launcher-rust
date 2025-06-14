@@ -478,17 +478,17 @@ impl InstallsHub {
         const CHECK_INTERVAL: Duration = Duration::from_millis(100);
 
         #[cfg(windows)]
-        let GRACEFUL_EXIT_CODE: ExitStatus = std::process::ExitStatus::from_raw(0);
+        let graceful_exit_code: ExitStatus = std::process::ExitStatus::from_raw(0);
 
         #[cfg(unix)]
-        let GRACEFUL_EXIT_CODE: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
+        let graceful_exit_code: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
 
         #[cfg(windows)]
         let STILL_ACTIVE_EXIT_CODE: ExitStatus = std::process::ExitStatus::from_raw(259);
 
         for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
             if let Some(exit_status) = child.try_wait()? {
-                if exit_status == GRACEFUL_EXIT_CODE {
+                if exit_status == graceful_exit_code {
                     return Ok(());
                 }
 

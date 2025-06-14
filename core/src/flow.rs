@@ -14,7 +14,7 @@ use regex::Regex;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
-pub trait LaunchStep {
+trait LaunchStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool>;
 
     fn start_label(&self) -> Result<Status>;
