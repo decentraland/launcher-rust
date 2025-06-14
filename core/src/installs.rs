@@ -250,8 +250,15 @@ async fn cleanup_versions() -> Result<()> {
     // Sort versions
     installations.sort_by(|a, b| a.cmp(b));
 
+    const KEEP_VERSIONS_AMOUNT: usize = 2;
+
+    if installations.len() <= KEEP_VERSIONS_AMOUNT {
+        // Don't need to uninstall anything
+        return Ok(())
+    }
+
     // Keep the latest 2 versions and delete the rest
-    for version in installations.iter().take(installations.len() - 2) {
+    for version in installations.iter().take(installations.len() - KEEP_VERSIONS_AMOUNT) {
         let folder_path = explorer_path().join(version.to_restored());
         if folder_path.exists() {
             match fs::remove_dir_all(&folder_path) {
