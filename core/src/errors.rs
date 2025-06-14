@@ -211,7 +211,7 @@ impl From<zip::result::ZipError> for StepError {
 
 impl From<reqwest::Error> for StepError {
     fn from(value: reqwest::Error) -> Self {
-        let url: Option<String> = value.url().map_or(None, |e| Some(e.as_str().to_owned()));
+        let url: Option<String> = value.url().map(|e| e.as_str().to_owned());
         StepError::E2001_DOWNLOAD_FAILED { url, error: value }
     }
 }
