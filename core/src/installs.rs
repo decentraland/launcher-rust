@@ -135,6 +135,7 @@ fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
     Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
 }
 
+#[cfg(target_os = "macos")]
 fn move_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
     if !src.exists() {
         return Err(anyhow!("Source path does not exist"));
@@ -206,7 +207,7 @@ impl Eq for EntryVersion {}
 
 impl PartialOrd for EntryVersion {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.version.partial_cmp(&other.version)
+        Some(self.cmp(other))
     }
 }
 
@@ -248,10 +249,20 @@ async fn cleanup_versions() -> Result<()> {
     }
 
     // Sort versions
-    installations.sort_by(|a, b| a.cmp(b));
+    installations.sort();
+
+    const KEEP_VERSIONS_AMOUNT: usize = 2;
+
+    if installations.len() <= KEEP_VERSIONS_AMOUNT {
+        // Don't need to uninstall anything
+        return Ok(());
+    }
 
     // Keep the latest 2 versions and delete the rest
-    for version in installations.iter().take(installations.len() - 2) {
+    for version in installations
+        .iter()
+        .take(installations.len() - KEEP_VERSIONS_AMOUNT)
+    {
         let folder_path = explorer_path().join(version.to_restored());
         if folder_path.exists() {
             match fs::remove_dir_all(&folder_path) {
@@ -471,22 +482,22 @@ impl InstallsHub {
         const CHECK_INTERVAL: Duration = Duration::from_millis(100);
 
         #[cfg(windows)]
-        let GRACEFUL_EXIT_CODE: ExitStatus = std::process::ExitStatus::from_raw(0);
+        let graceful_exit_code: ExitStatus = std::process::ExitStatus::from_raw(0);
 
         #[cfg(unix)]
-        let GRACEFUL_EXIT_CODE: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
+        let graceful_exit_code: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
 
         #[cfg(windows)]
-        let STILL_ACTIVE_EXIT_CODE: ExitStatus = std::process::ExitStatus::from_raw(259);
+        let still_active_exit_code: ExitStatus = std::process::ExitStatus::from_raw(259);
 
         for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
             if let Some(exit_status) = child.try_wait()? {
-                if exit_status == GRACEFUL_EXIT_CODE {
+                if exit_status == graceful_exit_code {
                     return Ok(());
                 }
 
                 #[cfg(windows)]
-                if exit_status == STILL_ACTIVE_EXIT_CODE {
+                if exit_status == still_active_exit_code {
                     break;
                 }
 

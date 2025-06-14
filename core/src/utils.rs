@@ -20,14 +20,16 @@ pub fn parsed_argv() -> HashMap<String, String> {
         if let Some((key, value)) = arg.strip_prefix("--").and_then(|s| s.split_once('=')) {
             match key {
                 "version" | "prerelease" | "dev" | "downloadedfilepath" => {
-                    parsed_argv.insert(key.to_string(), value.to_string());
+                    // don't need to handle overwrites
+                    let _ = parsed_argv.insert(key.to_string(), value.to_string());
                 }
                 _ => {}
             }
         } else if let Some(key) = arg.strip_prefix("--") {
             match key {
                 "version" | "prerelease" | "dev" | "downloadedfilepath" => {
-                    parsed_argv.insert(key.to_string(), "true".to_string());
+                    // don't need to handle overwrites
+                    let _ = parsed_argv.insert(key.to_string(), "true".to_string());
                 }
                 _ => {}
             }

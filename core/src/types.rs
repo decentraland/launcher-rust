@@ -34,10 +34,10 @@ pub enum LauncherUpdate {
     RestartingApp,
 }
 
-impl Into<Status> for LauncherUpdate {
-    fn into(self) -> Status {
+impl From<LauncherUpdate> for Status {
+    fn from(update: LauncherUpdate) -> Self {
         Status::State {
-            step: Step::LauncherUpdate(self),
+            step: Step::LauncherUpdate(update),
         }
     }
 }
