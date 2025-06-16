@@ -144,7 +144,7 @@ export const Home: React.FC = memo(() => {
           variant="h6"
           sx={{
             fontFamily: "Inter, sans-serif",
-            textAlign: "center"
+            textAlign: "center",
           }}
         >
           {message}
