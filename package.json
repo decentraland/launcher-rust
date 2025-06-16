@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "format": "npx prettier --write '**/*.{js,mjs,cjs,jsx,ts,ODmts,cts,tsx}'; cargo fmt --manifest-path src-tauri/Cargo.toml -- --check --verbose; cargo fmt --manifest-path core/Cargo.toml -- --check --verbose",
-    "analyze": "cargo clippy --manifest-path tauri/Cargo.toml --all-targets --all-features -- -D warnings; cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings"
+    "analyze": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings; cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings"
   },
   "dependencies": {
     "@sentry/react": "^8.29.0",

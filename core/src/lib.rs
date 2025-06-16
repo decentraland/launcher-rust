@@ -3,6 +3,7 @@ pub mod app;
 mod attempts;
 pub mod channel;
 mod config;
+mod deeplink_bridge;
 pub mod environment;
 pub mod errors;
 pub mod flow;

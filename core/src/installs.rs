@@ -70,6 +70,10 @@ pub fn running_instances_path() -> PathBuf {
     explorer_path().join("running-instances.json")
 }
 
+pub fn deeplink_bridge_path() -> PathBuf {
+    explorer_path().join("deeplink-bridge.json")
+}
+
 fn get_app_base_path() -> PathBuf {
     dirs::data_local_dir().expect("Failed to get current directory")
 }

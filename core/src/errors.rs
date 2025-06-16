@@ -2,6 +2,8 @@ use anyhow::anyhow;
 use std::{collections::HashMap, fmt::Display};
 use thiserror::Error;
 
+use crate::deeplink_bridge::PlaceDeeplinkError;
+
 use super::types::Status;
 
 pub struct FlowError {
@@ -79,7 +81,8 @@ pub enum StepError {
         url: String,
         code: u16,
     },
-    E3001_OPEN_DEEPLINK_TIMEOUT
+    E3001_OPEN_DEEPLINK_TIMEOUT,
+    E3002_PLACE_DEEPLINK_ERROR(#[from] PlaceDeeplinkError),
 }
 
 impl StepError {
@@ -143,9 +146,12 @@ impl StepError {
             }
             Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => {
                 "There was an error while downloading Decentraland. Please check your internet connection and try again."
-            },
+            }
             Self::E3001_OPEN_DEEPLINK_TIMEOUT => {
                 "There was an error while opening the deeplink. Please restart client and try again."
+            }
+            Self::E3002_PLACE_DEEPLINK_ERROR { .. } => {
+                "There was an error while passing the deeplink. Please restart client and try again."
             }
         }
     }

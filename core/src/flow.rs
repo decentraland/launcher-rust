@@ -1,4 +1,7 @@
 use crate::channel::EventChannel;
+use crate::deeplink_bridge::{
+    PlaceDeeplinkError, PlaceDeeplinkResult, place_deeplink_and_wait_until_consumed,
+};
 use crate::errors::StepResultTyped;
 use crate::instances::RunningInstances;
 use crate::protocols::Protocol;
@@ -14,10 +17,11 @@ use crate::{
 use anyhow::{Context, Ok, Result, anyhow};
 use log::info;
 use regex::Regex;
-use tokio::time::error::Elapsed;
 use std::time::Duration;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
+use tokio::time::error::Elapsed;
+use tokio_util::sync::CancellationToken;
 
 trait WorkflowStep<TState, TOutput> {
     async fn is_complete(&self, state: Arc<Mutex<TState>>) -> Result<bool>;
@@ -440,18 +444,27 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                         step: Step::DeeplinkOpening,
                     })?;
 
-                    type OpenResult = std::result::Result<(), Elapsed>;
+                    let token = CancellationToken::new();
+
+                    type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
 
                     const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
                     match tokio::time::timeout(
                         OPEN_DEEPLINK_TIMEOUT,
-                        //TODO launch http server and wait for result
-                        tokio::time::sleep(Duration::from_secs(2)),
+                        place_deeplink_and_wait_until_consumed(deeplink, token.child_token()),
                     )
                     .await
                     {
-                        OpenResult::Ok(_) => StepResult::Ok(()),
+                        OpenResult::Ok(result) => match result {
+                            PlaceDeeplinkResult::Ok(_) => StepResult::Ok(()),
+                            PlaceDeeplinkResult::Err(error) => match error {
+                                PlaceDeeplinkError::SerializeError => StepResult::Err(error.into()),
+                                PlaceDeeplinkError::IOError => StepResult::Err(error.into()),
+                                PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
+                            },
+                        },
                         OpenResult::Err(_) => {
+                            token.cancel();
                             StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
                         }
                     }
