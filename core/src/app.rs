@@ -16,6 +16,7 @@ use utils::app_version;
 pub struct AppState {
     pub flow: LaunchFlow,
     pub state: Arc<Mutex<LaunchFlowState>>,
+    pub protocol: Protocol,
     analytics: Arc<Mutex<Analytics>>,
 }
 
@@ -53,6 +54,7 @@ impl AppState {
         let app_state = AppState {
             flow,
             state: Arc::new(Mutex::new(flow_state)),
+            protocol: Protocol {},
             analytics,
         };
 
