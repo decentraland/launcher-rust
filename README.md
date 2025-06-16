@@ -52,10 +52,37 @@ npm run tauri dev
 
 ## Development Guidelines
 
-- Use `cargo fmt` and `clippy` for Rust formatting and linting.
-- Use Prettier/ESLint for frontend.
+- Use `npm run format` for formatting and linting in both Rust and JavaScript.
 - Follow Conventional Commits: `feat:`, `fix:`, `chore:`
 - Keep frontend TypeScript enum in sync with Rust `enum` for proper communication.
+
+### Logs
+
+You can find the logs in this location
+
+MacOS
+```
+~/Library/Logs/DecentralandLauncherLight/
+```
+
+Windows
+```
+C:\Users\<YourUsername>\AppData\Roaming\DecentralandLauncherLight\
+```
+
+### App Directory
+
+Launcher operates within a single directory
+
+MacOS
+```
+~/Library/Application Support/DecentralandLauncherLight/
+```
+
+Windows
+```
+C:\Users\<YourUsername>\AppData\Local\DecentralandLauncherLight\
+```
 
 ## License
 
