@@ -41,6 +41,7 @@ impl RunningInstances {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&self.path)?;
 
         let system = sysinfo::System::new_all();
@@ -50,7 +51,7 @@ impl RunningInstances {
         let mut any_running = false;
 
         for (id, name) in content.processes.iter() {
-            let id = id.clone();
+            let id = id.to_owned();
             let pid = Pid::from_u32(id);
 
             if let Some(process) = system.process(pid) {
@@ -83,10 +84,7 @@ impl RunningInstances {
 
     fn file_content(file: &File) -> Storage {
         let reader = BufReader::new(file);
-        match serde_json::from_reader(reader) {
-            Ok(s) => s,
-            Err(_) => Storage::default(),
-        }
+        serde_json::from_reader(reader).unwrap_or_default()
     }
 
     fn write_content(file: &File, storage: &Storage) -> Result<()> {
@@ -104,6 +102,7 @@ impl RunningInstances {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&self.path)?;
 
         let mut content: Storage = Self::file_content(&file);

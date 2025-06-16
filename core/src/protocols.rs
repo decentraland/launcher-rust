@@ -6,6 +6,7 @@ use log::{error, warn};
 static PROTOCOL_STATE: Mutex<Option<DeepLink>> = Mutex::new(None);
 const PROTOCOL_PREFIX: &str = "decentraland://";
 
+#[derive(Default)]
 pub struct Protocol {}
 
 pub enum DeepLinkCreateError {
