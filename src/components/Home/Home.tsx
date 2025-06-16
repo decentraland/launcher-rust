@@ -129,7 +129,13 @@ export const Home: React.FC = memo(() => {
   const renderError = (message: string) => {
     resizeWindow(errorWindowSize);
     return (
-      <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+      <Box
+        display="flex"
+        flexDirection="column"
+        alignItems="center"
+        gap={2}
+        sx={{ maxWidth: "400px" }}
+      >
         <ErrorIcon src={ERROR_SVG} />
         <Typography
           variant="h5"
@@ -149,7 +155,7 @@ export const Home: React.FC = memo(() => {
         >
           {message}
         </Typography>
-        <Box display="flex" gap={2}>
+        <Box display="flex" gap={2} sx={{ pt: 2 }}>
           <ErrorDialogButton
             variant="contained"
             style={{
