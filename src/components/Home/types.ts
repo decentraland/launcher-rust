@@ -13,6 +13,7 @@ export type LauncherUpdate =
 export type Step =
   | { event: "launcherUpdate"; data: LauncherUpdate }
   | { event: "fetching"; data: {} }
+  | { event: "deeplinkOpening"; data: {} }
   | { event: "downloading"; data: { progress: number; buildType: BuildType } }
   | { event: "installing"; data: { buildType: BuildType } }
   | { event: "launching"; data: {} };
