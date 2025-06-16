@@ -79,6 +79,7 @@ pub enum StepError {
         url: String,
         code: u16,
     },
+    E3001_OPEN_DEEPLINK_TIMEOUT
 }
 
 impl StepError {
@@ -142,6 +143,9 @@ impl StepError {
             }
             Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => {
                 "There was an error while downloading Decentraland. Please check your internet connection and try again."
+            },
+            Self::E3001_OPEN_DEEPLINK_TIMEOUT => {
+                "There was an error while opening the deeplink. Please restart client and try again."
             }
         }
     }

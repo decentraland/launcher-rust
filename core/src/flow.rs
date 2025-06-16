@@ -2,7 +2,6 @@ use crate::channel::EventChannel;
 use crate::errors::StepResultTyped;
 use crate::instances::RunningInstances;
 use crate::protocols::Protocol;
-use crate::types;
 use crate::{
     analytics::{Analytics, event::Event},
     attempts::Attempts,
@@ -15,6 +14,7 @@ use crate::{
 use anyhow::{Context, Ok, Result, anyhow};
 use log::info;
 use regex::Regex;
+use tokio::time::error::Elapsed;
 use std::time::Duration;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
@@ -440,22 +440,34 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                         step: Step::DeeplinkOpening,
                     })?;
 
-                    const OPEN_DEEPLINK_TIMEOUT: u64 = 3;
-                    tokio::time::sleep(Duration::from_secs(OPEN_DEEPLINK_TIMEOUT)).await;
-                    //TODO launch http server
+                    type OpenResult = std::result::Result<(), Elapsed>;
+
+                    const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
+                    match tokio::time::timeout(
+                        OPEN_DEEPLINK_TIMEOUT,
+                        //TODO launch http server and wait for result
+                        tokio::time::sleep(Duration::from_secs(2)),
+                    )
+                    .await
+                    {
+                        OpenResult::Ok(_) => StepResult::Ok(()),
+                        OpenResult::Err(_) => {
+                            StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
+                        }
+                    }
                 } else {
                     let guard = self.installs_hub.lock().await;
                     guard.launch_explorer(Some(deeplink), None).await?;
+                    StepResult::Ok(())
                 }
             }
             None => {
                 let guard = self.installs_hub.lock().await;
                 //TODO passed version if specified manually from upper flow
                 guard.launch_explorer(None, None).await?;
+                StepResult::Ok(())
             }
         }
-
-        StepResult::Ok(())
     }
 }
 
