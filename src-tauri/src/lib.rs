@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tauri::async_runtime::Mutex;
 use tauri::Url;
 use tauri::{ipc::Channel, App, AppHandle, Manager, State};
+#[cfg(unix)]
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::UpdaterExt;
 
@@ -152,6 +153,7 @@ async fn update_if_needed_and_restart(
     Ok(())
 }
 
+#[cfg_attr(windows, allow(unused_variables))]
 fn setup_deeplink(a: &mut App) {
     #[cfg(target_os = "macos")]
     {

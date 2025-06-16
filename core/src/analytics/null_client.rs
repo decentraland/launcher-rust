@@ -15,3 +15,9 @@ impl NullClient {
         &self.session_id
     }
 }
+
+impl Default for NullClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
