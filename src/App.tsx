@@ -1,12 +1,13 @@
 import React from "react";
-import { Container } from "decentraland-ui2";
-import { dark, ThemeProvider } from "decentraland-ui2/dist/theme";
 import { Home } from "./components/Home/Home";
+import { Container } from "decentraland-ui2";
+import { ThemeProvider } from "decentraland-ui2/dist/theme";
+import { Theme } from "./theme";
 
 export const App: React.FC = () => {
   return (
     <React.StrictMode>
-      <ThemeProvider theme={dark}>
+      <ThemeProvider theme={Theme}>
         <Container
           id="app-container"
           fixed
