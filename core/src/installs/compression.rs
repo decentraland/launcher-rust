@@ -1,3 +1,4 @@
+use crate::errors::{StepError, StepResult};
 use std::{
     fs,
     io::{Cursor, Read, Write},
@@ -6,12 +7,12 @@ use std::{
 use tar::Archive;
 use zip::read::ZipArchive;
 
-pub fn decompress_file(
-    source_path: &PathBuf,
-    destination_path: &PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> StepResult {
     if !source_path.exists() {
-        return Err("Source file does not exist".into());
+        return StepError::E1001_FILE_NOT_FOUND {
+            expected_path: Some(source_path.to_string_lossy().into_owned()),
+        }
+        .into();
     }
 
     fs::create_dir_all(destination_path)?;

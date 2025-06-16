@@ -1,13 +1,14 @@
 {
   "name": "Decentraland",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "format": "npx prettier --write '**/*.{js,mjs,cjs,jsx,ts,ODmts,cts,tsx}'; cargo fmt --manifest-path src-tauri/Cargo.toml -- --check --verbose; cargo fmt --manifest-path core/Cargo.toml -- --check --verbose"
   },
   "dependencies": {
     "@sentry/react": "^8.29.0",

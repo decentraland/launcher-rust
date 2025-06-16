@@ -1,129 +1,57 @@
 use crate::channel::EventChannel;
-use crate::instances::RunningInstances;
 use crate::{
     analytics::{Analytics, event::Event},
     attempts::Attempts,
     environment::AppEnvironment,
+    errors::{FlowError, StepError, StepResult},
     installs::{self, InstallsHub},
     s3::{self, ReleaseResponse},
-    types::{BuildType, FlowError, Status, Step, StepError},
+    types::{BuildType, Status, Step},
 };
 use anyhow::{Context, Ok, Result, anyhow};
 use log::info;
 use regex::Regex;
-use sentry_anyhow::capture_anyhow;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
-pub trait LaunchStep<TIntent, TState> {
-    async fn is_complete(&self, intent: &TIntent, state: Arc<Mutex<TState>>) -> Result<bool>;
+trait LaunchStep {
+    async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool>;
 
     fn start_label(&self) -> Result<Status>;
-
-    fn user_error_message(&self) -> &str;
 
     async fn execute<T: EventChannel>(
         &self,
         channel: &T,
-        intent: &TIntent,
-        state: Arc<Mutex<TState>>,
-    ) -> Result<()>;
+        state: Arc<Mutex<LaunchFlowState>>,
+    ) -> StepResult;
 
     async fn execute_if_needed<T: EventChannel>(
         &self,
         channel: &T,
-        intent: &TIntent,
-        state: Arc<Mutex<TState>>,
+        state: Arc<Mutex<LaunchFlowState>>,
         label: &str,
-    ) -> std::result::Result<(), StepError> {
-        let result = self
-            .execute_if_needed_inner(channel, intent, state, label)
-            .await;
-
-        if let Err(e) = result {
-            let error = StepError {
-                inner_error: e,
-                user_message: self.user_error_message().to_owned(),
-            };
-            return std::result::Result::Err(error);
-        }
-
-        std::result::Result::Ok(())
-    }
-
-    async fn execute_if_needed_inner<T: EventChannel>(
-        &self,
-        channel: &T,
-        intent: &TIntent,
-        state: Arc<Mutex<TState>>,
-        label: &str,
-    ) -> Result<()> {
-        let complete = self.is_complete(intent, state.clone()).await?;
+    ) -> StepResult {
+        let complete = self.is_complete(state.clone()).await?;
         if complete {
             info!("Step {} is already complete", label);
-            return Ok(());
+            return StepResult::Ok(());
         }
 
         let status = self.start_label()?;
         channel.send(status)?;
 
         info!("Step {} is started", label);
-        self.execute(channel, intent, state).await?;
+        self.execute(channel, state).await?;
         info!("Step {} is finished", label);
-        Ok(())
+        StepResult::Ok(())
     }
-}
-
-type FlowVariantResult = std::result::Result<(), StepError>;
-
-trait FlowVariant<TIntent, TState> {
-    async fn launch<T: EventChannel>(
-        &self,
-        channel: &T,
-        intent: &TIntent,
-        state: Arc<Mutex<TState>>,
-    ) -> FlowVariantResult;
-}
-
-pub struct LaunchFlowState {
-    intent_state: IntentState,
-    attempts: Attempts,
-}
-
-impl Default for LaunchFlowState {
-    //TODO resolve intent
-    fn default() -> Self {
-        Self {
-            intent_state: IntentState::OpenAppInstance(OpenAppInstanceState::default()),
-            attempts: Attempts::default(),
-        }
-    }
-}
-
-enum IntentState {
-    OpenAppInstance(OpenAppInstanceState),
-    OpenDeepLinkInExistingInstance(OpenDeepLinkInExistingInstanceState),
 }
 
 #[derive(Default)]
-struct OpenAppInstanceState {
+pub struct LaunchFlowState {
     latest_release: Option<ReleaseResponse>,
     recent_download: Option<RecentDownload>,
-}
-
-#[derive(Default)]
-struct OpenDeepLinkInExistingInstanceState;
-
-pub enum LaunchIntent {
-    OpenAppInstance(OpenAppInstanceIntent),
-    OpenDeepLinkInExistingInstance(DeepLinkIntent),
-}
-
-#[derive(Default)]
-pub struct OpenAppInstanceIntent;
-
-pub struct DeepLinkIntent {
-    deeplink: String,
+    attempts: Attempts,
 }
 
 #[derive(Clone)]
@@ -133,100 +61,38 @@ struct RecentDownload {
 }
 
 pub struct LaunchFlow {
-    open_app_instance: OpenAppInstanceFlow,
-    open_deeplink_in_existing_instance: OpenDeepLinkInExistingInstanceFlow,
-}
-
-struct OpenAppInstanceFlow {
     fetch_step: FetchStep,
     download_step: DownloadStep,
     install_step: InstallStep,
     app_launch_step: AppLaunchStep,
 }
 
-impl FlowVariant<OpenAppInstanceIntent, OpenAppInstanceState> for OpenAppInstanceFlow {
-    async fn launch<T: EventChannel>(
-        &self,
-        channel: &T,
-        intent: &OpenAppInstanceIntent,
-        state: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> FlowVariantResult {
-        self.fetch_step
-            .execute_if_needed(channel, intent, state.clone(), "fetch")
-            .await?;
-        self.download_step
-            .execute_if_needed(channel, intent, state.clone(), "download")
-            .await?;
-        self.install_step
-            .execute_if_needed(channel, intent, state.clone(), "install")
-            .await?;
-        self.app_launch_step
-            .execute_if_needed(channel, intent, state.clone(), "launch")
-            .await?;
-        FlowVariantResult::Ok(())
-    }
-}
-
-struct OpenDeepLinkInExistingInstanceFlow {
-    deeplink_step: HandleDeepLinkStep,
-}
-
-impl FlowVariant<DeepLinkIntent, OpenDeepLinkInExistingInstanceState>
-    for OpenDeepLinkInExistingInstanceFlow
-{
-    async fn launch<T: EventChannel>(
-        &self,
-        channel: &T,
-        intent: &DeepLinkIntent,
-        state: Arc<Mutex<OpenDeepLinkInExistingInstanceState>>,
-    ) -> FlowVariantResult {
-        self.deeplink_step
-            .execute_if_needed(channel, intent, state.clone(), "deeplink")
-            .await?;
-        FlowVariantResult::Ok(())
-    }
-}
-
 impl LaunchFlow {
-    pub fn new(
-        installs_hub: Arc<Mutex<InstallsHub>>,
-        analytics: Arc<Mutex<Analytics>>,
-        running_instances: Arc<Mutex<RunningInstances>>,
-    ) -> Self {
-        Self {
-            open_app_instance: OpenAppInstanceFlow {
-                fetch_step: FetchStep {},
-                download_step: DownloadStep {
-                    analytics: analytics.clone(),
-                },
-                install_step: InstallStep {
-                    analytics: analytics.clone(),
-                },
-                app_launch_step: AppLaunchStep { installs_hub },
+    pub fn new(installs_hub: Arc<Mutex<InstallsHub>>, analytics: Arc<Mutex<Analytics>>) -> Self {
+        LaunchFlow {
+            fetch_step: FetchStep {},
+            download_step: DownloadStep {
+                analytics: analytics.clone(),
             },
-            open_deeplink_in_existing_instance: OpenDeepLinkInExistingInstanceFlow {
-                deeplink_step: HandleDeepLinkStep { running_instances },
+            install_step: InstallStep {
+                analytics: analytics.clone(),
             },
+            app_launch_step: AppLaunchStep { installs_hub },
         }
     }
 
     pub async fn launch<T: EventChannel>(
         &self,
         channel: &T,
-        intent: LaunchIntent,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> std::result::Result<(), FlowError> {
-        let result = self.launch_internal(channel, intent, state.clone()).await;
+        let result = self.launch_internal(channel, state.clone()).await;
         if let Err(e) = result {
-            log::error!(
-                "Error during the flow {} {:#}",
-                e.user_message,
-                e.inner_error
-            );
-            capture_anyhow(&e.inner_error);
+            log::error!("Error during the flow {} {:#?}", e, e);
+            sentry::capture_error(&e);
             let can_retry = Self::can_retry(state).await;
             let error = FlowError {
-                user_message: e.user_message,
+                user_message: e.user_message().to_owned(),
                 can_retry,
             };
             return std::result::Result::Err(error);
@@ -238,52 +104,38 @@ impl LaunchFlow {
     async fn launch_internal<T: EventChannel>(
         &self,
         channel: &T,
-        intent: LaunchIntent,
         state: Arc<Mutex<LaunchFlowState>>,
-    ) -> std::result::Result<(), StepError> {
+    ) -> StepResult {
         Self::validate_attempt_and_increase(state.clone()).await?;
-
-        match intent {
-            LaunchIntent::OpenAppInstance(intent) => {
-                info!("Open a new app instance");
-                //TODO pass state
-                let state = Arc::new(Mutex::new(OpenAppInstanceState::default()));
-                self.open_app_instance
-                    .launch(channel, &intent, state)
-                    .await?;
-            }
-            LaunchIntent::OpenDeepLinkInExistingInstance(deeplink) => {
-                info!(
-                    "Open deep link in existing instance: {:?}",
-                    deeplink.deeplink
-                );
-                //TODO pass state
-                let state = Arc::new(Mutex::new(OpenDeepLinkInExistingInstanceState::default()));
-                self.open_deeplink_in_existing_instance
-                    .launch(channel, &deeplink, state)
-                    .await?;
-            }
-        }
-
-        std::result::Result::Ok(())
+        self.fetch_step
+            .execute_if_needed(channel, state.clone(), "fetch")
+            .await?;
+        self.download_step
+            .execute_if_needed(channel, state.clone(), "download")
+            .await?;
+        self.install_step
+            .execute_if_needed(channel, state.clone(), "install")
+            .await?;
+        self.app_launch_step
+            .execute_if_needed(channel, state.clone(), "launch")
+            .await?;
+        StepResult::Ok(())
     }
 
-    async fn validate_attempt_and_increase(
-        state: Arc<Mutex<LaunchFlowState>>,
-    ) -> std::result::Result<(), StepError> {
+    async fn validate_attempt_and_increase(state: Arc<Mutex<LaunchFlowState>>) -> StepResult {
         let mut guard = state.lock().await;
 
         if guard.attempts.try_consume_attempt() {
-            return std::result::Result::Ok(());
+            return StepResult::Ok(());
         }
 
         let message = "Out of attempts";
         let inner_error = anyhow!(message);
-        let error = StepError {
-            inner_error,
-            user_message: message.to_owned(),
+        let error = StepError::E0000_GENERIC_ERROR {
+            error: inner_error,
+            user_message: Some(message.to_owned()),
         };
-        std::result::Result::Err(error)
+        StepResult::Err(error)
     }
 
     async fn can_retry(state: Arc<Mutex<LaunchFlowState>>) -> bool {
@@ -292,65 +144,12 @@ impl LaunchFlow {
     }
 }
 
-struct HandleDeepLinkStep {
-    running_instances: Arc<Mutex<RunningInstances>>,
-}
-
-impl LaunchStep<DeepLinkIntent, OpenDeepLinkInExistingInstanceState> for HandleDeepLinkStep {
-    async fn is_complete(
-        &self,
-        _intent: &DeepLinkIntent,
-        _state: Arc<Mutex<OpenDeepLinkInExistingInstanceState>>,
-    ) -> Result<bool> {
-        // always handle deeplink
-        Ok(false)
-    }
-
-    fn user_error_message(&self) -> &str {
-        "Cannot open deeplink"
-    }
-
-    fn start_label(&self) -> Result<Status> {
-        let status = Status::State {
-            step: Step::DeeplinkOpening,
-        };
-        Ok(status)
-    }
-
-    async fn execute<T: EventChannel>(
-        &self,
-        _channel: &T,
-        _intent: &DeepLinkIntent,
-        _state: Arc<Mutex<OpenDeepLinkInExistingInstanceState>>,
-    ) -> Result<()> {
-        let instances = self.running_instances.lock().await;
-        if instances
-            .any_is_running()
-            .context("Cannot define if any client isntance is running")?
-        {
-
-            //TODO deeplink server
-            //update if consumed
-        }
-
-        Ok(())
-    }
-}
-
 struct FetchStep {}
 
-impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for FetchStep {
-    async fn is_complete(
-        &self,
-        _intent: &OpenAppInstanceIntent,
-        _state: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> Result<bool> {
+impl LaunchStep for FetchStep {
+    async fn is_complete(&self, _state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         // always refetch the origin
         Ok(false)
-    }
-
-    fn user_error_message(&self) -> &str {
-        "Fetch the latest client version failed"
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -363,13 +162,12 @@ impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for FetchStep {
     async fn execute<T: EventChannel>(
         &self,
         _channel: &T,
-        _intent: &OpenAppInstanceIntent,
-        state: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> Result<()> {
+        state: Arc<Mutex<LaunchFlowState>>,
+    ) -> StepResult {
         let mut guard = state.lock().await;
         let latest_release = crate::s3::get_latest_explorer_release().await?;
         guard.latest_release = Some(latest_release);
-        Ok(())
+        StepResult::Ok(())
     }
 }
 
@@ -416,12 +214,8 @@ impl DownloadStep {
     }
 }
 
-impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for DownloadStep {
-    async fn is_complete(
-        &self,
-        _intent: &OpenAppInstanceIntent,
-        state: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> Result<bool> {
+impl LaunchStep for DownloadStep {
+    async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
         match &guard.latest_release {
             Some(release) => {
@@ -431,10 +225,6 @@ impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for DownloadStep {
             }
             None => Err(anyhow!("Latest release is not found in the state")),
         }
-    }
-
-    fn user_error_message(&self) -> &str {
-        "Failed to download"
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -451,9 +241,8 @@ impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for DownloadStep {
     async fn execute<T: EventChannel>(
         &self,
         channel: &T,
-        _intent: &OpenAppInstanceIntent,
-        state: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> Result<()> {
+        state: Arc<Mutex<LaunchFlowState>>,
+    ) -> StepResult {
         let mode = DownloadStep::mode();
 
         let mut guard = state.lock().await;
@@ -508,9 +297,9 @@ impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for DownloadStep {
                     downloaded_path: target_path,
                 });
 
-                Ok(())
+                StepResult::Ok(())
             }
-            None => Err(anyhow!("Latest release is not fetched")),
+            None => StepResult::Err(anyhow!("Latest release is not fetched").into()),
         }
     }
 }
@@ -520,7 +309,7 @@ struct InstallStep {
 }
 
 impl InstallStep {
-    async fn execute_internal(recent_download: RecentDownload) -> Result<()> {
+    async fn execute_internal(recent_download: RecentDownload) -> StepResult {
         installs::install_explorer(
             &recent_download.version,
             Some(recent_download.downloaded_path),
@@ -529,30 +318,19 @@ impl InstallStep {
     }
 
     async fn recent_download_and_update_state(
-        state: Arc<Mutex<OpenAppInstanceState>>,
+        state: Arc<Mutex<LaunchFlowState>>,
     ) -> Option<RecentDownload> {
         let mut guard = state.lock().await;
-        let recent_download = guard.recent_download.clone();
-        if recent_download.is_none() {
-            return None;
-        }
+        let recent_download = guard.recent_download.clone()?;
         guard.recent_download = None;
-        recent_download
+        Some(recent_download)
     }
 }
 
-impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for InstallStep {
-    async fn is_complete(
-        &self,
-        _intent: &OpenAppInstanceIntent,
-        state: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> Result<bool> {
+impl LaunchStep for InstallStep {
+    async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
         Ok(guard.recent_download.is_none())
-    }
-
-    fn user_error_message(&self) -> &str {
-        "Failed to install"
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -566,9 +344,8 @@ impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for InstallStep {
     async fn execute<T: EventChannel>(
         &self,
         _channel: &T,
-        _intent: &OpenAppInstanceIntent,
-        state: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> Result<()> {
+        state: Arc<Mutex<LaunchFlowState>>,
+    ) -> StepResult {
         let mut analytics = self.analytics.lock().await;
 
         let recent_download = InstallStep::recent_download_and_update_state(state).await;
@@ -603,7 +380,7 @@ impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for InstallStep {
                         error: ERROR_MESSAGE.to_owned(),
                     })
                     .await;
-                Err(anyhow!(ERROR_MESSAGE))
+                StepResult::Err(anyhow!(ERROR_MESSAGE).into())
             }
         }
     }
@@ -613,18 +390,10 @@ struct AppLaunchStep {
     installs_hub: Arc<Mutex<InstallsHub>>,
 }
 
-impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for AppLaunchStep {
-    async fn is_complete(
-        &self,
-        _intent: &OpenAppInstanceIntent,
-        _: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> Result<bool> {
+impl LaunchStep for AppLaunchStep {
+    async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         // Always launch explorer
         Ok(false)
-    }
-
-    fn user_error_message(&self) -> &str {
-        "Failed to launch"
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -637,14 +406,13 @@ impl LaunchStep<OpenAppInstanceIntent, OpenAppInstanceState> for AppLaunchStep {
     async fn execute<T: EventChannel>(
         &self,
         _channel: &T,
-        _intent: &OpenAppInstanceIntent,
-        _state: Arc<Mutex<OpenAppInstanceState>>,
-    ) -> Result<()> {
+        _state: Arc<Mutex<LaunchFlowState>>,
+    ) -> StepResult {
         let guard = self.installs_hub.lock().await;
 
         //TODO passed version if specified manually from upper flow
         guard.launch_explorer(None).await?;
-        Ok(())
+        StepResult::Ok(())
     }
 }
 

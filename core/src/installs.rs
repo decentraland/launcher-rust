@@ -2,6 +2,7 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::environment::AppEnvironment;
 use crate::instances::RunningInstances;
+use crate::errors::{StepError, StepResult};
 use crate::processes::CommandExtDetached;
 use crate::protocols::Protocol;
 use anyhow::{Context, Error, Result, anyhow};
@@ -139,6 +140,7 @@ fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
     Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
 }
 
+#[cfg(target_os = "macos")]
 fn move_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
     if !src.exists() {
         return Err(anyhow!("Source path does not exist"));
@@ -210,7 +212,7 @@ impl Eq for EntryVersion {}
 
 impl PartialOrd for EntryVersion {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.version.partial_cmp(&other.version)
+        Some(self.cmp(other))
     }
 }
 
@@ -252,10 +254,20 @@ async fn cleanup_versions() -> Result<()> {
     }
 
     // Sort versions
-    installations.sort_by(|a, b| a.cmp(b));
+    installations.sort();
+
+    const KEEP_VERSIONS_AMOUNT: usize = 2;
+
+    if installations.len() <= KEEP_VERSIONS_AMOUNT {
+        // Don't need to uninstall anything
+        return Ok(());
+    }
 
     // Keep the latest 2 versions and delete the rest
-    for version in installations.iter().take(installations.len() - 2) {
+    for version in installations
+        .iter()
+        .take(installations.len() - KEEP_VERSIONS_AMOUNT)
+    {
         let folder_path = explorer_path().join(version.to_restored());
         if folder_path.exists() {
             match fs::remove_dir_all(&folder_path) {
@@ -292,20 +304,19 @@ pub fn target_download_path() -> PathBuf {
     explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
 }
 
-pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> Result<()> {
+pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
     let branch_path = explorer_path().join(version);
     let file_path = downloaded_file_path
         .unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
 
     if !file_path.exists() {
-        return Err(anyhow!(format!(
-            "Downloaded explorer file not found: {}",
-            file_path.to_string_lossy()
-        )));
+        return StepError::E1001_FILE_NOT_FOUND {
+            expected_path: Some(file_path.to_string_lossy().into_owned()),
+        }
+        .into();
     }
 
-    compression::decompress_file(&file_path, &branch_path)
-        .map_err(|e| anyhow::Error::msg(format!("Cannot decompress file {}", e)))?;
+    compression::decompress_file(&file_path, &branch_path)?;
 
     #[cfg(target_os = "macos")]
     {
@@ -326,7 +337,8 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     let mut version_data = get_version_data_or_empty();
     version_data[version] = Value::from(
         std::time::SystemTime::now()
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)?
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .context("Cannot convert time")?
             .as_secs()
             .to_string(),
     );
@@ -337,12 +349,13 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     version_data["path"] = branch_path.to_string_lossy().into();
 
     // Write version data to file
-    let version_data_str = serde_json::to_string(&version_data)?;
+    let version_data_str =
+        serde_json::to_string(&version_data).context("Cannot serialize version_data")?;
     let version_path = explorer_version_path();
-    fs::write(version_path, version_data_str).context("Cannot write version data")?;
+    fs::write(version_path, version_data_str)?;
 
     // Remove the downloaded file
-    fs::remove_file(file_path).context("Cannot remove the downloaded file")?;
+    fs::remove_file(file_path)?;
     cleanup_versions()
         .await
         .context("Cannot clean up the old versions")?;
@@ -487,22 +500,22 @@ impl InstallsHub {
         const CHECK_INTERVAL: Duration = Duration::from_millis(100);
 
         #[cfg(windows)]
-        let GRACEFUL_EXIT_CODE: ExitStatus = std::process::ExitStatus::from_raw(0);
+        let graceful_exit_code: ExitStatus = std::process::ExitStatus::from_raw(0);
 
         #[cfg(unix)]
-        let GRACEFUL_EXIT_CODE: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
+        let graceful_exit_code: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
 
         #[cfg(windows)]
-        let STILL_ACTIVE_EXIT_CODE: ExitStatus = std::process::ExitStatus::from_raw(259);
+        let still_active_exit_code: ExitStatus = std::process::ExitStatus::from_raw(259);
 
         for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
             if let Some(exit_status) = child.try_wait()? {
-                if exit_status == GRACEFUL_EXIT_CODE {
+                if exit_status == graceful_exit_code {
                     return Ok(());
                 }
 
                 #[cfg(windows)]
-                if exit_status == STILL_ACTIVE_EXIT_CODE {
+                if exit_status == still_active_exit_code {
                     break;
                 }
 

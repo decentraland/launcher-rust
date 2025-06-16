@@ -4,6 +4,7 @@ mod attempts;
 pub mod channel;
 mod config;
 pub mod environment;
+pub mod errors;
 pub mod flow;
 pub mod installs;
 pub mod instances;
