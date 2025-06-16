@@ -2,9 +2,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fs::{File, OpenOptions},
-    io::{BufReader, BufWriter},
-    path::PathBuf,
+    fs::File,
+    path::{Path, PathBuf},
 };
 use sysinfo::Pid;
 
@@ -14,7 +13,7 @@ pub struct RunningInstances {
     path: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 struct Storage {
     pub processes: HashMap<u32, String>,
 }
@@ -37,15 +36,8 @@ impl RunningInstances {
     }
 
     pub fn any_is_running(&self) -> Result<bool> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&self.path)?;
-
         let system = sysinfo::System::new_all();
-        let mut content = Self::file_content(&file);
+        let mut content = Self::file_content(self.path.as_path());
         let mut dead_process_pids: Vec<u32> = Vec::new();
 
         let mut any_running = false;
@@ -57,6 +49,7 @@ impl RunningInstances {
             if let Some(process) = system.process(pid) {
                 match process.name().to_str() {
                     Some(valid) => {
+                        log::info!("Instance pid name is valid {}: {}", pid, valid);
                         if valid == name.as_str() {
                             any_running = true
                         } else {
@@ -64,10 +57,12 @@ impl RunningInstances {
                         }
                     }
                     None => {
+                        log::info!("Instance pid name is invalid {}", pid);
                         dead_process_pids.push(id);
                     }
                 }
             } else {
+                log::info!("Instance pid is dead {}", pid);
                 dead_process_pids.push(id);
             }
         }
@@ -76,38 +71,41 @@ impl RunningInstances {
             for pid in dead_process_pids.iter() {
                 content.processes.remove(pid);
             }
-            Self::write_content(&file, &content)?;
+            Self::write_content(self.path.as_path(), &content)?;
         }
 
+        log::info!("Any running instances {}", any_running);
         Ok(any_running)
     }
 
-    fn file_content(file: &File) -> Storage {
-        let reader = BufReader::new(file);
-        serde_json::from_reader(reader).unwrap_or_default()
+    fn file_content(path: &Path) -> Storage {
+        match File::open(path) {
+            Ok(file) => {
+                let storage = serde_json::from_reader(file).unwrap_or_else(|e| {
+                    log::error!(
+                        "Cannot read storage from file, fallback to default storage: {}",
+                        e
+                    );
+                    Storage::default()
+                });
+                log::info!("Storage from file: {:#?}", storage);
+                storage
+            }
+            Err(_) => Storage::default(),
+        }
     }
 
-    fn write_content(file: &File, storage: &Storage) -> Result<()> {
-        file.set_len(0)?;
-        file.sync_all()?;
-
-        let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, storage)?;
-
+    fn write_content(path: &Path, storage: &Storage) -> Result<()> {
+        let file = File::create(path)?;
+        serde_json::to_writer_pretty(file, storage)?;
         Ok(())
     }
 
     fn write_to_json_file(&self, pid: u32, name: &str) -> Result<()> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&self.path)?;
-
-        let mut content: Storage = Self::file_content(&file);
+        let path = self.path.as_path();
+        let mut content: Storage = Self::file_content(path);
         content.processes.insert(pid, name.to_owned());
-        Self::write_content(&file, &content)?;
+        Self::write_content(path, &content)?;
         Ok(())
     }
 }
