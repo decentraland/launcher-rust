@@ -1,10 +1,10 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::environment::AppEnvironment;
-use crate::instances::RunningInstances;
 use crate::errors::{StepError, StepResult};
+use crate::instances::RunningInstances;
 use crate::processes::CommandExtDetached;
-use crate::protocols::Protocol;
+use crate::protocols::{DeepLink, Protocol};
 use anyhow::{Context, Error, Result, anyhow};
 use semver::Version;
 use serde_json::{Map, Value};
@@ -366,23 +366,20 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 pub struct InstallsHub {
     analytics: Arc<Mutex<Analytics>>,
     running_instances: Arc<Mutex<RunningInstances>>,
-    protocol: Protocol,
 }
 
 impl InstallsHub {
     pub fn new(
         analytics: Arc<Mutex<Analytics>>,
         running_instances: Arc<Mutex<RunningInstances>>,
-        protocol: Protocol,
     ) -> Self {
         InstallsHub {
             analytics,
             running_instances,
-            protocol,
         }
     }
 
-    async fn explorer_params(&self) -> Vec<String> {
+    async fn explorer_params(&self, deeplink: Option<DeepLink>) -> Vec<String> {
         let guard = self.analytics.lock().await;
 
         let mut output = vec![
@@ -394,8 +391,8 @@ impl InstallsHub {
             AppEnvironment::provider(),
         ];
 
-        if let Some(value) = self.protocol.value() {
-            output.insert(0, value);
+        if let Some(value) = deeplink {
+            output.insert(0, value.into());
         }
 
         output
@@ -424,14 +421,20 @@ impl InstallsHub {
         guard.track_and_flush_silent(event).await;
     }
 
-    pub async fn launch_explorer(&self, preferred_version: Option<&str>) -> Result<()> {
+    pub async fn launch_explorer(
+        &self,
+        deeplink: Option<DeepLink>,
+        preferred_version: Option<&str>,
+    ) -> Result<()> {
         let readable_version = InstallsHub::readable_version(preferred_version);
 
         self.send_analytics_event(Event::LAUNCH_CLIENT_START {
             version: readable_version.clone(),
         })
         .await;
-        let result = self.launch_explorer_internal(preferred_version).await;
+        let result = self
+            .launch_explorer_internal(deeplink, preferred_version)
+            .await;
         if let Err(e) = &result {
             self.send_analytics_event(Event::LAUNCH_CLIENT_ERROR {
                 version: readable_version,
@@ -448,7 +451,11 @@ impl InstallsHub {
         result
     }
 
-    async fn launch_explorer_internal(&self, preferred_version: Option<&str>) -> Result<()> {
+    async fn launch_explorer_internal(
+        &self,
+        deeplink: Option<DeepLink>,
+        preferred_version: Option<&str>,
+    ) -> Result<()> {
         log::info!("Launching Explorer...");
 
         let explorer_bin_path = get_explorer_bin_path(preferred_version)?;
@@ -469,7 +476,7 @@ impl InstallsHub {
         fs::metadata(&explorer_bin_path).context("Failed to access explorer binary")?;
 
         // Prepare explorer parameters
-        let explorer_params = self.explorer_params().await;
+        let explorer_params = self.explorer_params(deeplink).await;
         log::info!(
             "Opening Explorer at {:?} with params: {:?}",
             explorer_bin_path,
