@@ -4,7 +4,7 @@ use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
 use crate::processes::CommandExtDetached;
-use crate::protocols::{DeepLink};
+use crate::protocols::DeepLink;
 use anyhow::{Context, Error, Result, anyhow};
 use semver::Version;
 use serde_json::{Map, Value};

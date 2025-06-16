@@ -29,10 +29,7 @@ async fn main() -> Result<()> {
     let channel = ConsoleChannel();
     app_state
         .flow
-        .launch(
-            &channel,
-            app_state.state,
-        )
+        .launch(&channel, app_state.state)
         .await
         .map_err(|e| anyhow::anyhow!(e.user_message))
 }

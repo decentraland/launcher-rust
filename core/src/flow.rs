@@ -2,6 +2,7 @@ use crate::channel::EventChannel;
 use crate::errors::StepResultTyped;
 use crate::instances::RunningInstances;
 use crate::protocols::Protocol;
+use crate::types;
 use crate::{
     analytics::{Analytics, event::Event},
     attempts::Attempts,
@@ -14,6 +15,7 @@ use crate::{
 use anyhow::{Context, Ok, Result, anyhow};
 use log::info;
 use regex::Regex;
+use std::time::Duration;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -427,13 +429,19 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
 
     async fn execute<T: EventChannel>(
         &self,
-        _channel: &T,
+        channel: &T,
         _state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         match self.protocol.value() {
             Some(deeplink) => {
                 let any_is_running = self.is_any_instance_running().await?;
                 if any_is_running {
+                    channel.send(Status::State {
+                        step: Step::DeeplinkOpening,
+                    })?;
+
+                    const OPEN_DEEPLINK_TIMEOUT: u64 = 3;
+                    tokio::time::sleep(Duration::from_secs(OPEN_DEEPLINK_TIMEOUT)).await;
                     //TODO launch http server
                 } else {
                     let guard = self.installs_hub.lock().await;
