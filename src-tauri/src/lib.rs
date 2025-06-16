@@ -158,7 +158,8 @@ async fn update_if_needed_and_restart(
 fn setup_deeplink(a: &mut App, protocol: &Protocol) {
     #[cfg(target_os = "macos")]
     {
-        a.deep_link().on_open_url(|event| {
+        let protocol = protocol.clone();
+        a.deep_link().on_open_url(move |event| {
             let urls = event.urls();
             match urls.first() {
                 Some(url) => {
