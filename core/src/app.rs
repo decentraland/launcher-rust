@@ -16,7 +16,6 @@ use utils::app_version;
 pub struct AppState {
     pub flow: LaunchFlow,
     pub state: Arc<Mutex<LaunchFlowState>>,
-    pub protocol: Mutex<Protocol>,
     analytics: Arc<Mutex<Analytics>>,
 }
 
@@ -37,20 +36,22 @@ impl AppState {
             })
             .await;
 
-        let protocol = Protocol::new();
         let analytics = Arc::new(Mutex::new(analytics));
         let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
         let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(
             analytics.clone(),
             running_instances.clone(),
-            protocol,
         )));
 
-        let flow = LaunchFlow::new(installs_hub, analytics.clone(), running_instances.clone());
+        let flow = LaunchFlow::new(
+            installs_hub,
+            analytics.clone(),
+            running_instances.clone(),
+            Protocol {},
+        );
         let flow_state = LaunchFlowState::default();
         let app_state = AppState {
             flow,
-            protocol: Mutex::new(Protocol {}),
             state: Arc::new(Mutex::new(flow_state)),
             analytics,
         };

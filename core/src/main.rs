@@ -10,7 +10,6 @@
 )]
 
 use anyhow::{Context, Ok, Result};
-use dcl_launcher_core::flow::{LaunchIntent, OpenAppInstanceIntent};
 use dcl_launcher_core::{app::AppState, channel::EventChannel};
 use log::info;
 
@@ -32,7 +31,6 @@ async fn main() -> Result<()> {
         .flow
         .launch(
             &channel,
-            LaunchIntent::OpenAppInstance(OpenAppInstanceIntent::default()),
             app_state.state,
         )
         .await

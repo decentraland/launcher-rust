@@ -75,6 +75,7 @@ impl LaunchFlow {
         installs_hub: Arc<Mutex<InstallsHub>>,
         analytics: Arc<Mutex<Analytics>>,
         running_instances: Arc<Mutex<RunningInstances>>,
+        protocol: Protocol,
     ) -> Self {
         LaunchFlow {
             fetch_step: FetchStep {},
@@ -87,6 +88,7 @@ impl LaunchFlow {
             app_launch_step: AppLaunchStep {
                 installs_hub,
                 running_instances,
+                protocol,
             },
         }
     }

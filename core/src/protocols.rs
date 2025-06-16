@@ -25,10 +25,6 @@ impl DeepLink {
             Ok(DeepLink(value))
         }
     }
-
-    fn content(&self) -> &str {
-        self.0.as_str()
-    }
 }
 
 impl From<DeepLink> for String {
