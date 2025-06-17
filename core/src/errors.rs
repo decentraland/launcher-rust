@@ -2,6 +2,8 @@ use anyhow::anyhow;
 use std::{collections::HashMap, fmt::Display};
 use thiserror::Error;
 
+use crate::installs::downloads::{DownloadFileError, FileIncompleteError};
+
 use super::types::Status;
 
 pub struct FlowError {
@@ -79,6 +81,7 @@ pub enum StepError {
         url: String,
         code: u16,
     },
+    E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE(#[from] FileIncompleteError),
 }
 
 impl StepError {
@@ -143,6 +146,9 @@ impl StepError {
             Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => {
                 "There was an error while downloading Decentraland. Please check your internet connection and try again."
             }
+            Self::E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE { .. } => {
+                "Downloading file is incomplete due an error. Please check your internet connection and try again."
+            }
         }
     }
 }
@@ -205,6 +211,16 @@ impl From<zip::result::ZipError> for StepError {
                 error: anyhow!(value),
                 user_message: None,
             },
+        }
+    }
+}
+
+impl From<DownloadFileError> for StepError {
+    fn from(value: DownloadFileError) -> Self {
+        match value {
+            DownloadFileError::Generic(e) => e.into(),
+            DownloadFileError::IO(e) => e.into(),
+            DownloadFileError::FileIncomplete(e) => e.into(),
         }
     }
 }

@@ -1,6 +1,7 @@
 use futures_util::StreamExt;
 use reqwest::Client;
 use std::cmp::min;
+use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 
@@ -8,9 +9,44 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::channel::EventChannel;
 use crate::types::{BuildType, Status, Step};
-use anyhow::{Context, Result, anyhow};
+use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+pub type DownloadFileResult = std::result::Result<(), DownloadFileError>;
+
+#[derive(Debug, thiserror::Error)]
+pub struct FileIncompleteError {
+    expected_size: u64,
+    real_size: u64,
+}
+
+impl Display for FileIncompleteError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "file is incomplete: expected size {}, real size {}",
+            self.expected_size, self.real_size
+        )
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DownloadFileError {
+    Generic(#[from] anyhow::Error),
+    IO(#[from] std::io::Error),
+    FileIncomplete(#[from] FileIncompleteError),
+}
+
+impl Display for DownloadFileError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DownloadFileError::Generic(e) => write!(f, "Download failed: {}", e),
+            DownloadFileError::IO(e) => write!(f, "Download failed due IO error: {}", e),
+            DownloadFileError::FileIncomplete(e) => write!(f, "Download failed: {}", e),
+        }
+    }
+}
 
 async fn track_download_progress(
     analytics: Arc<Mutex<Analytics>>,
@@ -33,7 +69,7 @@ pub async fn download_file<T: EventChannel>(
     channel: &T,
     build_type: &BuildType,
     analytics: Arc<Mutex<Analytics>>,
-) -> Result<()> {
+) -> DownloadFileResult {
     let client = Client::new();
 
     let res = client
@@ -55,6 +91,7 @@ pub async fn download_file<T: EventChannel>(
         let mut file = File::create(path).context(format!("Failed to create file '{}'", path))?;
         let mut stream = res.bytes_stream();
 
+        // TODO timeout
         while let Some(item) = stream.next().await {
             let chunk = item.context("Error while downloading file")?;
             file.write_all(&chunk)
@@ -96,12 +133,11 @@ pub async fn download_file<T: EventChannel>(
 
     let metadata = std::fs::metadata(path)?;
     if metadata.len() != total_size {
-        return Err(anyhow!(
-            "Downloadded file is incomplete: {}, {} of {}",
-            path,
-            metadata.len(),
-            total_size
-        ));
+        return Err(FileIncompleteError {
+            expected_size: total_size,
+            real_size: metadata.len(),
+        }
+        .into());
     }
 
     for task in tasks {
