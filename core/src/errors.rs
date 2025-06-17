@@ -61,6 +61,11 @@ pub enum StepError {
         #[source]
         inner_error: anyhow::Error,
     },
+    E1007_FILE_CREATE_FAILED {
+        file_path: String,
+        #[source]
+        source: std::io::Error,
+    },
 
     E2001_DOWNLOAD_FAILED {
         url: Option<String>,
@@ -133,7 +138,10 @@ impl StepError {
             }
             Self::E1006_FILE_DELETE_FAILED { .. } => {
                 "We couldn’t remove a previous download. Please check your permissions or try restarting the launcher."
-            }
+            },
+            Self::E1007_FILE_CREATE_FAILED { .. } => {
+                "We couldn’t create a file to download. Please check your permissions or try restarting the launcher."
+            },
             Self::E2001_DOWNLOAD_FAILED { .. } => {
                 "There was an error while downloading Decentraland. Please check your internet connection and try again."
             }
@@ -217,10 +225,19 @@ impl From<zip::result::ZipError> for StepError {
 
 impl From<DownloadFileError> for StepError {
     fn from(value: DownloadFileError) -> Self {
+        use DownloadFileError::*;
         match value {
-            DownloadFileError::Generic(e) => e.into(),
-            DownloadFileError::IO(e) => e.into(),
-            DownloadFileError::FileIncomplete(e) => e.into(),
+            Generic(e) => e.into(),
+            IO(e) => e.into(),
+            FileIncomplete(e) => e.into(),
+            Network(e) => e.into(),
+            ContentLengthNotFound { url } => StepError::E2002_MISSING_CONTENT_LENGTH {
+                url,
+                response_headers: HashMap::new(),
+            },
+            FileCreateFailed { source, file_path } => {
+                StepError::E1007_FILE_CREATE_FAILED { file_path, source }
+            }
         }
     }
 }

@@ -35,6 +35,16 @@ impl Display for FileIncompleteError {
 pub enum DownloadFileError {
     Generic(#[from] anyhow::Error),
     IO(#[from] std::io::Error),
+    Network(#[from] reqwest::Error),
+
+    ContentLengthNotFound {
+        url: String,
+    },
+    FileCreateFailed {
+        #[source]
+        source: std::io::Error,
+        file_path: String,
+    },
     FileIncomplete(#[from] FileIncompleteError),
 }
 
@@ -43,7 +53,18 @@ impl Display for DownloadFileError {
         match self {
             DownloadFileError::Generic(e) => write!(f, "Download failed: {}", e),
             DownloadFileError::IO(e) => write!(f, "Download failed due IO error: {}", e),
+            DownloadFileError::Network(e) => write!(f, "Download failed due Network error: {}", e),
             DownloadFileError::FileIncomplete(e) => write!(f, "Download failed: {}", e),
+            DownloadFileError::ContentLengthNotFound { url } => write!(
+                f,
+                "Download failed due missing content length from url: {}",
+                url
+            ),
+            DownloadFileError::FileCreateFailed { source, file_path } => write!(
+                f,
+                "Download failed due file creation failed: {}, source {}",
+                file_path, source
+            ),
         }
     }
 }
@@ -72,14 +93,12 @@ pub async fn download_file<T: EventChannel>(
 ) -> DownloadFileResult {
     let client = Client::new();
 
-    let res = client
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("Failed to GET from '{}'", &url))?;
-    let total_size = res
-        .content_length()
-        .with_context(|| format!("Failed to get content length from '{}'", &url))?;
+    let res = client.get(url).send().await?;
+    let total_size =
+        res.content_length()
+            .ok_or_else(|| DownloadFileError::ContentLengthNotFound {
+                url: url.to_owned(),
+            })?;
 
     // We don't want to send too many analytics events, so we limit the rate at which we send them.
     let mut last_analytics_time: Option<std::time::Instant> = None;
@@ -88,14 +107,17 @@ pub async fn download_file<T: EventChannel>(
 
     let mut downloaded: u64 = 0;
     {
-        let mut file = File::create(path).context(format!("Failed to create file '{}'", path))?;
+        let mut file =
+            File::create(path).map_err(|source| DownloadFileError::FileCreateFailed {
+                source,
+                file_path: path.to_owned(),
+            })?;
         let mut stream = res.bytes_stream();
 
         // TODO timeout
         while let Some(item) = stream.next().await {
-            let chunk = item.context("Error while downloading file")?;
-            file.write_all(&chunk)
-                .context("Error while writing to file")?;
+            let chunk = item?;
+            file.write_all(&chunk)?;
 
             let new = min(downloaded + (chunk.len() as u64), total_size);
             downloaded = new;
