@@ -73,5 +73,10 @@ jobs:
             git tag "v$VERSION"
             #   not-git push origin HEAD
             #   not-git push origin "v$VERSION"
+
+            # Show what would be pushed
+            echo "Git diff after tag (v$VERSION):"
+            git diff HEAD~1 HEAD
+
             echo "Simulating: git push origin HEAD"
             echo "Simulating: git push origin v$VERSION"
