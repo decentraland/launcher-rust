@@ -8,7 +8,7 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::channel::EventChannel;
 use crate::types::{BuildType, Status, Step};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -45,49 +45,63 @@ pub async fn download_file<T: EventChannel>(
         .content_length()
         .with_context(|| format!("Failed to get content length from '{}'", &url))?;
 
-    let mut file = File::create(path).context(format!("Failed to create file '{}'", path))?;
-    let mut downloaded: u64 = 0;
-    let mut stream = res.bytes_stream();
-
     // We don't want to send too many analytics events, so we limit the rate at which we send them.
     let mut last_analytics_time: Option<std::time::Instant> = None;
     let duration = std::time::Duration::from_millis(500);
     let mut tasks = Vec::new();
 
-    while let Some(item) = stream.next().await {
-        let chunk = item.context("Error while downloading file")?;
-        file.write_all(&chunk)
-            .context("Error while writing to file")?;
+    let mut downloaded: u64 = 0;
+    {
+        let mut file = File::create(path).context(format!("Failed to create file '{}'", path))?;
+        let mut stream = res.bytes_stream();
 
-        let new = min(downloaded + (chunk.len() as u64), total_size);
-        downloaded = new;
+        while let Some(item) = stream.next().await {
+            let chunk = item.context("Error while downloading file")?;
+            file.write_all(&chunk)
+                .context("Error while writing to file")?;
 
-        let should_send = match last_analytics_time {
-            None => true,
-            Some(last_time) => last_time.elapsed() >= duration,
-        };
+            let new = min(downloaded + (chunk.len() as u64), total_size);
+            downloaded = new;
 
-        if should_send {
-            last_analytics_time = Some(std::time::Instant::now());
-            let task = tokio::spawn(track_download_progress(
-                analytics.clone(),
-                url.to_string(),
-                downloaded,
-                total_size,
-            ));
-            tasks.push(task);
+            let should_send = match last_analytics_time {
+                None => true,
+                Some(last_time) => last_time.elapsed() >= duration,
+            };
+
+            if should_send {
+                last_analytics_time = Some(std::time::Instant::now());
+                let task = tokio::spawn(track_download_progress(
+                    analytics.clone(),
+                    url.to_string(),
+                    downloaded,
+                    total_size,
+                ));
+                tasks.push(task);
+            }
+
+            let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
+            let event: Status = Status::State {
+                step: Step::Downloading {
+                    progress,
+                    build_type: build_type.clone(),
+                },
+            };
+            channel
+                .send(event)
+                .context("Cannot send event to channel")?;
         }
 
-        let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
-        let event: Status = Status::State {
-            step: Step::Downloading {
-                progress,
-                build_type: build_type.clone(),
-            },
-        };
-        channel
-            .send(event)
-            .context("Cannot send event to channel")?;
+        file.sync_all()?;
+    }
+
+    let metadata = std::fs::metadata(path)?;
+    if metadata.len() != total_size {
+        return Err(anyhow!(
+            "Downloadded file is incomplete: {}, {} of {}",
+            path,
+            metadata.len(),
+            total_size
+        ));
     }
 
     for task in tasks {
