@@ -3,12 +3,18 @@ description: |
   This workflow orchestrates the CI pipeline for the project.
   It runs type checking, tests, and manages release drafts.
   It also handles PR comments to indicate build status.
+
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-      - 'renovate/**'
+    paths-ignore:
+      - package.json
+      - package-lock.json
+      - src-tauri/tauri.conf.json
+      - src-tauri/Cargo.toml
+      - core/Cargo.toml
   pull_request:
 
 concurrency:
@@ -22,6 +28,10 @@ jobs:
   tests:
     uses: ./.github/workflows/tests.yml
 
+  bump_version:
+    needs: [typechecking, tests]
+    uses: ./.github/workflows/bump-version.yml
+
   comment_start:
     if: github.event_name == 'pull_request'
     needs: tests
@@ -34,7 +44,7 @@ jobs:
       status: "requested"
 
   draft_release:
-    needs: [typechecking, tests]
+    needs: [bump_version]
     permissions:
       contents: write # Allows this job to create releases
     uses: ./.github/workflows/release.yml
