@@ -38,7 +38,7 @@ jobs:
           fetch-tags: true
 
       - name: Determine and bump version from commits
-        if: steps.check_skip.outputs.should_skip != 'true'
+        if: steps.check_skip.outputs.should_skip == 'do-not-run'
         id: bump
         run: |
             echo "Detecting semantic version bump..."
