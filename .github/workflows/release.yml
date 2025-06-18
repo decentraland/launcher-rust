@@ -233,6 +233,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          LAUNCHER_ENVIRONMENT: prod
           ES_USERNAME: ${{ secrets.ES_USERNAME }}
           ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
           WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
@@ -262,6 +263,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          LAUNCHER_ENVIRONMENT: dev
         with:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
