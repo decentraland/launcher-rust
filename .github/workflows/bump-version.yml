@@ -19,20 +19,26 @@ jobs:
 
     steps:
       - name: Check if we should skip version bump
+        id: check_skip
         run: |
             if [[ "${GITHUB_EVENT_NAME}" != "push" || "${GITHUB_REF_NAME}" != "main" ]]; then
-            echo "Skipping version bump (not a main branch push)"
-            echo "bump=none" >> $GITHUB_OUTPUT
-            echo "version=none" >> $GITHUB_OUTPUT
-            # exit 0
+                echo "Skipping version bump (not a main branch push)"
+                echo "bump=none" >> $GITHUB_OUTPUT
+                echo "version=none" >> $GITHUB_OUTPUT
+                echo "should_skip=true" >> $GITHUB_OUTPUT
+            else
+                echo "should_skip=false" >> $GITHUB_OUTPUT
+                echo "Running version bump (main branch push)"
             fi
 
       - uses: actions/checkout@v4
+        if: steps.check_skip.outputs.should_skip != 'true'
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Determine and bump version from commits
+        if: steps.check_skip.outputs.should_skip != 'true'
         id: bump
         run: |
             echo "Detecting semantic version bump..."
@@ -71,7 +77,5 @@ jobs:
             git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml core/Cargo.toml
             git commit -m "chore(release): bump version to $VERSION"
             git tag "v$VERSION"
-            #   not-git push origin HEAD
-            #   not-git push origin "v$VERSION"
-            echo "Simulating: git push origin HEAD"
-            echo "Simulating: git push origin v$VERSION"
+            git push origin HEAD:main
+            git push origin "v$VERSION"
