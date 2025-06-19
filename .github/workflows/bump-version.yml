@@ -1,0 +1,81 @@
+name: Bump Version
+
+on:
+  workflow_call:
+    outputs:
+      bump:
+        description: "Bump type"
+        value: ${{ jobs.bump_version.outputs.bump }}
+      version:
+        description: "New version string"
+        value: ${{ jobs.bump_version.outputs.version }}
+
+jobs:
+  bump_version:
+    runs-on: ubuntu-latest
+    outputs:
+      bump: ${{ steps.bump.outputs.bump }}
+      version: ${{ steps.bump.outputs.version }}
+
+    steps:
+      - name: Check if we should skip version bump
+        id: check_skip
+        run: |
+            if [[ "${GITHUB_EVENT_NAME}" != "push" || "${GITHUB_REF_NAME}" != "main" ]]; then
+                echo "Skipping version bump (not a main branch push)"
+                echo "bump=none" >> $GITHUB_OUTPUT
+                echo "version=none" >> $GITHUB_OUTPUT
+                echo "should_skip=true" >> $GITHUB_OUTPUT
+            else
+                echo "should_skip=false" >> $GITHUB_OUTPUT
+                echo "Running version bump (main branch push)"
+            fi
+
+      - uses: actions/checkout@v4
+        if: steps.check_skip.outputs.should_skip != 'true'
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine and bump version from commits
+        if: steps.check_skip.outputs.should_skip == 'do-not-run'
+        id: bump
+        run: |
+            echo "Detecting semantic version bump..."
+            LAST_TAG=$(git describe --tags --abbrev=0 || echo "v0.0.0")
+            echo "Last tag: $LAST_TAG"
+
+            COMMITS=$(git log $LAST_TAG..HEAD --pretty=format:"%s%n%b")
+            echo "Commits since $LAST_TAG:"
+            echo "$COMMITS"
+
+            if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
+                BUMP=major
+            elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?: "; then
+                BUMP=minor
+            else
+                BUMP=patch
+            fi
+
+            echo "Detected bump type: $BUMP"
+            echo "bump=$BUMP" >> $GITHUB_OUTPUT
+
+            if ! command -v rust-script &> /dev/null; then
+                echo "Installing rust-script..."
+                cargo install rust-script
+            fi
+
+            echo "Running ./update_version.rs $BUMP"
+            ./update_version.rs $BUMP
+
+            VERSION=$(jq -r .version package.json)
+            echo "Updated version: $VERSION"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml core/Cargo.toml
+            git commit -m "chore(release): bump version to $VERSION"
+            git tag "v$VERSION"
+            git push origin HEAD:main
+            git push origin "v$VERSION"
