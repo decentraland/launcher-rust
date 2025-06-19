@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use anyhow::Result;
@@ -6,7 +7,7 @@ use log::{error, info};
 use sentry::{ClientOptions, protocol::User};
 use sentry_types::Dsn;
 
-use crate::config;
+use crate::{config, environment::AppEnvironment};
 
 pub struct Monitoring {}
 
@@ -26,12 +27,16 @@ impl Monitoring {
                 info!("sentry dns is proiveded via env variables successfully");
                 let dsn = Dsn::from_str(raw_dsn)?;
 
+                let env = format!("{:?}", AppEnvironment::launcher_environment()).to_lowercase();
+                info!("sentry environment selected: {}", env);
+
                 let opts = ClientOptions {
                     release: sentry::release_name!(),
                     dsn: Some(dsn),
                     attach_stacktrace: true,
                     auto_session_tracking: true,
                     debug: cfg!(debug_assertions),
+                    environment: Some(Cow::Owned(env)),
                     ..Default::default()
                 };
                 let guard = sentry::init(opts);
