@@ -73,6 +73,10 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
 
     let args: Vec<String> = env::args().collect();
 
+    // comparison to support rollbacks
+    let builder: tauri_plugin_updater::UpdaterBuilder =
+        app.updater_builder().version_comparator(|v1, v2| v1 != v2);
+
     if let Some(pos) = args.iter().position(|a| a == KEY_UPDATER_URL) {
         let url = args.get(pos + 1);
         match url {
@@ -83,7 +87,7 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
                 );
                 let parsed_url: Url = Url::parse(url)?;
 
-                let builder = app.updater_builder().endpoints(vec![parsed_url])?;
+                let builder = builder.endpoints(vec![parsed_url])?;
 
                 if args.iter().any(|a| a == KEY_ALWAYS_TRIGGER_UPDATER) {
                     info!("Always trigger updater by flag {}", KEY_UPDATER_URL);
@@ -101,7 +105,7 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
         }
     }
 
-    app.updater()
+    builder.build()
 }
 
 async fn update_if_needed_and_restart(
