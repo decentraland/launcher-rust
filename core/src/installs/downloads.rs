@@ -4,6 +4,7 @@ use std::cmp::min;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Write;
+use std::time::Duration;
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
@@ -12,6 +13,7 @@ use crate::types::{BuildType, Status, Step};
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 
 pub type DownloadFileResult = std::result::Result<(), DownloadFileError>;
 
@@ -46,6 +48,7 @@ pub enum DownloadFileError {
         file_path: String,
     },
     FileIncomplete(#[from] FileIncompleteError),
+    NetworkTimeout,
 }
 
 impl Display for DownloadFileError {
@@ -65,6 +68,7 @@ impl Display for DownloadFileError {
                 "Download failed due file creation failed: {}, source {}",
                 file_path, source
             ),
+            DownloadFileError::NetworkTimeout => write!(f, "Download failed due network timeout"),
         }
     }
 }
@@ -114,40 +118,50 @@ pub async fn download_file<T: EventChannel>(
             })?;
         let mut stream = res.bytes_stream();
 
-        // TODO timeout
-        while let Some(item) = stream.next().await {
-            let chunk = item?;
-            file.write_all(&chunk)?;
+        loop {
+            match timeout(Duration::from_secs(15), stream.next()).await {
+                Ok(Some(item)) => {
+                    let chunk = item?;
+                    file.write_all(&chunk)?;
 
-            let new = min(downloaded + (chunk.len() as u64), total_size);
-            downloaded = new;
+                    let new = min(downloaded + (chunk.len() as u64), total_size);
+                    downloaded = new;
 
-            let should_send = match last_analytics_time {
-                None => true,
-                Some(last_time) => last_time.elapsed() >= duration,
-            };
+                    let should_send = match last_analytics_time {
+                        None => true,
+                        Some(last_time) => last_time.elapsed() >= duration,
+                    };
 
-            if should_send {
-                last_analytics_time = Some(std::time::Instant::now());
-                let task = tokio::spawn(track_download_progress(
-                    analytics.clone(),
-                    url.to_string(),
-                    downloaded,
-                    total_size,
-                ));
-                tasks.push(task);
+                    if should_send {
+                        last_analytics_time = Some(std::time::Instant::now());
+                        let task = tokio::spawn(track_download_progress(
+                            analytics.clone(),
+                            url.to_string(),
+                            downloaded,
+                            total_size,
+                        ));
+                        tasks.push(task);
+                    }
+
+                    let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
+                    let event: Status = Status::State {
+                        step: Step::Downloading {
+                            progress,
+                            build_type: build_type.clone(),
+                        },
+                    };
+                    channel
+                        .send(event)
+                        .context("Cannot send event to channel")?;
+                }
+                Ok(None) => {
+                    // Stream ended
+                    break;
+                }
+                Err(_) => {
+                    return Err(DownloadFileError::NetworkTimeout);
+                }
             }
-
-            let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
-            let event: Status = Status::State {
-                step: Step::Downloading {
-                    progress,
-                    build_type: build_type.clone(),
-                },
-            };
-            channel
-                .send(event)
-                .context("Cannot send event to channel")?;
         }
 
         file.sync_all()?;
