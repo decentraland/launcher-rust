@@ -277,7 +277,7 @@ impl LaunchStep for DownloadStep {
                 .await;
 
                 let mut analytics = self.analytics.lock().await;
-                if let Err(e) = result {
+                if let Err(e) = &result {
                     analytics
                         .track_and_flush_silent(Event::DOWNLOAD_VERSION_ERROR {
                             version: Some(version.clone()),
@@ -291,6 +291,7 @@ impl LaunchStep for DownloadStep {
                         })
                         .await;
                 }
+                result?;
 
                 guard.recent_download = Some(RecentDownload {
                     version,
