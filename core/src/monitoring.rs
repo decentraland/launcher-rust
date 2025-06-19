@@ -27,16 +27,16 @@ impl Monitoring {
                 info!("sentry dns is proiveded via env variables successfully");
                 let dsn = Dsn::from_str(raw_dsn)?;
 
+                let env = format!("{:?}", AppEnvironment::launcher_environment());
+                info!("sentry environment selected: {}", env);
+
                 let opts = ClientOptions {
                     release: sentry::release_name!(),
                     dsn: Some(dsn),
                     attach_stacktrace: true,
                     auto_session_tracking: true,
                     debug: cfg!(debug_assertions),
-                    environment: Some(Cow::Owned(format!(
-                        "{:?}",
-                        AppEnvironment::launcher_environment()
-                    ))),
+                    environment: Some(Cow::Owned(env)),
                     ..Default::default()
                 };
                 let guard = sentry::init(opts);
