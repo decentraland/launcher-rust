@@ -8,6 +8,7 @@ import {
   ErrorIcon,
   ErrorDialogButton,
 } from "./Home.styles";
+import { versionLabel } from "./VersionLabel";
 
 import LANDSCAPE_IMG from "../../assets/background.jpg";
 import LOGO_SVG from "../../assets/logo.svg";
@@ -238,6 +239,7 @@ export const Home: React.FC = memo(() => {
         <img src={LANDSCAPE_IMG} />
       </Landscape>
       {renderStatusMessage()}
+      {versionLabel()}
     </Box>
   );
 });
