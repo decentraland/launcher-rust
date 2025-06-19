@@ -90,6 +90,8 @@ export const Home: React.FC = memo(() => {
                 return renderStep("Restarting app...");
             }
           }
+          case "deeplinkOpening":
+            return renderDeeplinkOpeningStep();
           case "fetching":
             return renderFetchStep();
           case "downloading": {
@@ -111,6 +113,8 @@ export const Home: React.FC = memo(() => {
         return null;
     }
   };
+
+  const renderDeeplinkOpeningStep = () => renderStep("Opening Deeplink...");
 
   const renderFetchStep = () => renderStep("Fetching Latest...");
 
