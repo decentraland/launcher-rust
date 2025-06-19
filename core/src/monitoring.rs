@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use anyhow::Result;
@@ -6,7 +7,7 @@ use log::{error, info};
 use sentry::{ClientOptions, protocol::User};
 use sentry_types::Dsn;
 
-use crate::config;
+use crate::{config, environment::AppEnvironment};
 
 pub struct Monitoring {}
 
@@ -32,6 +33,10 @@ impl Monitoring {
                     attach_stacktrace: true,
                     auto_session_tracking: true,
                     debug: cfg!(debug_assertions),
+                    environment: Some(Cow::Owned(format!(
+                        "{:?}",
+                        AppEnvironment::launcher_environment()
+                    ))),
                     ..Default::default()
                 };
                 let guard = sentry::init(opts);
