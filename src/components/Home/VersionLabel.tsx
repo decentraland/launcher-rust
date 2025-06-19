@@ -7,7 +7,7 @@ export function versionLabel() {
 
   useEffect(() => {
     getVersion()
-      .then(v => setVersion(`v${v}`))
+      .then((v) => setVersion(`v${v}`))
       .catch(() => setVersion("v?.?.?"));
   }, []);
 
