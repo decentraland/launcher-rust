@@ -27,7 +27,7 @@ impl Monitoring {
                 info!("sentry dns is proiveded via env variables successfully");
                 let dsn = Dsn::from_str(raw_dsn)?;
 
-                let env = format!("{:?}", AppEnvironment::launcher_environment());
+                let env = format!("{:?}", AppEnvironment::launcher_environment()).to_lowercase();
                 info!("sentry environment selected: {}", env);
 
                 let opts = ClientOptions {
