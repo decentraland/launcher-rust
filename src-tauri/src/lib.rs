@@ -74,8 +74,9 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
     let args: Vec<String> = env::args().collect();
 
     // comparison to support rollbacks
-    let builder: tauri_plugin_updater::UpdaterBuilder =
-        app.updater_builder().version_comparator(|v1, v2| v1 != v2);
+    let builder: tauri_plugin_updater::UpdaterBuilder = app
+        .updater_builder()
+        .version_comparator(|current_version, remote| current_version != remote.version);
 
     if let Some(pos) = args.iter().position(|a| a == KEY_UPDATER_URL) {
         let url = args.get(pos + 1);
