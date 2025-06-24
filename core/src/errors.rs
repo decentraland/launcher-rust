@@ -8,14 +8,12 @@ use super::types::Status;
 
 pub struct FlowError {
     pub user_message: String,
-    pub can_retry: bool,
 }
 
 impl From<&FlowError> for Status {
     fn from(err: &FlowError) -> Self {
         Status::Error {
             message: err.user_message.to_owned(),
-            can_retry: err.can_retry,
         }
     }
 }
