@@ -70,8 +70,27 @@ async fn launch(
 fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
     const KEY_UPDATER_URL: &str = "--use-updater-url";
     const KEY_ALWAYS_TRIGGER_UPDATER: &str = "--always-trigger-updater";
+    const KEY_NEVER_TRIGGER_UPDATER: &str = "--never-trigger-updater";
 
     let args: Vec<String> = env::args().collect();
+
+    // comparison to support rollbacks
+    let compare_args = args.clone();
+    let builder = app
+        .updater_builder()
+        .version_comparator(move |current_version, remote| {
+            if compare_args.iter().any(|a| a == KEY_NEVER_TRIGGER_UPDATER) {
+                info!("Never trigger updater by flag {}", KEY_UPDATER_URL);
+                return false;
+            }
+
+            if compare_args.iter().any(|a| a == KEY_ALWAYS_TRIGGER_UPDATER) {
+                info!("Always trigger updater by flag {}", KEY_UPDATER_URL);
+                return true;
+            }
+
+            current_version != remote.version
+        });
 
     if let Some(pos) = args.iter().position(|a| a == KEY_UPDATER_URL) {
         let url = args.get(pos + 1);
@@ -82,15 +101,7 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
                     KEY_UPDATER_URL, url
                 );
                 let parsed_url: Url = Url::parse(url)?;
-
-                let builder = app.updater_builder().endpoints(vec![parsed_url])?;
-
-                if args.iter().any(|a| a == KEY_ALWAYS_TRIGGER_UPDATER) {
-                    info!("Always trigger updater by flag {}", KEY_UPDATER_URL);
-                    return builder.version_comparator(|_, _| true).build();
-                }
-
-                return builder.build();
+                return builder.endpoints(vec![parsed_url])?.build();
             }
             None => {
                 error!(
@@ -101,7 +112,7 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
         }
     }
 
-    app.updater()
+    builder.build()
 }
 
 async fn update_if_needed_and_restart(
