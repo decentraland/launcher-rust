@@ -1,9 +1,8 @@
 use crate::channel::EventChannel;
 use crate::{
     analytics::{Analytics, event::Event},
-    attempts::Attempts,
     environment::AppEnvironment,
-    errors::{FlowError, StepError, StepResult},
+    errors::{FlowError, StepResult},
     installs::{self, InstallsHub},
     s3::{self, ReleaseResponse},
     types::{BuildType, Status, Step},
@@ -50,8 +49,7 @@ trait LaunchStep {
 #[derive(Default)]
 pub struct LaunchFlowState {
     latest_release: Option<ReleaseResponse>,
-    recent_download: Option<RecentDownload>,
-    attempts: Attempts,
+    recent_download: Option<RecentDownload>
 }
 
 #[derive(Clone)]
@@ -90,10 +88,8 @@ impl LaunchFlow {
         if let Err(e) = result {
             log::error!("Error during the flow {} {:#?}", e, e);
             sentry::capture_error(&e);
-            let can_retry = Self::can_retry(state).await;
             let error = FlowError {
-                user_message: e.user_message().to_owned(),
-                can_retry,
+                user_message: e.user_message().to_owned()
             };
             return std::result::Result::Err(error);
         }
@@ -106,7 +102,6 @@ impl LaunchFlow {
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
-        Self::validate_attempt_and_increase(state.clone()).await?;
         self.fetch_step
             .execute_if_needed(channel, state.clone(), "fetch")
             .await?;
@@ -120,27 +115,6 @@ impl LaunchFlow {
             .execute_if_needed(channel, state.clone(), "launch")
             .await?;
         StepResult::Ok(())
-    }
-
-    async fn validate_attempt_and_increase(state: Arc<Mutex<LaunchFlowState>>) -> StepResult {
-        let mut guard = state.lock().await;
-
-        if guard.attempts.try_consume_attempt() {
-            return StepResult::Ok(());
-        }
-
-        let message = "Out of attempts";
-        let inner_error = anyhow!(message);
-        let error = StepError::E0000_GENERIC_ERROR {
-            error: inner_error,
-            user_message: Some(message.to_owned()),
-        };
-        StepResult::Err(error)
-    }
-
-    async fn can_retry(state: Arc<Mutex<LaunchFlowState>>) -> bool {
-        let guard = state.lock().await;
-        guard.attempts.can_retry()
     }
 }
 

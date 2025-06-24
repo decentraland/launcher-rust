@@ -1,6 +1,5 @@
 pub mod analytics;
 pub mod app;
-mod attempts;
 pub mod channel;
 mod config;
 pub mod environment;

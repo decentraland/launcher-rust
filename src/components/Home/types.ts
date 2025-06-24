@@ -19,4 +19,4 @@ export type Step =
 
 export type Status =
   | { event: "state"; data: { step: Step } }
-  | { event: "error"; data: { message: string; canRetry: boolean } };
+  | { event: "error"; data: { message: string } };
