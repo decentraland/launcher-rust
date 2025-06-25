@@ -2,20 +2,20 @@ use anyhow::anyhow;
 use std::{collections::HashMap, fmt::Display};
 use thiserror::Error;
 
+use crate::installs::downloads::{DownloadFileError, FileIncompleteError};
+
 use crate::deeplink_bridge::PlaceDeeplinkError;
 
 use super::types::Status;
 
 pub struct FlowError {
     pub user_message: String,
-    pub can_retry: bool,
 }
 
 impl From<&FlowError> for Status {
     fn from(err: &FlowError) -> Self {
         Status::Error {
             message: err.user_message.to_owned(),
-            can_retry: err.can_retry,
         }
     }
 }
@@ -61,6 +61,11 @@ pub enum StepError {
         #[source]
         inner_error: anyhow::Error,
     },
+    E1007_FILE_CREATE_FAILED {
+        file_path: String,
+        #[source]
+        source: std::io::Error,
+    },
 
     E2001_DOWNLOAD_FAILED {
         url: Option<String>,
@@ -81,6 +86,8 @@ pub enum StepError {
         url: String,
         code: u16,
     },
+    E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE(#[from] FileIncompleteError),
+    E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
     E3001_OPEN_DEEPLINK_TIMEOUT,
     E3002_PLACE_DEEPLINK_ERROR(#[from] PlaceDeeplinkError),
 }
@@ -135,6 +142,9 @@ impl StepError {
             Self::E1006_FILE_DELETE_FAILED { .. } => {
                 "We couldn’t remove a previous download. Please check your permissions or try restarting the launcher."
             }
+            Self::E1007_FILE_CREATE_FAILED { .. } => {
+                "We couldn’t create a file to download. Please check your permissions or try restarting the launcher."
+            }
             Self::E2001_DOWNLOAD_FAILED { .. } => {
                 "There was an error while downloading Decentraland. Please check your internet connection and try again."
             }
@@ -146,6 +156,12 @@ impl StepError {
             }
             Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => {
                 "There was an error while downloading Decentraland. Please check your internet connection and try again."
+            }
+            Self::E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE { .. } => {
+                "Downloading file is incomplete due an error. Please check your internet connection and try again."
+            }
+            Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT => {
+                "Timeout while downloading Decentraland. Please check your internet connection and try again."
             }
             Self::E3001_OPEN_DEEPLINK_TIMEOUT => {
                 "There was an error while opening the deeplink. Please restart client and try again."
@@ -215,6 +231,26 @@ impl From<zip::result::ZipError> for StepError {
                 error: anyhow!(value),
                 user_message: None,
             },
+        }
+    }
+}
+
+impl From<DownloadFileError> for StepError {
+    fn from(value: DownloadFileError) -> Self {
+        use DownloadFileError::*;
+        match value {
+            Generic(e) => e.into(),
+            IO(e) => e.into(),
+            FileIncomplete(e) => e.into(),
+            Network(e) => e.into(),
+            ContentLengthNotFound { url } => StepError::E2002_MISSING_CONTENT_LENGTH {
+                url,
+                response_headers: HashMap::new(),
+            },
+            FileCreateFailed { source, file_path } => {
+                StepError::E1007_FILE_CREATE_FAILED { file_path, source }
+            }
+            NetworkTimeout => StepError::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT
         }
     }
 }
