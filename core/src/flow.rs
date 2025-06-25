@@ -2,7 +2,7 @@ use crate::channel::EventChannel;
 use crate::deeplink_bridge::{
     PlaceDeeplinkError, PlaceDeeplinkResult, place_deeplink_and_wait_until_consumed,
 };
-use crate::errors::StepResultTyped;
+use crate::errors::{StepError, StepResultTyped};
 use crate::instances::RunningInstances;
 use crate::protocols::Protocol;
 use crate::{
@@ -58,7 +58,7 @@ trait WorkflowStep<TState, TOutput> {
 #[derive(Default)]
 pub struct LaunchFlowState {
     latest_release: Option<ReleaseResponse>,
-    recent_download: Option<RecentDownload>
+    recent_download: Option<RecentDownload>,
 }
 
 #[derive(Clone)]
@@ -107,7 +107,7 @@ impl LaunchFlow {
             log::error!("Error during the flow {} {:#?}", e, e);
             sentry::capture_error(&e);
             let error = FlowError {
-                user_message: e.user_message().to_owned()
+                user_message: e.user_message().to_owned(),
             };
             return std::result::Result::Err(error);
         }
@@ -412,7 +412,8 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
     ) -> StepResult {
         match self.protocol.value() {
             Some(deeplink) => {
-                let open_new_instance = std::env::args().any(|e| e == "--open-deeplink-in-new-instance");
+                let open_new_instance =
+                    std::env::args().any(|e| e == "--open-deeplink-in-new-instance");
                 let any_is_running = self.is_any_instance_running().await?;
                 if !open_new_instance && any_is_running {
                     channel.send(Status::State {

@@ -250,7 +250,7 @@ impl From<DownloadFileError> for StepError {
             FileCreateFailed { source, file_path } => {
                 StepError::E1007_FILE_CREATE_FAILED { file_path, source }
             }
-            NetworkTimeout => StepError::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT
+            NetworkTimeout => StepError::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
         }
     }
 }
