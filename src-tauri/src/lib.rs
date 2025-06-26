@@ -1,3 +1,4 @@
+use dcl_launcher_core::environment::AppEnvironment;
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
 use dcl_launcher_core::protocols::Protocol;
@@ -73,7 +74,7 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
     const KEY_ALWAYS_TRIGGER_UPDATER: &str = "--always-trigger-updater";
     const KEY_NEVER_TRIGGER_UPDATER: &str = "--never-trigger-updater";
 
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = AppEnvironment::cmd_args().collect();
 
     // comparison to support rollbacks
     let compare_args = args.clone();
@@ -185,7 +186,7 @@ fn setup_deeplink(a: &mut App, protocol: &Protocol) {
 
     #[cfg(target_os = "windows")]
     {
-        let args: Vec<String> = std::env::args().collect();
+        let args: Vec<String> = AppEnvironment::cmd_args().collect();
         protocol.try_assign_value_from_vec(&args);
     }
 }

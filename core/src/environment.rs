@@ -1,3 +1,5 @@
+use crate::config;
+
 const DEFAULT_PROVIDER: &str = "dcl";
 
 const BUCKET_URL: &str = env!("VITE_AWS_S3_BUCKET_PUBLIC_URL");
@@ -32,5 +34,11 @@ impl AppEnvironment {
             },
             None => LauncherEnvironment::Unknown,
         }
+    }
+
+    pub fn cmd_args() -> impl Iterator<Item = String> {
+        let direct = std::env::args();
+        let config = config::cmd_arguments();
+        direct.chain(config)
     }
 }

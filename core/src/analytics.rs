@@ -11,8 +11,7 @@ use null_client::NullClient;
 use session::SessionId;
 
 use crate::{
-    config,
-    utils::{app_version, get_os_name},
+    config, environment::AppEnvironment, utils::{app_version, get_os_name}
 };
 
 pub struct CreateArgs {
@@ -29,7 +28,7 @@ pub enum Analytics {
 
 impl Analytics {
     pub fn new_from_env() -> Self {
-        if std::env::args().any(|e| e == "--skip-analytics") {
+        if AppEnvironment::cmd_args().any(|e| e == "--skip-analytics") {
             info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
             return Self::new(None);
         }
