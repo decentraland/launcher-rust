@@ -2,6 +2,8 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::env;
 
+use crate::environment::AppEnvironment;
+
 pub fn get_os_name() -> &'static str {
     let os = std::env::consts::OS;
     match os {
@@ -14,7 +16,7 @@ pub fn get_os_name() -> &'static str {
 
 pub fn parsed_argv() -> HashMap<String, String> {
     let mut parsed_argv = HashMap::new();
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = AppEnvironment::cmd_args().collect();
 
     for arg in &args {
         if let Some((key, value)) = arg.strip_prefix("--").and_then(|s| s.split_once('=')) {

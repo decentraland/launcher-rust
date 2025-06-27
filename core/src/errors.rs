@@ -4,6 +4,8 @@ use thiserror::Error;
 
 use crate::installs::downloads::{DownloadFileError, FileIncompleteError};
 
+use crate::deeplink_bridge::PlaceDeeplinkError;
+
 use super::types::Status;
 
 pub struct FlowError {
@@ -86,6 +88,8 @@ pub enum StepError {
     },
     E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE(#[from] FileIncompleteError),
     E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
+    E3001_OPEN_DEEPLINK_TIMEOUT,
+    E3002_PLACE_DEEPLINK_ERROR(#[from] PlaceDeeplinkError),
 }
 
 impl StepError {
@@ -158,6 +162,12 @@ impl StepError {
             }
             Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT => {
                 "Timeout while downloading Decentraland. Please check your internet connection and try again."
+            }
+            Self::E3001_OPEN_DEEPLINK_TIMEOUT => {
+                "There was an error while opening the deeplink. Please restart client and try again."
+            }
+            Self::E3002_PLACE_DEEPLINK_ERROR { .. } => {
+                "There was an error while passing the deeplink. Please restart client and try again."
             }
         }
     }
@@ -240,7 +250,7 @@ impl From<DownloadFileError> for StepError {
             FileCreateFailed { source, file_path } => {
                 StepError::E1007_FILE_CREATE_FAILED { file_path, source }
             }
-            NetworkTimeout => StepError::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT
+            NetworkTimeout => StepError::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
         }
     }
 }

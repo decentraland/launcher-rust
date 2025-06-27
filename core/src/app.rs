@@ -4,7 +4,9 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
+use crate::instances::RunningInstances;
 use crate::monitoring::Monitoring;
+use crate::protocols::Protocol;
 use crate::{analytics, logs, utils};
 use log::{error, info};
 use std::sync::Arc;
@@ -14,6 +16,7 @@ use utils::app_version;
 pub struct AppState {
     pub flow: LaunchFlow,
     pub state: Arc<Mutex<LaunchFlowState>>,
+    pub protocol: Protocol,
     analytics: Arc<Mutex<Analytics>>,
 }
 
@@ -35,13 +38,23 @@ impl AppState {
             .await;
 
         let analytics = Arc::new(Mutex::new(analytics));
-        let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(analytics.clone())));
+        let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
+        let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(
+            analytics.clone(),
+            running_instances.clone(),
+        )));
 
-        let flow = LaunchFlow::new(installs_hub, analytics.clone());
+        let flow = LaunchFlow::new(
+            installs_hub,
+            analytics.clone(),
+            running_instances.clone(),
+            Protocol {},
+        );
         let flow_state = LaunchFlowState::default();
         let app_state = AppState {
             flow,
             state: Arc::new(Mutex::new(flow_state)),
+            protocol: Protocol {},
             analytics,
         };
 

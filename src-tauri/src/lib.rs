@@ -1,5 +1,7 @@
+use dcl_launcher_core::environment::AppEnvironment;
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
+use dcl_launcher_core::protocols::Protocol;
 use dcl_launcher_core::types::LauncherUpdate;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::env;
@@ -72,7 +74,7 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
     const KEY_ALWAYS_TRIGGER_UPDATER: &str = "--always-trigger-updater";
     const KEY_NEVER_TRIGGER_UPDATER: &str = "--never-trigger-updater";
 
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = AppEnvironment::cmd_args().collect();
 
     // comparison to support rollbacks
     let compare_args = args.clone();
@@ -165,14 +167,15 @@ async fn update_if_needed_and_restart(
 }
 
 #[cfg_attr(windows, allow(unused_variables))]
-fn setup_deeplink(a: &mut App) {
+fn setup_deeplink(a: &mut App, protocol: &Protocol) {
     #[cfg(target_os = "macos")]
     {
-        a.deep_link().on_open_url(|event| {
+        let protocol = protocol.clone();
+        a.deep_link().on_open_url(move |event| {
             let urls = event.urls();
             match urls.first() {
                 Some(url) => {
-                    dcl_launcher_core::protocols::Protocol::try_assign_value(url.to_string());
+                    protocol.try_assign_value(url.to_string());
                 }
                 None => {
                     error!("No values are provided in deep link")
@@ -183,8 +186,8 @@ fn setup_deeplink(a: &mut App) {
 
     #[cfg(target_os = "windows")]
     {
-        let args: Vec<String> = std::env::args().collect();
-        dcl_launcher_core::protocols::Protocol::try_assign_value_from_vec(&args);
+        let args: Vec<String> = AppEnvironment::cmd_args().collect();
+        protocol.try_assign_value_from_vec(&args);
     }
 }
 
@@ -192,7 +195,7 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let app_state = tauri::async_runtime::block_on(AppState::setup())
         .inspect_err(|e| error!("Error during setup: {:#}", e))?;
 
-    setup_deeplink(a);
+    setup_deeplink(a, &app_state.protocol);
 
     let mut_state: MutState = Arc::new(Mutex::new(app_state));
     a.manage(mut_state);

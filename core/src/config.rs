@@ -50,3 +50,22 @@ pub fn user_id_or_none() -> String {
         "none".to_owned()
     })
 }
+
+pub fn cmd_arguments() -> Vec<String> {
+    const KEY: &str = "cmd-arguments";
+    let config = config_content().ok();
+    match config {
+        Some(config) => {
+            if let Some(raw) = config.get(KEY) {
+                let raw = raw.as_str();
+                match raw {
+                    Some(value) => value.split(' ').map(|s| s.to_owned()).collect(),
+                    None => Vec::new(),
+                }
+            } else {
+                Vec::new()
+            }
+        }
+        None => Vec::new(),
+    }
+}
