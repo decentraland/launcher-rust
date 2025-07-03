@@ -49,7 +49,7 @@ jobs:
       contents: write # Allows this job to create releases
     uses: ./.github/workflows/release.yml
     with:
-      dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' }}
+      dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' || needs.bump_version.outputs.bump != 'yes' }}
       pr-number: ${{ github.event.pull_request.number || 'na' }}
     secrets:
       # Secrets required to sign and notarize the app in MacOS
