@@ -18,6 +18,11 @@ jobs:
       version: ${{ steps.bump.outputs.version }}
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test-main
+          fetch-depth: 2
+
       - name: Check if we should skip version bump
         id: check_skip
         run: |
@@ -43,13 +48,6 @@ jobs:
               echo "Running version bump (test-main branch push, not a bump commit)"
             fi
           fi
-
-      - uses: actions/checkout@v4
-        if: steps.check_skip.outputs.should_skip != 'true'
-        with:
-          ref: test-main
-          fetch-depth: 0
-          fetch-tags: true
 
       - name: Determine and bump version from commits
         if: steps.check_skip.outputs.should_skip != 'true'
