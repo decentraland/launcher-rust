@@ -2,6 +2,10 @@ name: Bump Version
 
 on:
   workflow_call:
+    secrets:
+      REPOS_READ_ONLY_TOKEN:
+        description: 'Personal access token for approving PRs'
+        required: false
     outputs:
       bump:
         description: "Bump type"
