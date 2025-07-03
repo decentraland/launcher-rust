@@ -9,12 +9,7 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - package.json
-      - package-lock.json
-      - src-tauri/tauri.conf.json
-      - src-tauri/Cargo.toml
-      - core/Cargo.toml
+      - test-main
   pull_request:
 
 concurrency:
