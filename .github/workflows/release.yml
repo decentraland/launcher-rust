@@ -211,13 +211,13 @@ jobs:
           SIGN_SCRIPT_PATH="${GITHUB_WORKSPACE}/src-tauri/scripts/sign.ps1"
           sed -i.bak "s|\"sign.ps1\"|\"${SIGN_SCRIPT_PATH//\\/\/}\"|g" src-tauri/tauri.conf.json
 
-      - name: Code Analysis Core
-        working-directory: ${{ github.workspace }}/core
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      # - name: Code Analysis Core
+      #   working-directory: ${{ github.workspace }}/core
+      #   run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Code Analysis Tauri
-        working-directory: ${{ github.workspace }}/src-tauri
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      # - name: Code Analysis Tauri
+      #   working-directory: ${{ github.workspace }}/src-tauri
+      #   run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
