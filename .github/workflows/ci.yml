@@ -50,6 +50,10 @@ jobs:
           echo "github.ref_name: ${{ github.ref_name }}"
           echo "bump_version output.bump: ${{ needs.bump_version.outputs.bump }}"
           echo "Evaluated dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' || needs.bump_version.outputs.bump != 'yes' }}"
+          echo "Base branch: ${{ github.base_ref }}"
+          echo "Head branch: ${{ github.head_ref }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref name: ${{ github.ref_name }}"
 
   draft_release:
     needs: [bump_version]

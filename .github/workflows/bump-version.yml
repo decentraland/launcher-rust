@@ -18,8 +18,8 @@ jobs:
   bump_version:
     runs-on: ubuntu-latest
     outputs:
-      bump: ${{ steps.bump.outputs.bump }}
-      version: ${{ steps.bump.outputs.version }}
+      bump: ${{ steps.check_skip.outputs.should_skip == 'true' && steps.check_skip.outputs.bump || steps.bump.outputs.bump }}
+      version: ${{ steps.check_skip.outputs.should_skip == 'true' && steps.check_skip.outputs.version || steps.bump.outputs.version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -38,11 +38,7 @@ jobs:
             echo "should_skip=true" >> $GITHUB_OUTPUT
           else
             LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
-            LAST_AUTHOR_NAME=$(git log -1 --pretty=%an)
-            LAST_COMMITTER_NAME=$(git log -1 --pretty=%cn)
             echo "Last commit message: $LAST_COMMIT_MSG"
-            echo "Last author: $LAST_AUTHOR_NAME"
-            echo "Last committer: $LAST_COMMITTER_NAME"
             if echo "$LAST_COMMIT_MSG" | grep -qE "^chore\(release\): bump version"; then
               echo "Skipping version bump (last commit is a bump commit)"
               echo "bump=yes" >> $GITHUB_OUTPUT
@@ -101,8 +97,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "Bump at $(date --iso-8601=seconds)" > test.txt
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml core/Cargo.toml test.txt
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml core/Cargo.toml
           git diff --cached --quiet || git commit -m "chore(release): bump version to ${{ steps.bump.outputs.version }}"
 
       - name: Create Pull Request for version bump
@@ -133,10 +128,3 @@ jobs:
           token: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "Version bump: ${{ steps.bump.outputs.bump }}"
-          echo "New version: ${{ steps.bump.outputs.version }}"
-          echo "PR number: ${{ steps.cpr.outputs.pull-request-number }}"
