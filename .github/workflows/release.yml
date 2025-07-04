@@ -219,94 +219,94 @@ jobs:
       #   working-directory: ${{ github.workspace }}/src-tauri
       #   run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Build Release
-        if: ${{ inputs.dry-run == false }}
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
-          APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
-          APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          LAUNCHER_ENVIRONMENT: prod
-          ES_USERNAME: ${{ secrets.ES_USERNAME }}
-          ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
-          WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
-          ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
-          CODESIGN_JAR: ${{ env.CODESIGN_JAR }}
-          CODESIGN_JAVA: ${{ env.CODESIGN_JAVA }}
-        with:
-          tagName: app-v__VERSION__
-          releaseName: "App v__VERSION__"
-          releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
-          prerelease: false
-          args: ${{ secrets.args }}
-          projectPath: ${{ env.PROJECT_PATH }}
+      # - name: Build Release
+      #   if: ${{ inputs.dry-run == false }}
+      #   uses: tauri-apps/tauri-action@v0
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+      #     APPLE_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+      #     APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+      #     APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
+      #     APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+      #     TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      #     TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      #     SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+      #     SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      #     LAUNCHER_ENVIRONMENT: prod
+      #     ES_USERNAME: ${{ secrets.ES_USERNAME }}
+      #     ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+      #     WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+      #     ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+      #     CODESIGN_JAR: ${{ env.CODESIGN_JAR }}
+      #     CODESIGN_JAVA: ${{ env.CODESIGN_JAVA }}
+      #   with:
+      #     tagName: app-v__VERSION__
+      #     releaseName: "App v__VERSION__"
+      #     releaseBody: "See the assets to download this version and install."
+      #     releaseDraft: true
+      #     prerelease: false
+      #     args: ${{ secrets.args }}
+      #     projectPath: ${{ env.PROJECT_PATH }}
 
-      - name: Build Dry-Run
-        if: ${{ inputs.dry-run == true }}
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
-          APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
-          APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          LAUNCHER_ENVIRONMENT: dev
-        with:
-          args: ${{ secrets.args }}
-          projectPath: ${{ env.PROJECT_PATH }}
+      # - name: Build Dry-Run
+      #   if: ${{ inputs.dry-run == true }}
+      #   uses: tauri-apps/tauri-action@v0
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+      #     APPLE_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+      #     APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+      #     APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
+      #     APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+      #     TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      #     TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      #     SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+      #     SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      #     LAUNCHER_ENVIRONMENT: dev
+      #   with:
+      #     args: ${{ secrets.args }}
+      #     projectPath: ${{ env.PROJECT_PATH }}
 
-      - name: Verify Windows signature
-        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
-        run: |
-          SIGNED_EXE=$(find src-tauri/target/release/bundle/nsis -name '*.exe' | head -n1)
-          echo "Built artifact: $SIGNED_EXE"
-          if [[ -f "$SIGNED_EXE" ]]; then
-            echo "Checking signature..."
-            powershell.exe -Command "Get-AuthenticodeSignature '$SIGNED_EXE'"
-            SIGNATURE_STATUS=$(powershell.exe -Command "(Get-AuthenticodeSignature '$SIGNED_EXE').Status")
-            echo "Signature status: $SIGNATURE_STATUS"
-            if [[ "$SIGNATURE_STATUS" != "Valid" ]]; then
-              echo "❌ EXE is not signed or signature is invalid"
-              exit 1
-            fi
-          else
-            echo "❌ Signed EXE not found"
-            exit 1
-          fi
+      # - name: Verify Windows signature
+      #   if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
+      #   run: |
+      #     SIGNED_EXE=$(find src-tauri/target/release/bundle/nsis -name '*.exe' | head -n1)
+      #     echo "Built artifact: $SIGNED_EXE"
+      #     if [[ -f "$SIGNED_EXE" ]]; then
+      #       echo "Checking signature..."
+      #       powershell.exe -Command "Get-AuthenticodeSignature '$SIGNED_EXE'"
+      #       SIGNATURE_STATUS=$(powershell.exe -Command "(Get-AuthenticodeSignature '$SIGNED_EXE').Status")
+      #       echo "Signature status: $SIGNATURE_STATUS"
+      #       if [[ "$SIGNATURE_STATUS" != "Valid" ]]; then
+      #         echo "❌ EXE is not signed or signature is invalid"
+      #         exit 1
+      #       fi
+      #     else
+      #       echo "❌ Signed EXE not found"
+      #       exit 1
+      #     fi
 
-      - name: Get short SHA
-        id: shortsha
-        uses: ./.github/actions/get-short-sha
+      # - name: Get short SHA
+      #   id: shortsha
+      #   uses: ./.github/actions/get-short-sha
 
-      - name: Upload Release artifacts to S3
-        if: ${{ inputs.dry-run == false }}
-        uses: ./.github/actions/upload-to-s3
-        with:
-          aws-access-key-id: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
-          s3-bucket: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
-          target-dir: draft-release-${{ github.event.repository.name }}-${{ steps.shortsha.outputs.short_sha }}
+      # - name: Upload Release artifacts to S3
+      #   if: ${{ inputs.dry-run == false }}
+      #   uses: ./.github/actions/upload-to-s3
+      #   with:
+      #     aws-access-key-id: ${{ secrets.EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+      #     s3-bucket: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
+      #     target-dir: draft-release-${{ github.event.repository.name }}-${{ steps.shortsha.outputs.short_sha }}
 
-      - name: Upload Dry-Run artifacts to S3
-        if: ${{ inputs.dry-run == true }}
-        uses: ./.github/actions/upload-to-s3
-        with:
-          aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
-          s3-bucket: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
-          target-dir: dry-run-${{ github.event.repository.name || 'unknown-repo' }}/pr-${{ github.event.pull_request.number || inputs.pr-number || 'na' }}/run-${{ github.run_number || '0' }}-${{ github.run_id || 'id' }}
+      # - name: Upload Dry-Run artifacts to S3
+      #   if: ${{ inputs.dry-run == true }}
+      #   uses: ./.github/actions/upload-to-s3
+      #   with:
+      #     aws-access-key-id: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+      #     s3-bucket: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
+      #     target-dir: dry-run-${{ github.event.repository.name || 'unknown-repo' }}/pr-${{ github.event.pull_request.number || inputs.pr-number || 'na' }}/run-${{ github.run_number || '0' }}-${{ github.run_id || 'id' }}
