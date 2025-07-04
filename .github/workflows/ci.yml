@@ -27,7 +27,7 @@ jobs:
     needs: [typechecking, tests]
     uses: ./.github/workflows/bump-version.yml
     secrets:
-      REPOS_READ_ONLY_TOKEN: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+      DCL_BOT_REPO_WORKFLOW_TOKEN: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
 
   comment_start:
     if: github.event_name == 'pull_request'
