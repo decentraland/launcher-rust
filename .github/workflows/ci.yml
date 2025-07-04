@@ -56,6 +56,9 @@ jobs:
           echo "Ref name: ${{ github.ref_name }}"
 
   draft_release:
+    if: |
+      (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'bump-version-')) ||
+      (github.event_name == 'push' && github.ref_name == 'test-main' && needs.bump_version.outputs.bump == 'yes')
     needs: [bump_version]
     permissions:
       contents: write # Allows this job to create releases
