@@ -3,8 +3,8 @@ name: Bump Version
 on:
   workflow_call:
     secrets:
-      REPOS_READ_ONLY_TOKEN:
-        description: 'Personal access token for approving PRs'
+      DCL_BOT_REPO_WORKFLOW_TOKEN:
+        description: 'Personal access token for creating PRs'
         required: false
     outputs:
       bump:
@@ -118,12 +118,13 @@ jobs:
           body: "Automated version bump PR"
           delete-branch: true
           signoff: false
+          token: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
 
       - name: Auto approve PR
         if: steps.cpr.outputs.pull-request-number != ''
         uses: hmarr/auto-approve-action@v4
         with:
-          github-token: ${{ secrets.REPOS_READ_ONLY_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
 
       - name: Enable PR auto-merge
