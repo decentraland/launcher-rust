@@ -17,21 +17,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  typechecking:
-    uses: ./.github/workflows/typechecking.yml
-
-  tests:
-    uses: ./.github/workflows/tests.yml
-
-  bump_version:
-    needs: [typechecking, tests]
+  bump_version_check:
     uses: ./.github/workflows/bump-version.yml
     secrets:
       DCL_BOT_REPO_WORKFLOW_TOKEN: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
 
+  typechecking:
+    needs: [bump_version_check]
+    uses: ./.github/workflows/typechecking.yml
+    with:
+      should_run_tests_and_release: ${{ needs.bump_version_check.outputs.should_run_tests_and_release }}
+
+  tests:
+    needs: [bump_version_check]
+    uses: ./.github/workflows/tests.yml
+    with:
+      should_run_tests_and_release: ${{ needs.bump_version_check.outputs.should_run_tests_and_release }}
+
   comment_start:
-    if: github.event_name == 'pull_request'
-    needs: tests
+    if: github.event_name == 'pull_request' && needs.bump_version_check.outputs.should_run_tests_and_release == 'true'
+    needs: [tests]
     uses: ./.github/workflows/pr-deploy-status.yml
     with:
       pr-number: ${{ github.event.pull_request.number }}
@@ -41,31 +46,29 @@ jobs:
       status: "requested"
 
   debug-dry-run-vars:
-    needs: [bump_version]
+    needs: [bump_version_check]
     runs-on: ubuntu-latest
     steps:
       - name: Show dry-run evaluation inputs
         run: |
           echo "github.event_name: ${{ github.event_name }}"
           echo "github.ref_name: ${{ github.ref_name }}"
-          echo "bump_version output.bump: ${{ needs.bump_version.outputs.bump }}"
-          echo "Evaluated dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' || needs.bump_version.outputs.bump != 'yes' }}"
+          echo "bump_version_check output.bump: ${{ needs.bump_version_check.outputs.bump }}"
+          echo "Evaluated dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' || needs.bump_version_check.outputs.bump != 'yes' }}"
           echo "Base branch: ${{ github.base_ref }}"
           echo "Head branch: ${{ github.head_ref }}"
           echo "Ref: ${{ github.ref }}"
           echo "Ref name: ${{ github.ref_name }}"
 
   draft_release:
-    if: |
-      (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'bump-version-')) ||
-      (github.event_name == 'push' && github.ref_name == 'test-main' && needs.bump_version.outputs.bump == 'yes')
-    needs: [bump_version]
+    needs: [typechecking, tests]
     permissions:
       contents: write # Allows this job to create releases
     uses: ./.github/workflows/release.yml
     with:
-      dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' || needs.bump_version.outputs.bump != 'yes' }}
+      dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' || needs.bump_version_check.outputs.bump != 'yes' }}
       pr-number: ${{ github.event.pull_request.number || 'na' }}
+      should_run_tests_and_release: ${{ needs.bump_version_check.outputs.should_run_tests_and_release }}
     secrets:
       # Secrets required to sign and notarize the app in MacOS
       MACOS_CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
@@ -98,8 +101,8 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
   comment_end:
-    if: github.event_name == 'pull_request' && always()
-    needs: draft_release
+    if: github.event_name == 'pull_request' && needs.bump_version_check.outputs.should_run_tests_and_release == 'true' && always()
+    needs: [draft_release]
     uses: ./.github/workflows/pr-deploy-status.yml
     with:
       pr-number: ${{ github.event.pull_request.number }}

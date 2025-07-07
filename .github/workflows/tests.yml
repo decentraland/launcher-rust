@@ -1,5 +1,11 @@
 name: Tests
-on: [ workflow_call ]
+on:
+  workflow_call:
+    inputs:
+      should_run_tests_and_release:
+        required: false
+        type: string
+        default: "true"
 
 concurrency:
   group: tests-${{ github.ref }}
@@ -17,6 +23,13 @@ jobs:
         os: [ windows-latest, macos-latest ]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Early exit if not required
+        run: |
+          if [ "${{ inputs.should_run_tests_and_release }}" != "true" ]; then
+            echo "Skipping tests because should_run_tests_and_release != true"
+            exit 0
+          fi
+
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
