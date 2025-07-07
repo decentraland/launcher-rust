@@ -204,7 +204,7 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
                     protocol.try_assign_value(url.to_string());
                 }
                 None => {
-                    error!("No values are provided in deep link")
+                    error!("No values are provided in deep link");
                 }
             }
         });
