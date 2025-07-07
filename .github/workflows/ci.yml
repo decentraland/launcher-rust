@@ -23,16 +23,14 @@ jobs:
       DCL_BOT_REPO_WORKFLOW_TOKEN: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
 
   typechecking:
+    if: needs.bump_version_check.outputs.should_run_tests_and_release == 'true'
     needs: [bump_version_check]
     uses: ./.github/workflows/typechecking.yml
-    with:
-      should_run_tests_and_release: ${{ needs.bump_version_check.outputs.should_run_tests_and_release }}
 
   tests:
+    if: needs.bump_version_check.outputs.should_run_tests_and_release == 'true'
     needs: [bump_version_check]
     uses: ./.github/workflows/tests.yml
-    with:
-      should_run_tests_and_release: ${{ needs.bump_version_check.outputs.should_run_tests_and_release }}
 
   comment_start:
     if: github.event_name == 'pull_request' && needs.bump_version_check.outputs.should_run_tests_and_release == 'true'
@@ -46,7 +44,7 @@ jobs:
       status: "requested"
 
   debug-dry-run-vars:
-    needs: [bump_version_check]
+    needs: [tests]
     runs-on: ubuntu-latest
     steps:
       - name: Show dry-run evaluation inputs
