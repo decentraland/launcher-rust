@@ -13,6 +13,9 @@ on:
       version:
         description: "New version string"
         value: ${{ jobs.bump_version.outputs.version }}
+      should_run_tests_and_release:
+        description: "Whether test and release jobs should run"
+        value: ${{ jobs.bump_version.outputs.should_run_tests_and_release }}
 
 jobs:
   bump_version:
@@ -20,7 +23,7 @@ jobs:
     outputs:
       bump: ${{ steps.check_skip.outputs.should_skip == 'true' && steps.check_skip.outputs.bump || steps.bump.outputs.bump }}
       version: ${{ steps.check_skip.outputs.should_skip == 'true' && steps.check_skip.outputs.version || steps.bump.outputs.version }}
-
+      should_run_tests_and_release: ${{ steps.eval_trigger.outputs.should_run_tests_and_release }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -128,3 +131,23 @@ jobs:
           token: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
+
+      - name: Evaluate if we should run test and release
+        id: eval_trigger
+        run: |
+          SHOULD_RUN="false"
+          echo "Evaluating conditions to run test and release..."
+
+          if [[ "${{ github.event_name }}" == "pull_request" && ! "${{ github.head_ref }}" =~ ^bump-version- ]]; then
+            echo "Condition met: pull_request event and head_ref does not start with 'bump-version-'"
+            SHOULD_RUN="true"
+
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "test-main" && "${{ steps.check_skip.outputs.bump }}" == "yes" ]]; then
+            echo "Condition met: push event to 'test-main' and bump output is 'yes'"
+            SHOULD_RUN="true"
+          else
+            echo "Conditions not met, skipping test and release."
+          fi
+
+          echo "should_run_tests_and_release=$SHOULD_RUN" >> $GITHUB_OUTPUT
+          echo "Final result: should_run_tests_and_release=$SHOULD_RUN"

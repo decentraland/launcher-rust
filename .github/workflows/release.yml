@@ -10,6 +10,11 @@ on:
       pr-number:
         type: string
         required: false
+      should_run_tests_and_release:
+        description: 'Whether to actually run release logic'
+        default: "false"
+        required: true
+        type: string
     secrets:
       MACOS_CSC_LINK:
         description: 'Certificate to sign dmg file'
@@ -107,6 +112,13 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      - name: Early exit if not required
+        run: |
+          if [ "${{ inputs.should_run_tests_and_release }}" != "true" ]; then
+            echo "Skipping release because should_run_tests_and_release != true"
+            exit 0
+          fi
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
