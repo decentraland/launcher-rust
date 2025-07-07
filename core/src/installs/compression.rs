@@ -27,7 +27,7 @@ pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> Ste
     // Iterate through the ZIP files to find the tar file
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?;
-        if file.name().ends_with(".tar") {
+        if file.name().to_lowercase().ends_with(".tar") {
             let mut tar_data = Vec::new();
             file.read_to_end(&mut tar_data)?;
             tar_file_data = Some(tar_data);

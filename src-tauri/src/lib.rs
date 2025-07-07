@@ -1,3 +1,15 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::todo,
+    clippy::dbg_macro
+)]
+#![allow(clippy::uninlined_format_args, clippy::used_underscore_binding)]
+
 use dcl_launcher_core::environment::AppEnvironment;
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
@@ -63,6 +75,7 @@ async fn launch(
         })?;
 
     guard.cleanup().await;
+    drop(guard);
     app.cleanup_before_exit();
     app.exit(0);
 
@@ -95,7 +108,7 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
         });
 
     if let Some(pos) = args.iter().position(|a| a == KEY_UPDATER_URL) {
-        let url = args.get(pos + 1);
+        let url = args.get(pos.saturating_add(1));
         match url {
             Some(url) => {
                 info!(
@@ -109,7 +122,7 @@ fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin
                 error!(
                     "Flag {} is provided but its value is missed",
                     KEY_UPDATER_URL
-                )
+                );
             }
         }
     }
@@ -124,22 +137,35 @@ async fn update_if_needed_and_restart(
 ) -> tauri_plugin_updater::Result<()> {
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
-        let mut downloaded = 0;
+        let mut downloaded: usize = 0;
 
         let content = update
             .download(
                 |chunk_length, content_length| {
-                    downloaded += chunk_length;
+                    downloaded = downloaded.saturating_add(chunk_length);
                     info!("downloaded {downloaded} from {content_length:?}");
                     match content_length {
-                        Some(l) => {
-                            let progress: u8 = ((downloaded as f64 / l as f64) * 100.0) as u8;
-                            channel.send_silent(
-                                LauncherUpdate::Downloading {
-                                    progress: Some(progress),
+                        Some(length) => {
+                            let current = (downloaded as u64).saturating_mul(100);
+                            let percentage = current.checked_div(length);
+
+                            match percentage {
+                                Some(p) => {
+                                    let progress: u8 = p.min(100) as u8;
+
+                                    channel.send_silent(
+                                        LauncherUpdate::Downloading {
+                                            progress: Some(progress),
+                                        }
+                                        .into(),
+                                    );
                                 }
-                                .into(),
-                            );
+                                None => {
+                                    channel.send_silent(
+                                        LauncherUpdate::Downloading { progress: None }.into(),
+                                    );
+                                }
+                            }
                         }
                         None => {
                             channel
@@ -167,7 +193,7 @@ async fn update_if_needed_and_restart(
 }
 
 #[cfg_attr(windows, allow(unused_variables))]
-fn setup_deeplink(a: &mut App, protocol: &Protocol) {
+fn setup_deeplink(a: &App, protocol: &Protocol) {
     #[cfg(target_os = "macos")]
     {
         let protocol = protocol.clone();
@@ -178,7 +204,7 @@ fn setup_deeplink(a: &mut App, protocol: &Protocol) {
                     protocol.try_assign_value(url.to_string());
                 }
                 None => {
-                    error!("No values are provided in deep link")
+                    error!("No values are provided in deep link");
                 }
             }
         });
@@ -202,6 +228,13 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Run the Tauri application.
+///
+/// # Panics
+///
+/// This function will panic if the Tauri application fails to run,
+/// which can happen if there is an error generating the context or initializing plugins.
+#[allow(clippy::expect_used)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

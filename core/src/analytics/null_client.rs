@@ -6,12 +6,12 @@ pub struct NullClient {
 
 impl NullClient {
     pub fn new() -> Self {
-        NullClient {
+        Self {
             session_id: SessionId::random(),
         }
     }
 
-    pub fn session_id(&self) -> &SessionId {
+    pub const fn session_id(&self) -> &SessionId {
         &self.session_id
     }
 }

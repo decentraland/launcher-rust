@@ -14,8 +14,8 @@ pub struct FlowError {
 
 impl From<&FlowError> for Status {
     fn from(err: &FlowError) -> Self {
-        Status::Error {
-            message: err.user_message.to_owned(),
+        Self::Error {
+            message: err.user_message.clone(),
         }
     }
 }
@@ -26,7 +26,7 @@ pub type StepResultTyped<T> = std::result::Result<T, StepError>;
 
 impl<T> From<StepError> for StepResultTyped<T> {
     fn from(value: StepError) -> Self {
-        StepResultTyped::Err(value)
+        Self::Err(value)
     }
 }
 
@@ -93,6 +93,7 @@ pub enum StepError {
 }
 
 impl StepError {
+    #[must_use]
     pub fn apply_user_message_if_needed(self, new_user_message: &str) -> Self {
         match self {
             Self::E0000_GENERIC_ERROR {
@@ -114,6 +115,7 @@ impl StepError {
 
     // migrate to json config for i18n later
     pub fn user_message(&self) -> &str {
+        #[allow(clippy::match_same_arms)]
         match self {
             Self::E0000_GENERIC_ERROR {
                 error: _,
@@ -193,17 +195,17 @@ impl From<std::io::Error> for StepError {
         use std::io::ErrorKind::*;
 
         match value.kind() {
-            OutOfMemory => StepError::E1005_DECOMPRESS_OUT_OF_MEMORY {
+            OutOfMemory => Self::E1005_DECOMPRESS_OUT_OF_MEMORY {
                 inner_error: value.into(),
             },
-            NotFound => StepError::E1001_FILE_NOT_FOUND {
+            NotFound => Self::E1001_FILE_NOT_FOUND {
                 expected_path: None,
             },
-            PermissionDenied => StepError::E1003_DECOMPRESS_ACCESS_DENIED {
+            PermissionDenied => Self::E1003_DECOMPRESS_ACCESS_DENIED {
                 inner_error: value.into(),
             },
-            WriteZero | StorageFull => StepError::E1004_DISK_FULL {},
-            _ => StepError::E0000_GENERIC_ERROR {
+            WriteZero | StorageFull => Self::E1004_DISK_FULL {},
+            _ => Self::E0000_GENERIC_ERROR {
                 error: value.into(),
                 user_message: None,
             },
@@ -214,20 +216,20 @@ impl From<std::io::Error> for StepError {
 impl From<zip::result::ZipError> for StepError {
     fn from(value: zip::result::ZipError) -> Self {
         match value {
-            zip::result::ZipError::Io(io_err) => StepError::from(io_err),
-            zip::result::ZipError::InvalidArchive(msg) => StepError::E1002_CORRUPTED_ARCHIVE {
-                file_path: "".to_owned(),
+            zip::result::ZipError::Io(io_err) => Self::from(io_err),
+            zip::result::ZipError::InvalidArchive(msg) => Self::E1002_CORRUPTED_ARCHIVE {
+                file_path: String::new(),
                 inner_error: anyhow!("Invalid archive: {}", msg),
             },
-            zip::result::ZipError::UnsupportedArchive(msg) => StepError::E1002_CORRUPTED_ARCHIVE {
-                file_path: "".to_owned(),
+            zip::result::ZipError::UnsupportedArchive(msg) => Self::E1002_CORRUPTED_ARCHIVE {
+                file_path: String::new(),
                 inner_error: anyhow!("Unsupported archive: {}", msg),
             },
-            zip::result::ZipError::FileNotFound => StepError::E1002_CORRUPTED_ARCHIVE {
-                file_path: "".to_owned(),
+            zip::result::ZipError::FileNotFound => Self::E1002_CORRUPTED_ARCHIVE {
+                file_path: String::new(),
                 inner_error: anyhow!("File not found in archive"),
             },
-            _ => StepError::E0000_GENERIC_ERROR {
+            _ => Self::E0000_GENERIC_ERROR {
                 error: anyhow!(value),
                 user_message: None,
             },
@@ -243,14 +245,14 @@ impl From<DownloadFileError> for StepError {
             IO(e) => e.into(),
             FileIncomplete(e) => e.into(),
             Network(e) => e.into(),
-            ContentLengthNotFound { url } => StepError::E2002_MISSING_CONTENT_LENGTH {
+            ContentLengthNotFound { url } => Self::E2002_MISSING_CONTENT_LENGTH {
                 url,
                 response_headers: HashMap::new(),
             },
             FileCreateFailed { source, file_path } => {
-                StepError::E1007_FILE_CREATE_FAILED { file_path, source }
+                Self::E1007_FILE_CREATE_FAILED { file_path, source }
             }
-            NetworkTimeout => StepError::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
+            NetworkTimeout => Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
         }
     }
 }
@@ -258,6 +260,6 @@ impl From<DownloadFileError> for StepError {
 impl From<reqwest::Error> for StepError {
     fn from(value: reqwest::Error) -> Self {
         let url: Option<String> = value.url().map(|e| e.as_str().to_owned());
-        StepError::E2001_DOWNLOAD_FAILED { url, error: value }
+        Self::E2001_DOWNLOAD_FAILED { url, error: value }
     }
 }

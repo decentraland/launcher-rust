@@ -68,6 +68,7 @@ pub enum Event {
 }
 
 impl Display for Event {
+    #[allow(clippy::use_self)]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

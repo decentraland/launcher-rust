@@ -31,7 +31,7 @@ impl RunningInstances {
         log::info!("Process run with id: {} and name {}", pid_raw, name);
 
         if let Err(e) = self.write_to_json_file(pid_raw, name) {
-            log::error!("Cannot register running instance: {:#?}", e)
+            log::error!("Cannot register running instance: {:#?}", e);
         }
     }
 
@@ -42,7 +42,7 @@ impl RunningInstances {
 
         let mut any_running = false;
 
-        for (id, name) in content.processes.iter() {
+        for (id, name) in &content.processes {
             let id = id.to_owned();
             let pid = Pid::from_u32(id);
 
@@ -51,7 +51,7 @@ impl RunningInstances {
                     Some(valid) => {
                         log::info!("Instance pid name is valid {}: {}", pid, valid);
                         if valid == name.as_str() {
-                            any_running = true
+                            any_running = true;
                         } else {
                             dead_process_pids.push(id);
                         }
@@ -68,7 +68,7 @@ impl RunningInstances {
         }
 
         if !dead_process_pids.is_empty() {
-            for pid in dead_process_pids.iter() {
+            for pid in &dead_process_pids {
                 content.processes.remove(pid);
             }
             Self::write_content(self.path.as_path(), &content)?;

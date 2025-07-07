@@ -18,7 +18,7 @@ pub fn dispath_logs() -> Result<()> {
                 record.level(),
                 record.target(),
                 message
-            ))
+            ));
         })
         .level(log::LevelFilter::Trace)
         .chain(std::io::stdout())

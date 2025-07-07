@@ -35,13 +35,13 @@ impl Display for PlaceDeeplinkError {
 
 impl From<serde_json::Error> for PlaceDeeplinkError {
     fn from(_: serde_json::Error) -> Self {
-        PlaceDeeplinkError::SerializeError
+        Self::SerializeError
     }
 }
 
 impl From<std::io::Error> for PlaceDeeplinkError {
     fn from(_: std::io::Error) -> Self {
-        PlaceDeeplinkError::IOError
+        Self::IOError
     }
 }
 
@@ -65,12 +65,12 @@ pub async fn place_deeplink_and_wait_until_consumed(
     // Wait until file is deleted or operation is cancelled
     loop {
         tokio::select! {
-            _ = token.cancelled() => {
+            () = token.cancelled() => {
                 // Clean up on cancel
                 let _ = remove_file(&path).await;
                 break;
             },
-            _ = sleep(Duration::from_millis(50)) => {
+            () = sleep(Duration::from_millis(50)) => {
                 if !path.exists() {
                     break;
                 }
