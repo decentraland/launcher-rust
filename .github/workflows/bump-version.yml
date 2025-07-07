@@ -42,18 +42,22 @@ jobs:
           else
             LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
             LAST_COMMIT_AUTHOR_EMAIL=$(git log -1 --pretty=%ae)
-            LAST_COMMIT_COMMITTER_EMAIL=$(git log -1 --pretty=%ce)
+            ALLOWED_BOT_EMAIL="44584806+decentraland-bot@users.noreply.github.com"
             echo "Last commit message: $LAST_COMMIT_MSG"
             echo "Last commit author: $LAST_COMMIT_AUTHOR_EMAIL"
-            echo "Last commit committer: $LAST_COMMIT_COMMITTER_EMAIL"
             if echo "$LAST_COMMIT_MSG" | grep -qE "^chore\(release\): bump version"; then
-              echo "Skipping version bump (last commit is a bump commit)"
-              echo "bump=yes" >> $GITHUB_OUTPUT
-              echo "version=none" >> $GITHUB_OUTPUT
-              echo "should_skip=true" >> $GITHUB_OUTPUT
+              if [[ "$LAST_COMMIT_AUTHOR_EMAIL" == "$ALLOWED_BOT_EMAIL" ]]; then
+                echo "Skipping version bump (last commit is a bump commit by decentraland-bot)"
+                echo "bump=yes" >> $GITHUB_OUTPUT
+                echo "version=none" >> $GITHUB_OUTPUT
+                echo "should_skip=true" >> $GITHUB_OUTPUT
+              else
+                echo "Bump commit was not made by decentraland-bot, not skipping."
+                echo "should_skip=false" >> $GITHUB_OUTPUT
+              fi
             else
-              echo "should_skip=false" >> $GITHUB_OUTPUT
               echo "Running version bump (test-main branch push, not a bump commit)"
+              echo "should_skip=false" >> $GITHUB_OUTPUT
             fi
           fi
 
