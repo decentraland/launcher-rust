@@ -41,7 +41,11 @@ jobs:
             echo "should_skip=true" >> $GITHUB_OUTPUT
           else
             LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
+            LAST_COMMIT_AUTHOR_EMAIL=$(git log -1 --pretty=%ae)
+            LAST_COMMIT_COMMITTER_EMAIL=$(git log -1 --pretty=%ce)
             echo "Last commit message: $LAST_COMMIT_MSG"
+            echo "Last commit author: $LAST_COMMIT_AUTHOR_EMAIL"
+            echo "Last commit committer: $LAST_COMMIT_COMMITTER_EMAIL"
             if echo "$LAST_COMMIT_MSG" | grep -qE "^chore\(release\): bump version"; then
               echo "Skipping version bump (last commit is a bump commit)"
               echo "bump=yes" >> $GITHUB_OUTPUT
