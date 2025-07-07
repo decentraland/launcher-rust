@@ -67,6 +67,7 @@ struct RecentDownload {
     downloaded_path: PathBuf,
 }
 
+#[allow(clippy::struct_field_names)]
 pub struct LaunchFlow {
     fetch_step: FetchStep,
     download_step: DownloadStep,
@@ -81,14 +82,12 @@ impl LaunchFlow {
         running_instances: Arc<Mutex<RunningInstances>>,
         protocol: Protocol,
     ) -> Self {
-        LaunchFlow {
+        Self {
             fetch_step: FetchStep {},
             download_step: DownloadStep {
                 analytics: analytics.clone(),
             },
-            install_step: InstallStep {
-                analytics: analytics.clone(),
-            },
+            install_step: InstallStep { analytics },
             app_launch_step: AppLaunchStep {
                 installs_hub,
                 running_instances,
@@ -193,8 +192,9 @@ impl DownloadStep {
         match version {
             Some(v) => Ok(v.to_owned()),
             None => {
-                let mut guard = self.analytics.lock().await;
-                guard
+                self.analytics
+                    .lock()
+                    .await
                     .track_and_flush_silent(Event::DOWNLOAD_VERSION_ERROR {
                         version: None,
                         error: "No version provided".to_owned(),
@@ -220,7 +220,7 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
     }
 
     fn start_label(&self) -> Result<Status> {
-        let mode = DownloadStep::mode();
+        let mode = Self::mode();
         let status = Status::State {
             step: Step::Downloading {
                 progress: 0,
@@ -235,7 +235,7 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
-        let mode = DownloadStep::mode();
+        let mode = Self::mode();
 
         let mut guard = state.lock().await;
 
@@ -251,8 +251,9 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
                     .context("Cannot convert target download path")?;
 
                 {
-                    let mut analytics = self.analytics.lock().await;
-                    analytics
+                    self.analytics
+                        .lock()
+                        .await
                         .track_and_flush_silent(Event::DOWNLOAD_VERSION {
                             version: version.clone(),
                         })
@@ -268,16 +269,19 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
                 )
                 .await;
 
-                let mut analytics = self.analytics.lock().await;
                 if let Err(e) = &result {
-                    analytics
+                    self.analytics
+                        .lock()
+                        .await
                         .track_and_flush_silent(Event::DOWNLOAD_VERSION_ERROR {
                             version: Some(version.clone()),
                             error: e.to_string(),
                         })
                         .await;
                 } else {
-                    analytics
+                    self.analytics
+                        .lock()
+                        .await
                         .track_and_flush_silent(Event::DOWNLOAD_VERSION_SUCCESS {
                             version: version.clone(),
                         })
@@ -302,12 +306,11 @@ struct InstallStep {
 }
 
 impl InstallStep {
-    async fn execute_internal(recent_download: RecentDownload) -> StepResult {
+    fn execute_internal(recent_download: RecentDownload) -> StepResult {
         installs::install_explorer(
             &recent_download.version,
             Some(recent_download.downloaded_path),
         )
-        .await
     }
 
     async fn recent_download_and_update_state(
@@ -316,6 +319,7 @@ impl InstallStep {
         let mut guard = state.lock().await;
         let recent_download = guard.recent_download.clone()?;
         guard.recent_download = None;
+        drop(guard);
         Some(recent_download)
     }
 }
@@ -339,27 +343,31 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         _channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
-        let mut analytics = self.analytics.lock().await;
-
-        let recent_download = InstallStep::recent_download_and_update_state(state).await;
+        let recent_download = Self::recent_download_and_update_state(state).await;
         match recent_download {
             Some(download) => {
                 let version = download.version.clone();
-                analytics
+                self.analytics
+                    .lock()
+                    .await
                     .track_and_flush_silent(Event::INSTALL_VERSION_START {
                         version: version.clone(),
                     })
                     .await;
-                let result = InstallStep::execute_internal(download).await;
+                let result = Self::execute_internal(download);
                 if let Err(e) = &result {
-                    analytics
+                    self.analytics
+                        .lock()
+                        .await
                         .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
                             version: Some(version),
                             error: e.to_string(),
                         })
                         .await;
                 } else {
-                    analytics
+                    self.analytics
+                        .lock()
+                        .await
                         .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
                         .await;
                 }
@@ -367,7 +375,9 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
             }
             None => {
                 const ERROR_MESSAGE: &str = "Downloaded archive not found";
-                analytics
+                self.analytics
+                    .lock()
+                    .await
                     .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
                         version: None,
                         error: ERROR_MESSAGE.to_owned(),
@@ -410,6 +420,9 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         channel: &T,
         _state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
+        const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
+        type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
+
         match self.protocol.value() {
             Some(deeplink) => {
                 let open_new_instance =
@@ -422,9 +435,6 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
 
                     let token = CancellationToken::new();
 
-                    type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
-
-                    const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
                     match tokio::time::timeout(
                         OPEN_DEEPLINK_TIMEOUT,
                         place_deeplink_and_wait_until_consumed(deeplink, token.child_token()),
@@ -432,10 +442,10 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                     .await
                     {
                         OpenResult::Ok(result) => match result {
-                            PlaceDeeplinkResult::Ok(_) => StepResult::Ok(()),
+                            PlaceDeeplinkResult::Ok(()) => StepResult::Ok(()),
                             PlaceDeeplinkResult::Err(error) => match error {
-                                PlaceDeeplinkError::SerializeError => StepResult::Err(error.into()),
-                                PlaceDeeplinkError::IOError => StepResult::Err(error.into()),
+                                PlaceDeeplinkError::SerializeError
+                                | PlaceDeeplinkError::IOError => StepResult::Err(error.into()),
                                 PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
                             },
                         },
@@ -445,15 +455,21 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                         }
                     }
                 } else {
-                    let guard = self.installs_hub.lock().await;
-                    guard.launch_explorer(Some(deeplink), None).await?;
+                    self.installs_hub
+                        .lock()
+                        .await
+                        .launch_explorer(Some(deeplink), None)
+                        .await?;
                     StepResult::Ok(())
                 }
             }
             None => {
-                let guard = self.installs_hub.lock().await;
                 //TODO passed version if specified manually from upper flow
-                guard.launch_explorer(None, None).await?;
+                self.installs_hub
+                    .lock()
+                    .await
+                    .launch_explorer(None, None)
+                    .await?;
                 StepResult::Ok(())
             }
         }

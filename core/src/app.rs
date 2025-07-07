@@ -47,11 +47,11 @@ impl AppState {
         let flow = LaunchFlow::new(
             installs_hub,
             analytics.clone(),
-            running_instances.clone(),
+            running_instances,
             Protocol {},
         );
         let flow_state = LaunchFlowState::default();
-        let app_state = AppState {
+        let app_state = Self {
             flow,
             state: Arc::new(Mutex::new(flow_state)),
             protocol: Protocol {},
@@ -64,8 +64,9 @@ impl AppState {
     }
 
     pub async fn cleanup(&self) {
-        let mut guard = self.analytics.lock().await;
-        guard
+        self.analytics
+            .lock()
+            .await
             .track_and_flush_silent(Event::LAUNCHER_CLOSE {
                 version: utils::app_version().to_owned(),
             })

@@ -27,14 +27,14 @@ impl AnalyticsClient {
         let client = HttpClient::default();
         let context = json!({"direct": true});
         let batcher = Batcher::new(Some(context));
-        let batcher = AutoBatcher::new(client, batcher, write_key.to_string());
+        let batcher = AutoBatcher::new(client, batcher, write_key);
         let session_id = SessionId::random();
 
-        AnalyticsClient {
+        Self {
             anonymous_id,
             os,
-            session_id,
             launcher_version,
+            session_id,
             batcher,
         }
     }
@@ -75,11 +75,11 @@ impl AnalyticsClient {
         Ok(())
     }
 
-    pub fn anonymous_id(&self) -> &str {
+    pub const fn anonymous_id(&self) -> &str {
         self.anonymous_id.as_str()
     }
 
-    pub fn session_id(&self) -> &SessionId {
+    pub const fn session_id(&self) -> &SessionId {
         &self.session_id
     }
 }

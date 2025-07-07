@@ -15,7 +15,7 @@ fn config_content() -> Result<Map<String, Value>> {
     Ok(map)
 }
 
-fn write_config(value: Map<String, Value>) -> Result<()> {
+fn write_config(value: &Map<String, Value>) -> Result<()> {
     let path = config_path();
     let file = std::fs::File::create(path)?;
     serde_json::to_writer_pretty(file, &value)?;
@@ -40,7 +40,7 @@ fn user_id() -> Result<String> {
     let mut config = config;
     let id = uuid::Uuid::new_v4().to_string();
     config.insert(KEY.to_owned(), Value::String(id.clone()));
-    write_config(config)?;
+    write_config(&config)?;
     Ok(id)
 }
 
@@ -59,7 +59,7 @@ pub fn cmd_arguments() -> Vec<String> {
             if let Some(raw) = config.get(KEY) {
                 let raw = raw.as_str();
                 match raw {
-                    Some(value) => value.split(' ').map(|s| s.to_owned()).collect(),
+                    Some(value) => value.split(' ').map(ToOwned::to_owned).collect(),
                     None => Vec::new(),
                 }
             } else {

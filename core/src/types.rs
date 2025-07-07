@@ -38,7 +38,7 @@ pub enum LauncherUpdate {
 
 impl From<LauncherUpdate> for Status {
     fn from(update: LauncherUpdate) -> Self {
-        Status::State {
+        Self::State {
             step: Step::LauncherUpdate(update),
         }
     }

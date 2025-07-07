@@ -54,21 +54,21 @@ pub enum DownloadFileError {
 impl Display for DownloadFileError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            DownloadFileError::Generic(e) => write!(f, "Download failed: {}", e),
-            DownloadFileError::IO(e) => write!(f, "Download failed due IO error: {}", e),
-            DownloadFileError::Network(e) => write!(f, "Download failed due Network error: {}", e),
-            DownloadFileError::FileIncomplete(e) => write!(f, "Download failed: {}", e),
-            DownloadFileError::ContentLengthNotFound { url } => write!(
+            Self::Generic(e) => write!(f, "Download failed: {}", e),
+            Self::IO(e) => write!(f, "Download failed due IO error: {}", e),
+            Self::Network(e) => write!(f, "Download failed due Network error: {}", e),
+            Self::FileIncomplete(e) => write!(f, "Download failed: {}", e),
+            Self::ContentLengthNotFound { url } => write!(
                 f,
                 "Download failed due missing content length from url: {}",
                 url
             ),
-            DownloadFileError::FileCreateFailed { source, file_path } => write!(
+            Self::FileCreateFailed { source, file_path } => write!(
                 f,
                 "Download failed due file creation failed: {}, source {}",
                 file_path, source
             ),
-            DownloadFileError::NetworkTimeout => write!(f, "Download failed due network timeout"),
+            Self::NetworkTimeout => write!(f, "Download failed due network timeout"),
         }
     }
 }
@@ -80,14 +80,18 @@ async fn track_download_progress(
     total_size: u64,
 ) {
     let progress_event = Event::DOWNLOAD_VERSION_PROGRESS {
-        downloaded_file_url: url.to_owned(),
+        downloaded_file_url: url.clone(),
         size_downloaded: downloaded,
-        size_remaining: total_size - downloaded,
+        size_remaining: total_size.saturating_sub(downloaded),
     };
-    let mut analytics_guard = analytics.lock().await;
-    analytics_guard.track_and_flush_silent(progress_event).await;
+    analytics
+        .lock()
+        .await
+        .track_and_flush_silent(progress_event)
+        .await;
 }
 
+#[allow(clippy::future_not_send)]
 pub async fn download_file<T: EventChannel>(
     url: &str,
     path: &str,
@@ -124,7 +128,7 @@ pub async fn download_file<T: EventChannel>(
                     let chunk = item?;
                     file.write_all(&chunk)?;
 
-                    let new = min(downloaded + (chunk.len() as u64), total_size);
+                    let new = min(downloaded.saturating_add(chunk.len() as u64), total_size);
                     downloaded = new;
 
                     let should_send = match last_analytics_time {
@@ -143,7 +147,14 @@ pub async fn download_file<T: EventChannel>(
                         tasks.push(task);
                     }
 
+                    #[allow(
+                        clippy::arithmetic_side_effects,
+                        clippy::cast_precision_loss,
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss
+                    )]
                     let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
+
                     let event: Status = Status::State {
                         step: Step::Downloading {
                             progress,

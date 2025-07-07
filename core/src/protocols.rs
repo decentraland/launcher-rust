@@ -18,12 +18,12 @@ pub struct DeepLink(String);
 
 impl DeepLink {
     fn new(value: String) -> Result<Self, DeepLinkCreateError> {
-        if !value.starts_with(PROTOCOL_PREFIX) {
+        if value.starts_with(PROTOCOL_PREFIX) {
+            Ok(Self(value))
+        } else {
             Err(DeepLinkCreateError::WrongPrefix {
                 original_content: value,
             })
-        } else {
-            Ok(DeepLink(value))
         }
     }
 }
@@ -35,7 +35,8 @@ impl From<DeepLink> for String {
 }
 
 impl Protocol {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {}
     }
 
