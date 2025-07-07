@@ -1,11 +1,6 @@
 name: Typechecking
 on:
   workflow_call:
-    inputs:
-      should_run_tests_and_release:
-        required: false
-        type: string
-        default: "true"
 
 concurrency:
   group: typechecking-${{ github.ref }}
@@ -20,13 +15,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Early exit if not required
-        run: |
-          if [ "${{ inputs.should_run_tests_and_release }}" != "true" ]; then
-            echo "Skipping typechecking because should_run_tests_and_release != true"
-            exit 0
-          fi
-
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
