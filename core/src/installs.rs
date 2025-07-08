@@ -100,7 +100,9 @@ fn explorer_version_path() -> PathBuf {
 
 fn explorer_latest_version_path() -> Result<PathBuf> {
     let data = get_version_data()?;
-    let path = &data["path"];
+    let path = data
+        .get("path")
+        .context("missing \"path\" property in version data")?;
     let value = path
         .as_str()
         .context("cannot get string value from path property")?;
@@ -300,7 +302,13 @@ fn cleanup_versions() -> Result<()> {
 fn is_app_updated(version: &str) -> bool {
     let result = get_version_data();
     match result {
-        Ok(data) => data["version"] == version,
+        Ok(data) => {
+            if let Some(v) = data.get("version") {
+                v == version
+            } else {
+                false
+            }
+        }
         Err(_) => false,
     }
 }
@@ -352,18 +360,21 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     }
 
     let mut version_data = get_version_data_or_empty();
-    version_data[version] = Value::from(
+
+    let install_time = Value::from(
         std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
             .context("Cannot convert time")?
             .as_secs()
             .to_string(),
     );
+    version_data.insert(version.to_owned(), install_time);
+
     if version != "dev" {
-        version_data["version"] = Value::String(version.to_string());
+        version_data.insert("version".to_owned(), Value::String(version.to_owned()));
     }
 
-    version_data["path"] = branch_path.to_string_lossy().into();
+    version_data.insert("path".to_owned(), branch_path.to_string_lossy().into());
 
     // Write version data to file
     let version_data_str =

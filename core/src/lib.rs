@@ -18,7 +18,7 @@
     clippy::enum_glob_use
 )]
 // TODO solve later
-#![allow(clippy::indexing_slicing, clippy::significant_drop_tightening)]
+#![allow(clippy::significant_drop_tightening)]
 
 pub mod analytics;
 pub mod app;
