@@ -1,3 +1,6 @@
+use clap::Parser;
+use log::info;
+
 use crate::config;
 
 const DEFAULT_PROVIDER: &str = "dcl";
@@ -14,6 +17,21 @@ pub enum LauncherEnvironment {
 }
 
 pub struct AppEnvironment {}
+
+#[derive(clap::Parser, Debug)]
+pub struct Args {
+    #[arg(long)]
+    pub skip_analytics: bool,
+    #[arg(long)]
+    pub open_deeplink_in_new_instance: bool,
+
+    #[arg(long)]
+    pub always_trigger_updater: bool,
+    #[arg(long)]
+    pub never_trigger_updater: bool,
+    #[arg(long)]
+    pub use_updater_url: Option<String>,
+}
 
 impl AppEnvironment {
     pub fn provider() -> String {
@@ -36,9 +54,14 @@ impl AppEnvironment {
         }
     }
 
-    pub fn cmd_args() -> impl Iterator<Item = String> {
-        let direct = std::env::args();
-        let config = config::cmd_arguments();
-        direct.chain(config)
+    pub fn cmd_args() -> Args {
+        let from_cmd = std::env::args();
+        info!("cmd args: {:?}", from_cmd);
+
+        let from_config = config::cmd_arguments();
+        info!("config args: {:?}", from_config);
+
+        let raw = from_cmd.chain(from_config);
+        Args::parse_from(raw)
     }
 }

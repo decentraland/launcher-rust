@@ -30,7 +30,7 @@ pub enum Analytics {
 
 impl Analytics {
     pub fn new_from_env() -> Self {
-        if AppEnvironment::cmd_args().any(|e| e == "--skip-analytics") {
+        if AppEnvironment::cmd_args().skip_analytics {
             info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
             return Self::new(None);
         }

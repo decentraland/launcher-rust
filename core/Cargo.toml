@@ -65,3 +65,4 @@ sentry-log = "0.37.0"
 sentry-types = "0.37.0"
 
 windows-sys = { version = "0.59.0", features = ["Win32_System_Threading"] }
+clap = { version = "4.5.41", features = ["derive"] }
