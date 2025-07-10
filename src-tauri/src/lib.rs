@@ -193,7 +193,7 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
 
     #[cfg(target_os = "windows")]
     {
-        let args: Vec<String> = AppEnvironment::cmd_args().collect();
+        let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
         protocol.try_assign_value_from_vec(&args);
     }
 }

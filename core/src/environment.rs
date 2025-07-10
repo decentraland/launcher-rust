@@ -56,13 +56,17 @@ impl AppEnvironment {
     }
 
     pub fn cmd_args() -> Args {
+        let raw = Self::raw_cmd_args();
+        Args::parse_from(raw)
+    }
+
+    pub fn raw_cmd_args() -> impl Iterator<Item = String> {
         let from_cmd = std::env::args();
         info!("cmd args: {:?}", from_cmd);
 
         let from_config = config::cmd_arguments();
         info!("config args: {:?}", from_config);
 
-        let raw = from_cmd.chain(from_config);
-        Args::parse_from(raw)
+        from_cmd.chain(from_config)
     }
 }
