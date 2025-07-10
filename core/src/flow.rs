@@ -2,7 +2,7 @@ use crate::channel::EventChannel;
 use crate::deeplink_bridge::{
     PlaceDeeplinkError, PlaceDeeplinkResult, place_deeplink_and_wait_until_consumed,
 };
-use crate::errors::{AttempError, AttemptError, StepError, StepResultTyped};
+use crate::errors::{AttemptError, StepError, StepResultTyped};
 use crate::instances::RunningInstances;
 use crate::protocols::Protocol;
 use crate::{
@@ -122,11 +122,11 @@ impl LaunchFlow {
                 );
                 let e = AttemptError {
                     error: e,
-                    attempt: attempt,
+                    attempt,
                 };
 
                 sentry::capture_error(&e);
-                self.analytics.lock().await.track_and_flush_silent((&e).into());
+                self.analytics.lock().await.track_and_flush_silent((&e).into()).await;
 
                 last_error = Some(e);
                 continue;
