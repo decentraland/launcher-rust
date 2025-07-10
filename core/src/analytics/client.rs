@@ -1,8 +1,13 @@
+use std::collections::HashSet;
+
 use anyhow::{Context, Result};
 use log::error;
 use segment::message::{Track, User};
 use segment::{AutoBatcher, Batcher, HttpClient};
 use serde_json::{Map, Value, json};
+
+use get_if_addrs::get_if_addrs;
+use system_configuration::network_configuration::get_interfaces;
 
 use super::event::Event;
 use super::session::SessionId;
@@ -56,11 +61,13 @@ impl AnalyticsClient {
         };
 
         let properties: Value = Value::Object(properties);
+        let context: Option<Value> = Some(network_context());
 
         let msg = Track {
             user,
             event,
             properties,
+            context,
             ..Default::default()
         };
 
@@ -118,5 +125,55 @@ fn properties_from_event(event: &Event) -> Map<String, Value> {
             error!("Cannot serialize event; {}", error);
             Map::new()
         }
+    }
+}
+
+fn network_context() -> Value {
+    let mut available_network_types: HashSet<String> = HashSet::new();
+
+    if let Ok(addrs) = get_if_addrs() {
+        // Active
+        let active_ifaces: HashSet<String> = addrs
+            .into_iter()
+            .filter(|iface| {
+                // Skip loopbacks
+                if iface.is_loopback() {
+                    return false;
+                }
+                // Skip link-local
+                match iface.ip() {
+                    std::net::IpAddr::V4(ip) => !ip.is_link_local(),
+                    std::net::IpAddr::V6(ip) => !ip.is_loopback(),
+                }
+            })
+            .map(|iface| iface.name)
+            .collect();
+
+        // Interfaces
+        let ifaces = get_interfaces();
+        for iface in ifaces.iter() {
+            if let Some(name) = iface.bsd_name() {
+                let name = name.to_string();
+                if active_ifaces.contains(&name) {
+                    let display_name = iface
+                        .display_name()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default();
+                    let kind = iface
+                        .interface_type_string()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default();
+                    available_network_types.insert(format!("{display_name} - {kind}"));
+                }
+            }
+        }
+
+        let values: Vec<Value> = available_network_types
+            .into_iter()
+            .map(Value::String)
+            .collect();
+        Value::Array(values)
+    } else {
+        Value::Array(Vec::new())
     }
 }
