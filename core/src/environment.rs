@@ -18,6 +18,7 @@ pub enum LauncherEnvironment {
 
 pub struct AppEnvironment {}
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(clap::Parser, Debug)]
 pub struct Args {
     #[arg(long)]
