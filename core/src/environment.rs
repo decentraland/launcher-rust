@@ -1,4 +1,3 @@
-use clap::ArgAction;
 use log::info;
 
 use crate::config;
@@ -14,14 +13,6 @@ const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
 const ARG_ALWAYS_TRIGGER_UPDATER: &str = "always-trigger-updater";
 const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
 const ARG_USE_UPDATER_URL: &str = "use-updater-url";
-
-const ARGS_KNOWN: &[&str] = &[
-    ARG_SKIP_ANALYTICS,
-    ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
-    ARG_ALWAYS_TRIGGER_UPDATER,
-    ARG_NEVER_TRIGGER_UPDATER,
-    ARG_USE_UPDATER_URL,
-];
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
@@ -58,6 +49,49 @@ impl Args {
                 .or_else(|| other.use_updater_url.clone()),
         }
     }
+
+    pub fn parse(iterator: impl Iterator<Item = String>) -> Self {
+        let vector: Vec<String> = iterator.collect();
+
+        Self {
+            skip_analytics: Self::has_flag(ARG_SKIP_ANALYTICS, &vector),
+            open_deeplink_in_new_instance: Self::has_flag(
+                ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
+                &vector,
+            ),
+            always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
+            never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
+            use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
+        }
+    }
+
+    fn has_flag(flag: &str, i: &[String]) -> bool {
+        i.iter().any(|e| {
+            if e.starts_with("--") {
+                let without_dashes = e.trim_start_matches("--");
+                flag == without_dashes
+            } else {
+                false
+            }
+        })
+    }
+
+    fn value_by_flag(flag: &str, i: &[String]) -> Option<String> {
+        let mut iter = i.iter().peekable();
+
+        while let Some(arg) = iter.next() {
+            if arg.trim_start_matches("--") == flag {
+                if let Some(next) = iter.peek() {
+                    if !next.starts_with("--") {
+                        return Some(next.to_owned().to_owned());
+                    }
+                }
+                return None;
+            }
+        }
+
+        None
+    }
 }
 
 impl AppEnvironment {
@@ -90,28 +124,13 @@ impl AppEnvironment {
         (from_cmd, from_config.into_iter())
     }
 
-    fn cmd_args_internal() -> Result<Args, clap::Error> {
-        let (from_cmd, from_config) = Self::args_sources();
-        let cmd_args = parse(from_cmd)?;
-        let config_args = parse(from_config)?;
-
-        let args = cmd_args.merge_with(&config_args);
-
-        Ok(args)
-    }
-
     pub fn cmd_args() -> Args {
-        let args = Self::cmd_args_internal();
-        match args {
-            Ok(args) => {
-                log::info!("parsed args: {:#?}", args);
-                args
-            }
-            Err(e) => {
-                log::error!("cannot pass args, fallback to default args: {}", e);
-                Args::default()
-            }
-        }
+        let (from_cmd, from_config) = Self::args_sources();
+        let cmd_args = Args::parse(from_cmd);
+        let config_args = Args::parse(from_config);
+        let args = cmd_args.merge_with(&config_args);
+        log::info!("parsed args: {:#?}", args);
+        args
     }
 
     pub fn raw_cmd_args() -> impl Iterator<Item = String> {
@@ -120,106 +139,50 @@ impl AppEnvironment {
     }
 }
 
-// Allow external arguments
-fn build_command() -> clap::Command {
-    use clap::Arg;
-    use clap::Command;
-
-    Command::new(env!("CARGO_PKG_NAME"))
-        .arg(
-            Arg::new(ARG_SKIP_ANALYTICS)
-                .long(ARG_SKIP_ANALYTICS)
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
-                .long(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new(ARG_ALWAYS_TRIGGER_UPDATER)
-                .long(ARG_ALWAYS_TRIGGER_UPDATER)
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new(ARG_NEVER_TRIGGER_UPDATER)
-                .long(ARG_NEVER_TRIGGER_UPDATER)
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new(ARG_USE_UPDATER_URL)
-                .long(ARG_USE_UPDATER_URL)
-                .value_name("URL")
-                .num_args(0..=1),
-        ) // optional
-        .allow_external_subcommands(true)
-}
-
-fn filter_known_args(args: impl Iterator<Item = String>) -> impl Iterator<Item = String> {
-    args.filter(|e| {
-        if e.starts_with("--") {
-            let without_dashes = e.trim_start_matches("--");
-            ARGS_KNOWN.contains(&without_dashes)
-        } else {
-            // ignore none flags
-            true
-        }
-    })
-}
-
-fn parse(i: impl Iterator<Item = String>) -> Result<Args, clap::Error> {
-    let args = filter_known_args(i);
-    let matches = build_command().try_get_matches_from(args)?;
-    Ok(Args {
-        skip_analytics: matches
-            .get_one::<bool>(ARG_SKIP_ANALYTICS)
-            .copied()
-            .unwrap_or(false),
-        open_deeplink_in_new_instance: matches
-            .get_one::<bool>(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
-            .copied()
-            .unwrap_or(false),
-        always_trigger_updater: matches
-            .get_one::<bool>(ARG_ALWAYS_TRIGGER_UPDATER)
-            .copied()
-            .unwrap_or(false),
-        never_trigger_updater: matches
-            .get_one::<bool>(ARG_NEVER_TRIGGER_UPDATER)
-            .copied()
-            .unwrap_or(false),
-        use_updater_url: matches.get_one::<String>(ARG_USE_UPDATER_URL).cloned(),
-    })
-}
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-
     use super::*;
 
     #[test]
-    fn test_known_args_parsed() -> Result<()> {
-        let args = parse(
+    fn test_known_args_parsed() {
+        let args = Args::parse(
             [
                 "app",
                 "--skip-analytics",
                 "--open-deeplink-in-new-instance",
+                "--never-trigger-updater",
                 "--use-updater-url",
                 "https://example.com",
             ]
             .map(ToOwned::to_owned)
             .into_iter(),
-        )?;
+        );
 
         assert!(args.skip_analytics);
         assert!(args.open_deeplink_in_new_instance);
         assert!(!args.always_trigger_updater);
+        assert!(args.never_trigger_updater);
         assert_eq!(args.use_updater_url.as_deref(), Some("https://example.com"));
-        Ok(())
     }
 
     #[test]
-    fn test_unknown_args_ignored() -> Result<()> {
-        let args = parse(
+    fn test_known_args_parsed_single_no_app_name() {
+        let args = Args::parse(
+            ["--never-trigger-updater"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
+
+        assert!(!args.skip_analytics);
+        assert!(!args.open_deeplink_in_new_instance);
+        assert!(!args.always_trigger_updater);
+        assert!(args.never_trigger_updater);
+        assert!(args.use_updater_url.is_none());
+    }
+
+    #[test]
+    fn test_unknown_args_ignored() {
+        let args = Args::parse(
             [
                 "app",
                 "--skip-analytics",
@@ -229,11 +192,10 @@ mod tests {
             ]
             .map(ToOwned::to_owned)
             .into_iter(),
-        )?;
+        );
 
         assert!(args.skip_analytics);
         assert!(args.use_updater_url.is_some());
-        Ok(())
     }
 
     #[test]
