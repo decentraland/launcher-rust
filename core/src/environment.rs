@@ -19,7 +19,7 @@ pub enum LauncherEnvironment {
 pub struct AppEnvironment {}
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(clap::Parser, Debug)]
+#[derive(clap::Parser, Debug, Default)]
 pub struct Args {
     #[arg(long)]
     pub skip_analytics: bool,
@@ -57,7 +57,14 @@ impl AppEnvironment {
 
     pub fn cmd_args() -> Args {
         let raw = Self::raw_cmd_args();
-        Args::parse_from(raw)
+        let args = Args::try_parse_from(raw);
+        match args {
+            Ok(args) => args,
+            Err(e) => {
+                log::error!("cannot pass args, fallback to default args: {}", e);
+                Args::default()
+            }
+        }
     }
 
     pub fn raw_cmd_args() -> impl Iterator<Item = String> {
