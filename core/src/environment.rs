@@ -74,7 +74,10 @@ impl AppEnvironment {
     pub fn cmd_args() -> Args {
         let args = Self::cmd_args_internal();
         match args {
-            Ok(args) => args,
+            Ok(args) => {
+                log::info!("parsed args: {:#?}", args);
+                args
+            }
             Err(e) => {
                 log::error!("cannot pass args, fallback to default args: {}", e);
                 Args::default()
