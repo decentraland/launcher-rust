@@ -1,4 +1,3 @@
-use clap::Parser;
 use log::info;
 
 use crate::config;
@@ -19,19 +18,27 @@ pub enum LauncherEnvironment {
 pub struct AppEnvironment {}
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(clap::Parser, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Args {
-    #[arg(long)]
     pub skip_analytics: bool,
-    #[arg(long)]
     pub open_deeplink_in_new_instance: bool,
 
-    #[arg(long)]
     pub always_trigger_updater: bool,
-    #[arg(long)]
     pub never_trigger_updater: bool,
-    #[arg(long)]
     pub use_updater_url: Option<String>,
+}
+
+impl Args {
+    pub fn merge_with(&self, other: &Self) -> Self {
+        Args {
+            skip_analytics: self.skip_analytics || other.skip_analytics,
+            open_deeplink_in_new_instance: self.open_deeplink_in_new_instance
+                || other.open_deeplink_in_new_instance,
+            always_trigger_updater: self.always_trigger_updater || other.always_trigger_updater,
+            never_trigger_updater: self.never_trigger_updater || other.never_trigger_updater,
+            use_updater_url: self.use_updater_url.clone().or(other.use_updater_url.clone()),
+        }
+    }
 }
 
 impl AppEnvironment {
@@ -66,8 +73,11 @@ impl AppEnvironment {
 
     fn cmd_args_internal() -> Result<Args, clap::Error> {
         let (from_cmd, from_config) = Self::args_sources();
-        let mut args = Args::try_parse_from(from_cmd)?;
-        args.try_update_from(from_config)?;
+        let cmd_args = parse(from_cmd)?;
+        let config_args = parse(from_config)?;
+
+        let args = cmd_args.merge_with(&config_args);
+
         Ok(args)
     }
 
@@ -89,4 +99,29 @@ impl AppEnvironment {
         let (from_cmd, from_config) = Self::args_sources();
         from_cmd.chain(from_config)
     }
+}
+
+// Allow external arguments
+fn build_command() -> clap::Command {
+    use clap::Arg;
+    use clap::Command;
+
+    Command::new("dcl_launcher")
+        .arg(Arg::new("skip_analytics").long("skip-analytics"))
+        .arg(Arg::new("open_deeplink_in_new_instance").long("open-deeplink-in-new-instance"))
+        .arg(Arg::new("always_trigger_updater").long("always-trigger-updater"))
+        .arg(Arg::new("never_trigger_updater").long("never-trigger-updater"))
+        .arg(Arg::new("use_updater_url").long("use-updater-url"))
+        .allow_external_subcommands(true)
+}
+
+fn parse(i: impl Iterator<Item = String>) -> Result<Args, clap::Error> {
+    let matches = build_command().try_get_matches_from(i)?;
+    Ok(Args {
+        skip_analytics: matches.contains_id("skip_analytics"),
+        open_deeplink_in_new_instance: matches.contains_id("open_deeplink_in_new_instance"),
+        always_trigger_updater: matches.contains_id("always_trigger_updater"),
+        never_trigger_updater: matches.contains_id("never_trigger_updater"),
+        use_updater_url: matches.get_one::<String>("use_updater_url").cloned(),
+    })
 }
