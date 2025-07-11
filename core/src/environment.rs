@@ -9,6 +9,20 @@ const BUCKET_URL: &str = env!("VITE_AWS_S3_BUCKET_PUBLIC_URL");
 const PROVIDER: Option<&str> = option_env!("VITE_PROVIDER");
 const LAUNCHER_ENVIRONMENT: Option<&str> = option_env!("LAUNCHER_ENVIRONMENT");
 
+const ARG_SKIP_ANALYTICS: &str = "skip-analytics";
+const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
+const ARG_ALWAYS_TRIGGER_UPDATER: &str = "always-trigger-updater";
+const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
+const ARG_USE_UPDATER_URL: &str = "use-updater-url";
+
+const ARGS_KNOWN: &[&str] = &[
+    ARG_SKIP_ANALYTICS,
+    ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
+    ARG_ALWAYS_TRIGGER_UPDATER,
+    ARG_NEVER_TRIGGER_UPDATER,
+    ARG_USE_UPDATER_URL,
+];
+
 #[derive(Debug)]
 pub enum LauncherEnvironment {
     Production,
@@ -111,30 +125,30 @@ fn build_command() -> clap::Command {
     use clap::Arg;
     use clap::Command;
 
-    Command::new("dcl_launcher")
+    Command::new(env!("CARGO_PKG_NAME"))
         .arg(
-            Arg::new("skip_analytics")
-                .long("skip-analytics")
+            Arg::new(ARG_SKIP_ANALYTICS)
+                .long(ARG_SKIP_ANALYTICS)
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("open_deeplink_in_new_instance")
-                .long("open-deeplink-in-new-instance")
+            Arg::new(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
+                .long(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("always_trigger_updater")
-                .long("always-trigger-updater")
+            Arg::new(ARG_ALWAYS_TRIGGER_UPDATER)
+                .long(ARG_ALWAYS_TRIGGER_UPDATER)
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("never_trigger_updater")
-                .long("never-trigger-updater")
+            Arg::new(ARG_NEVER_TRIGGER_UPDATER)
+                .long(ARG_NEVER_TRIGGER_UPDATER)
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("use_updater_url")
-                .long("use-updater-url")
+            Arg::new(ARG_USE_UPDATER_URL)
+                .long(ARG_USE_UPDATER_URL)
                 .value_name("URL")
                 .num_args(0..=1),
         ) // optional
@@ -142,17 +156,10 @@ fn build_command() -> clap::Command {
 }
 
 fn filter_known_args(args: impl Iterator<Item = String>) -> impl Iterator<Item = String> {
-    let known = [
-        "--skip-analytics",
-        "--open-deeplink-in-new-instance",
-        "--always-trigger-updater",
-        "--never-trigger-updater",
-        "--use-updater-url",
-    ];
-
-    args.filter(move |e| {
+    args.filter(|e| {
         if e.starts_with("--") {
-            known.contains(&e.as_str())
+            let without_dashes = e.trim_start_matches("--");
+            ARGS_KNOWN.contains(&without_dashes)
         } else {
             // ignore none flags
             true
@@ -165,22 +172,22 @@ fn parse(i: impl Iterator<Item = String>) -> Result<Args, clap::Error> {
     let matches = build_command().try_get_matches_from(args)?;
     Ok(Args {
         skip_analytics: matches
-            .get_one::<bool>("skip_analytics")
+            .get_one::<bool>(ARG_SKIP_ANALYTICS)
             .copied()
             .unwrap_or(false),
         open_deeplink_in_new_instance: matches
-            .get_one::<bool>("open_deeplink_in_new_instance")
+            .get_one::<bool>(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
             .copied()
             .unwrap_or(false),
         always_trigger_updater: matches
-            .get_one::<bool>("always_trigger_updater")
+            .get_one::<bool>(ARG_ALWAYS_TRIGGER_UPDATER)
             .copied()
             .unwrap_or(false),
         never_trigger_updater: matches
-            .get_one::<bool>("never_trigger_updater")
+            .get_one::<bool>(ARG_NEVER_TRIGGER_UPDATER)
             .copied()
             .unwrap_or(false),
-        use_updater_url: matches.get_one::<String>("use_updater_url").cloned(),
+        use_updater_url: matches.get_one::<String>(ARG_USE_UPDATER_URL).cloned(),
     })
 }
 #[cfg(test)]
@@ -199,7 +206,7 @@ mod tests {
                 "--use-updater-url",
                 "https://example.com",
             ]
-            .map(|e| e.to_owned())
+            .map(ToOwned::to_owned)
             .into_iter(),
         )?;
 
@@ -220,7 +227,7 @@ mod tests {
                 "--use-updater-url",
                 "https://example.com",
             ]
-            .map(|e| e.to_owned())
+            .map(ToOwned::to_owned)
             .into_iter(),
         )?;
 
