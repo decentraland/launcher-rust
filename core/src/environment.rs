@@ -55,9 +55,24 @@ impl AppEnvironment {
         }
     }
 
+    fn args_sources() -> (impl Iterator<Item = String>, impl Iterator<Item = String>) {
+        let from_cmd = std::env::args();
+        info!("cmd args: {:?}", from_cmd);
+        let from_config = config::cmd_arguments();
+        info!("config args: {:?}", from_config);
+
+        (from_cmd, from_config.into_iter())
+    }
+
+    fn cmd_args_internal() -> Result<Args, clap::Error> {
+        let (from_cmd, from_config) = Self::args_sources();
+        let mut args = Args::try_parse_from(from_cmd)?;
+        args.try_update_from(from_config)?;
+        Ok(args)
+    }
+
     pub fn cmd_args() -> Args {
-        let raw = Self::raw_cmd_args();
-        let args = Args::try_parse_from(raw);
+        let args = Self::cmd_args_internal();
         match args {
             Ok(args) => args,
             Err(e) => {
@@ -68,12 +83,7 @@ impl AppEnvironment {
     }
 
     pub fn raw_cmd_args() -> impl Iterator<Item = String> {
-        let from_cmd = std::env::args();
-        info!("cmd args: {:?}", from_cmd);
-
-        let from_config = config::cmd_arguments();
-        info!("config args: {:?}", from_config);
-
+        let (from_cmd, from_config) = Self::args_sources();
         from_cmd.chain(from_config)
     }
 }
