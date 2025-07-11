@@ -29,14 +29,15 @@ pub struct Args {
 }
 
 impl Args {
+    #[must_use]
     pub fn merge_with(&self, other: &Self) -> Self {
-        Args {
+        Self {
             skip_analytics: self.skip_analytics || other.skip_analytics,
             open_deeplink_in_new_instance: self.open_deeplink_in_new_instance
                 || other.open_deeplink_in_new_instance,
             always_trigger_updater: self.always_trigger_updater || other.always_trigger_updater,
             never_trigger_updater: self.never_trigger_updater || other.never_trigger_updater,
-            use_updater_url: self.use_updater_url.clone().or(other.use_updater_url.clone()),
+            use_updater_url: self.use_updater_url.clone().or_else(|| other.use_updater_url.clone()),
         }
     }
 }
