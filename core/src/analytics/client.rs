@@ -182,9 +182,6 @@ fn network_context() -> Value {
 
 #[cfg(target_os = "windows")]
 fn network_context() -> Value {
-    use get_if_addrs::get_if_addrs;
-    use std::collections::HashSet;
-
     let mut available_network_types: HashSet<String> = HashSet::new();
 
     if let Ok(addrs) = get_if_addrs() {
