@@ -2,8 +2,6 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::env;
 
-use crate::environment::AppEnvironment;
-
 #[must_use]
 pub fn get_os_name() -> &'static str {
     let os = std::env::consts::OS;
@@ -12,34 +10,6 @@ pub fn get_os_name() -> &'static str {
         "windows" => "windows64",
         _ => "unsupported",
     }
-}
-
-#[must_use]
-pub fn parsed_argv() -> HashMap<String, String> {
-    let mut parsed_argv = HashMap::new();
-    let args: Vec<String> = AppEnvironment::cmd_args().collect();
-
-    for arg in &args {
-        if let Some((key, value)) = arg.strip_prefix("--").and_then(|s| s.split_once('=')) {
-            match key {
-                "version" | "prerelease" | "dev" | "downloadedfilepath" => {
-                    // don't need to handle overwrites
-                    let _ = parsed_argv.insert(key.to_string(), value.to_string());
-                }
-                _ => {}
-            }
-        } else if let Some(key) = arg.strip_prefix("--") {
-            match key {
-                "version" | "prerelease" | "dev" | "downloadedfilepath" => {
-                    // don't need to handle overwrites
-                    let _ = parsed_argv.insert(key.to_string(), "true".to_string());
-                }
-                _ => {}
-            }
-        }
-    }
-
-    parsed_argv
 }
 
 fn is_valid_version(version: &str) -> bool {
