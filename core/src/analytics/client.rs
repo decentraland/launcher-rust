@@ -5,6 +5,7 @@ use log::error;
 use segment::message::{Track, User};
 use segment::{AutoBatcher, Batcher, HttpClient};
 use serde_json::{Map, Value, json};
+use time::OffsetDateTime;
 
 use get_if_addrs::get_if_addrs;
 
@@ -67,6 +68,7 @@ impl AnalyticsClient {
             event,
             properties,
             context,
+            timestamp: Some(OffsetDateTime::now_utc()),
             ..Default::default()
         };
 
@@ -127,8 +129,15 @@ fn properties_from_event(event: &Event) -> Map<String, Value> {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn network_context() -> Value {
+    let internals = network_context_internal();
+    let mut map = Map::new();
+    map.insert("network".to_owned(), internals);
+    Value::Object(map)
+}
+
+#[cfg(target_os = "macos")]
+fn network_context_internal() -> Value {
     use system_configuration::network_configuration::get_interfaces;
 
     let mut available_network_types: HashSet<String> = HashSet::new();
@@ -181,7 +190,7 @@ fn network_context() -> Value {
 }
 
 #[cfg(target_os = "windows")]
-fn network_context() -> Value {
+fn network_context_internal() -> Value {
     let mut available_network_types: HashSet<String> = HashSet::new();
 
     if let Ok(addrs) = get_if_addrs() {
@@ -227,5 +236,39 @@ fn network_context() -> Value {
         Value::Array(values)
     } else {
         Value::Array(Vec::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_attachments() -> Result<()> {
+        let track = Track {
+            user: User::AnonymousId {
+                anonymous_id: String::new(),
+            },
+            properties: Value::Null,
+            event: "test".to_owned(),
+            timestamp: None,
+            context: Some(network_context()),
+            extra: Map::new(),
+            integrations: None,
+        };
+        let json_value = serde_json::to_value(track.clone())?;
+
+        //TODO strict check
+        println!("message: {}", json_value);
+
+
+        let mut batcher = Batcher::new(Some(json!("{\"type\": \"default context\"}")));
+        let _ = batcher.push(track);
+        let message = batcher.into_message();
+        let json_value = serde_json::to_value(message)?;
+
+        println!("message: {}", json_value);
+
+        Ok(())
     }
 }

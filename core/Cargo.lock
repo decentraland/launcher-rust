@@ -285,6 +285,7 @@ dependencies = [
  "system-configuration",
  "tar",
  "thiserror 2.0.12",
+ "time",
  "tokio",
  "tokio-util",
  "uuid",
