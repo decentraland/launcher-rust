@@ -2,6 +2,10 @@ name: Bump Version
 
 on:
   workflow_call:
+    secrets:
+      DCL_BOT_REPO_WORKFLOW_TOKEN:
+        description: 'Personal access token for creating/merging PRs'
+        required: false
     outputs:
       bump:
         description: "Bump type"
@@ -9,73 +13,149 @@ on:
       version:
         description: "New version string"
         value: ${{ jobs.bump_version.outputs.version }}
+      should_run_tests_and_release:
+        description: "Whether test and release jobs should run"
+        value: ${{ jobs.bump_version.outputs.should_run_tests_and_release }}
 
 jobs:
   bump_version:
     runs-on: ubuntu-latest
     outputs:
-      bump: ${{ steps.bump.outputs.bump }}
-      version: ${{ steps.bump.outputs.version }}
-
+      bump: ${{ steps.check_skip.outputs.should_skip == 'true' && steps.check_skip.outputs.bump || steps.bump.outputs.bump }}
+      version: ${{ steps.check_skip.outputs.should_skip == 'true' && steps.check_skip.outputs.version || steps.bump.outputs.version }}
+      should_run_tests_and_release: ${{ steps.eval_trigger.outputs.should_run_tests_and_release }}
     steps:
-      - name: Check if we should skip version bump
-        id: check_skip
-        run: |
-            if [[ "${GITHUB_EVENT_NAME}" != "push" || "${GITHUB_REF_NAME}" != "main" ]]; then
-                echo "Skipping version bump (not a main branch push)"
-                echo "bump=none" >> $GITHUB_OUTPUT
-                echo "version=none" >> $GITHUB_OUTPUT
-                echo "should_skip=true" >> $GITHUB_OUTPUT
-            else
-                echo "should_skip=false" >> $GITHUB_OUTPUT
-                echo "Running version bump (main branch push)"
-            fi
-
       - uses: actions/checkout@v4
-        if: steps.check_skip.outputs.should_skip != 'true'
         with:
+          ref: main
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Check if we should skip version bump
+        id: check_skip
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" != "push" || "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "Skipping version bump (not a main branch push)"
+            echo "bump=none" >> $GITHUB_OUTPUT
+            echo "version=none" >> $GITHUB_OUTPUT
+            echo "should_skip=true" >> $GITHUB_OUTPUT
+          else
+            LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
+            LAST_COMMIT_AUTHOR_EMAIL=$(git log -1 --pretty=%ae)
+            ALLOWED_BOT_EMAIL="44584806+decentraland-bot@users.noreply.github.com"
+            echo "Last commit message: $LAST_COMMIT_MSG"
+            echo "Last commit author: $LAST_COMMIT_AUTHOR_EMAIL"
+            if echo "$LAST_COMMIT_MSG" | grep -qE "^chore\(release\): bump version"; then
+              if [[ "$LAST_COMMIT_AUTHOR_EMAIL" == "$ALLOWED_BOT_EMAIL" ]]; then
+                echo "Skipping version bump (last commit is a bump commit by decentraland-bot)"
+                echo "bump=yes" >> $GITHUB_OUTPUT
+                echo "version=none" >> $GITHUB_OUTPUT
+                echo "should_skip=true" >> $GITHUB_OUTPUT
+              else
+                echo "Bump commit was not made by decentraland-bot, not skipping."
+                echo "should_skip=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "Running version bump (main branch push, not a bump commit)"
+              echo "should_skip=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
       - name: Determine and bump version from commits
-        if: steps.check_skip.outputs.should_skip == 'do-not-run'
+        if: steps.check_skip.outputs.should_skip != 'true'
         id: bump
         run: |
-            echo "Detecting semantic version bump..."
-            LAST_TAG=$(git describe --tags --abbrev=0 || echo "v0.0.0")
-            echo "Last tag: $LAST_TAG"
-
+          set -euo pipefail
+          echo "Detecting semantic version bump..."
+          if git describe --tags --abbrev=0 >/dev/null 2>&1; then
+            LAST_TAG=$(git describe --tags --abbrev=0)
             COMMITS=$(git log $LAST_TAG..HEAD --pretty=format:"%s%n%b")
-            echo "Commits since $LAST_TAG:"
-            echo "$COMMITS"
+          else
+            LAST_TAG=""
+            COMMITS=$(git log --pretty=format:"%s%n%b")
+          fi
 
-            if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
-                BUMP=major
-            elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?: "; then
-                BUMP=minor
-            else
-                BUMP=patch
-            fi
+          echo "Last tag: $LAST_TAG"
+          echo "Commits since $LAST_TAG:"
+          echo "$COMMITS"
 
-            echo "Detected bump type: $BUMP"
-            echo "bump=$BUMP" >> $GITHUB_OUTPUT
+          if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
+              BUMP=major
+          elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?: "; then
+              BUMP=minor
+          else
+              BUMP=patch
+          fi
 
-            if ! command -v rust-script &> /dev/null; then
-                echo "Installing rust-script..."
-                cargo install rust-script
-            fi
+          echo "Detected bump type: $BUMP"
+          echo "bump=$BUMP" >> $GITHUB_OUTPUT
 
-            echo "Running ./update_version.rs $BUMP"
-            ./update_version.rs $BUMP
+          if ! command -v rust-script &> /dev/null; then
+              echo "Installing rust-script..."
+              cargo install rust-script
+          fi
 
-            VERSION=$(jq -r .version package.json)
-            echo "Updated version: $VERSION"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Running ./update_version.rs $BUMP"
+          ./update_version.rs $BUMP
 
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml core/Cargo.toml
-            git commit -m "chore(release): bump version to $VERSION"
-            git tag "v$VERSION"
-            git push origin HEAD:main
-            git push origin "v$VERSION"
+          VERSION=$(jq -r .version package.json)
+          echo "Updated version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit changes
+        if: steps.check_skip.outputs.should_skip != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml core/Cargo.toml
+          git diff --cached --quiet || git commit -m "chore(release): bump version to ${{ steps.bump.outputs.version }}"
+
+      - name: Create Pull Request for version bump
+        if: steps.check_skip.outputs.should_skip != 'true'
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: bump-version-${{ steps.bump.outputs.version }}
+          base: main
+          title: "chore(release): bump version to ${{ steps.bump.outputs.version }}"
+          commit-message: "chore(release): bump version to ${{ steps.bump.outputs.version }}"
+          body: "Automated version bump PR"
+          delete-branch: true
+          signoff: false
+          token: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
+
+      - name: Auto approve PR
+        if: steps.cpr.outputs.pull-request-number != ''
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+
+      - name: Enable PR auto-merge
+        if: steps.cpr.outputs.pull-request-number != ''
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
+
+      - name: Evaluate if we should run test and release
+        id: eval_trigger
+        run: |
+          SHOULD_RUN="false"
+          echo "Evaluating conditions to run test and release..."
+
+          if [[ "${{ github.event_name }}" == "pull_request" && ! "${{ github.head_ref }}" =~ ^bump-version- ]]; then
+            echo "Condition met: pull_request event and head_ref does not start with 'bump-version-'"
+            SHOULD_RUN="true"
+
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "main" && "${{ steps.check_skip.outputs.bump }}" == "yes" ]]; then
+            echo "Condition met: push event to 'main' and bump output is 'yes'"
+            SHOULD_RUN="true"
+          else
+            echo "Conditions not met, skipping test and release."
+          fi
+
+          echo "should_run_tests_and_release=$SHOULD_RUN" >> $GITHUB_OUTPUT
+          echo "Final result: should_run_tests_and_release=$SHOULD_RUN"
