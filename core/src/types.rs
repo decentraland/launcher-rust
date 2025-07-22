@@ -6,7 +6,7 @@ pub enum Status {
     #[serde(rename_all = "camelCase")]
     State { step: Step },
     #[serde(rename_all = "camelCase")]
-    Error { message: String, can_retry: bool },
+    Error { message: String },
 }
 
 #[derive(Clone, Serialize)]
@@ -14,6 +14,8 @@ pub enum Status {
 pub enum Step {
     #[serde(rename_all = "camelCase")]
     LauncherUpdate(LauncherUpdate),
+    #[serde(rename_all = "camelCase")]
+    DeeplinkOpening,
     #[serde(rename_all = "camelCase")]
     Fetching,
     #[serde(rename_all = "camelCase")]
@@ -36,7 +38,7 @@ pub enum LauncherUpdate {
 
 impl From<LauncherUpdate> for Status {
     fn from(update: LauncherUpdate) -> Self {
-        Status::State {
+        Self::State {
             step: Step::LauncherUpdate(update),
         }
     }

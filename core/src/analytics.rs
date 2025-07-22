@@ -12,6 +12,7 @@ use session::SessionId;
 
 use crate::{
     config,
+    environment::AppEnvironment,
     utils::{app_version, get_os_name},
 };
 
@@ -29,7 +30,7 @@ pub enum Analytics {
 
 impl Analytics {
     pub fn new_from_env() -> Self {
-        if std::env::args().any(|e| e == "--skip-analytics") {
+        if AppEnvironment::cmd_args().skip_analytics {
             info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
             return Self::new(None);
         }
@@ -59,7 +60,7 @@ impl Analytics {
                 None
             }
         };
-        Analytics::new(args)
+        Self::new(args)
     }
 
     pub fn new(args: Option<CreateArgs>) -> Self {
@@ -67,9 +68,9 @@ impl Analytics {
             Some(a) => {
                 let client =
                     AnalyticsClient::new(a.write_key, a.anonymous_id, a.os, a.launcher_version);
-                Analytics::Client(client)
+                Self::Client(client)
             }
-            None => Analytics::Null(NullClient::new()),
+            None => Self::Null(NullClient::new()),
         }
     }
 
@@ -88,18 +89,18 @@ impl Analytics {
 
     pub async fn track_and_flush_silent(&mut self, event: Event) {
         if let Err(e) = self.track_and_flush(event).await {
-            error!("Cannot send event: {:#?}", e)
+            error!("Cannot send event: {:#?}", e);
         }
     }
 
-    pub fn anonymous_id(&self) -> &str {
+    pub const fn anonymous_id(&self) -> &str {
         match self {
             Self::Client(client) => client.anonymous_id(),
             Self::Null(_) => "empty",
         }
     }
 
-    pub fn session_id(&self) -> &SessionId {
+    pub const fn session_id(&self) -> &SessionId {
         match self {
             Self::Client(client) => client.session_id(),
             Self::Null(client) => client.session_id(),

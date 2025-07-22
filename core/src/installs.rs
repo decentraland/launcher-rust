@@ -2,8 +2,9 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
+use crate::instances::RunningInstances;
 use crate::processes::CommandExtDetached;
-use crate::protocols::Protocol;
+use crate::protocols::DeepLink;
 use anyhow::{Context, Error, Result, anyhow};
 use semver::Version;
 use serde_json::{Map, Value};
@@ -65,16 +66,28 @@ pub fn config_path() -> PathBuf {
     explorer_path().join("config.json")
 }
 
+pub fn running_instances_path() -> PathBuf {
+    explorer_path().join("running-instances.json")
+}
+
+pub fn deeplink_bridge_path() -> PathBuf {
+    explorer_path().join("deeplink-bridge.json")
+}
+
+// There is no point to recovery if the app failed to create working directory
+#[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
     dirs::data_local_dir().expect("Failed to get current directory")
 }
 
+#[allow(clippy::expect_used)]
 fn explorer_path() -> PathBuf {
     let path = get_app_base_path().join(APP_NAME);
     create_dir_all(&path).expect("Cannot create app directory");
     path
 }
 
+#[allow(clippy::expect_used)]
 fn explorer_downloads_path() -> PathBuf {
     let dir = explorer_path().join("downloads");
     create_dir_all(&dir).expect("Cannot create downloads directory");
@@ -87,7 +100,9 @@ fn explorer_version_path() -> PathBuf {
 
 fn explorer_latest_version_path() -> Result<PathBuf> {
     let data = get_version_data()?;
-    let path = &data["path"];
+    let path = data
+        .get("path")
+        .context("missing \"path\" property in version data")?;
     let value = path
         .as_str()
         .context("cannot get string value from path property")?;
@@ -98,11 +113,17 @@ fn explorer_dev_version_path() -> PathBuf {
     explorer_path().join("dev")
 }
 
-fn get_version_data() -> Result<Value> {
+fn get_version_data() -> Result<Map<String, Value>> {
     let path = explorer_version_path();
     if path.exists() {
         let data = fs::read_to_string(path).context("Failed to read version.json")?;
-        return serde_json::from_str::<serde_json::Value>(&data).context("Failed to parse JSON");
+        let value =
+            serde_json::from_str::<serde_json::Value>(&data).context("Failed to parse JSON")?;
+
+        return match value {
+            Value::Object(obj) => Ok(obj),
+            _ => return Err(anyhow!("Expected JSON object")),
+        };
     }
 
     Err(anyhow!(format!(
@@ -111,8 +132,12 @@ fn get_version_data() -> Result<Value> {
     )))
 }
 
-fn get_version_data_or_empty() -> Value {
-    get_version_data().unwrap_or_else(|_| Value::Object(Map::new()))
+fn get_version_data_or_empty() -> Map<String, Value> {
+    get_version_data().unwrap_or_else(|e| {
+        log::error!("Cannot get version data, fallback to new empty: {:#?}", e);
+
+        Map::new()
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -179,7 +204,7 @@ impl EntryVersion {
         let unprefixed_entry = strip.unwrap_or(entry);
 
         if let Ok(version) = Version::parse(unprefixed_entry) {
-            return Some(EntryVersion {
+            return Some(Self {
                 version,
                 v_prefixed,
             });
@@ -223,7 +248,9 @@ impl Display for EntryVersion {
     }
 }
 
-async fn cleanup_versions() -> Result<()> {
+fn cleanup_versions() -> Result<()> {
+    const KEEP_VERSIONS_AMOUNT: usize = 2;
+
     let entries = match fs::read_dir(explorer_path()) {
         Ok(entries) => entries,
         Err(err) => return Err(Error::msg(err.to_string())),
@@ -232,10 +259,7 @@ async fn cleanup_versions() -> Result<()> {
     let mut installations: Vec<EntryVersion> = Vec::new();
 
     for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => continue,
-        };
+        let Ok(entry) = entry else { continue };
         let file_name = entry.file_name();
         let entry_name = file_name.to_str().context("no file name on entry")?;
 
@@ -251,14 +275,14 @@ async fn cleanup_versions() -> Result<()> {
     // Sort versions
     installations.sort();
 
-    const KEEP_VERSIONS_AMOUNT: usize = 2;
-
     if installations.len() <= KEEP_VERSIONS_AMOUNT {
         // Don't need to uninstall anything
         return Ok(());
     }
 
     // Keep the latest 2 versions and delete the rest
+    // Arithmetic boundaries are solved on the line above
+    #[allow(clippy::arithmetic_side_effects)]
     for version in installations
         .iter()
         .take(installations.len() - KEEP_VERSIONS_AMOUNT)
@@ -266,7 +290,7 @@ async fn cleanup_versions() -> Result<()> {
         let folder_path = explorer_path().join(version.to_restored());
         if folder_path.exists() {
             match fs::remove_dir_all(&folder_path) {
-                Ok(_) => log::info!("Removed old version: {}", version),
+                Ok(()) => log::info!("Removed old version: {}", version),
                 Err(err) => log::error!("Failed to remove {}: {}", version, err),
             }
         }
@@ -278,7 +302,13 @@ async fn cleanup_versions() -> Result<()> {
 fn is_app_updated(version: &str) -> bool {
     let result = get_version_data();
     match result {
-        Ok(data) => data["version"] == version,
+        Ok(data) => {
+            if let Some(v) = data.get("version") {
+                v == version
+            } else {
+                false
+            }
+        }
         Err(_) => false,
     }
 }
@@ -299,7 +329,7 @@ pub fn target_download_path() -> PathBuf {
     explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
 }
 
-pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
+pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
     let branch_path = explorer_path().join(version);
     let file_path = downloaded_file_path
         .unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
@@ -330,18 +360,21 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
     }
 
     let mut version_data = get_version_data_or_empty();
-    version_data[version] = Value::from(
+
+    let install_time = Value::from(
         std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
             .context("Cannot convert time")?
             .as_secs()
             .to_string(),
     );
+    version_data.insert(version.to_owned(), install_time);
+
     if version != "dev" {
-        version_data["version"] = Value::String(version.to_string());
+        version_data.insert("version".to_owned(), Value::String(version.to_owned()));
     }
 
-    version_data["path"] = branch_path.to_string_lossy().into();
+    version_data.insert("path".to_owned(), branch_path.to_string_lossy().into());
 
     // Write version data to file
     let version_data_str =
@@ -351,23 +384,28 @@ pub async fn install_explorer(version: &str, downloaded_file_path: Option<PathBu
 
     // Remove the downloaded file
     fs::remove_file(file_path)?;
-    cleanup_versions()
-        .await
-        .context("Cannot clean up the old versions")?;
+    cleanup_versions().context("Cannot clean up the old versions")?;
 
     Ok(())
 }
 
 pub struct InstallsHub {
     analytics: Arc<Mutex<Analytics>>,
+    running_instances: Arc<Mutex<RunningInstances>>,
 }
 
 impl InstallsHub {
-    pub fn new(analytics: Arc<Mutex<Analytics>>) -> Self {
-        InstallsHub { analytics }
+    pub const fn new(
+        analytics: Arc<Mutex<Analytics>>,
+        running_instances: Arc<Mutex<RunningInstances>>,
+    ) -> Self {
+        Self {
+            analytics,
+            running_instances,
+        }
     }
 
-    async fn explorer_params(&self) -> Vec<String> {
+    async fn explorer_params(&self, deeplink: Option<DeepLink>) -> Vec<String> {
         let guard = self.analytics.lock().await;
 
         let mut output = vec![
@@ -378,9 +416,10 @@ impl InstallsHub {
             "--provider".to_string(),
             AppEnvironment::provider(),
         ];
+        drop(guard);
 
-        if let Some(value) = Protocol::value() {
-            output.insert(0, value);
+        if let Some(value) = deeplink {
+            output.insert(0, value.into());
         }
 
         output
@@ -390,12 +429,10 @@ impl InstallsHub {
         match version {
             Some(v) => v.to_owned(),
             None => {
-                let result = get_version_data_or_empty();
-                if let Some(map) = result.as_object() {
-                    if let Some(v) = map.get("version") {
-                        if let Some(str_version) = v.as_str() {
-                            return str_version.to_owned();
-                        }
+                let map = get_version_data_or_empty();
+                if let Some(v) = map.get("version") {
+                    if let Some(str_version) = v.as_str() {
+                        return str_version.to_owned();
                     }
                 }
 
@@ -405,18 +442,27 @@ impl InstallsHub {
     }
 
     async fn send_analytics_event(&self, event: Event) {
-        let mut guard = self.analytics.lock().await;
-        guard.track_and_flush_silent(event).await;
+        self.analytics
+            .lock()
+            .await
+            .track_and_flush_silent(event)
+            .await;
     }
 
-    pub async fn launch_explorer(&self, preferred_version: Option<&str>) -> Result<()> {
-        let readable_version = InstallsHub::readable_version(preferred_version);
+    pub async fn launch_explorer(
+        &self,
+        deeplink: Option<DeepLink>,
+        preferred_version: Option<&str>,
+    ) -> Result<()> {
+        let readable_version = Self::readable_version(preferred_version);
 
         self.send_analytics_event(Event::LAUNCH_CLIENT_START {
             version: readable_version.clone(),
         })
         .await;
-        let result = self.launch_explorer_internal(preferred_version).await;
+        let result = self
+            .launch_explorer_internal(deeplink, preferred_version)
+            .await;
         if let Err(e) = &result {
             self.send_analytics_event(Event::LAUNCH_CLIENT_ERROR {
                 version: readable_version,
@@ -433,7 +479,14 @@ impl InstallsHub {
         result
     }
 
-    async fn launch_explorer_internal(&self, preferred_version: Option<&str>) -> Result<()> {
+    async fn launch_explorer_internal(
+        &self,
+        deeplink: Option<DeepLink>,
+        preferred_version: Option<&str>,
+    ) -> Result<()> {
+        const WAIT_TIMEOUT: Duration = Duration::from_secs(3);
+        const CHECK_INTERVAL: Duration = Duration::from_millis(100);
+
         log::info!("Launching Explorer...");
 
         let explorer_bin_path = get_explorer_bin_path(preferred_version)?;
@@ -446,7 +499,7 @@ impl InstallsHub {
                 Some(ver) => format!("The explorer version specified ({}) is not installed.", ver),
                 None => "The explorer is not installed.".to_string(),
             };
-            log::error!("{}, {:?}", error_message, explorer_bin_path);
+            log::error!("{}, {}", error_message, explorer_bin_path.display());
             return Err(anyhow!(error_message));
         }
 
@@ -454,10 +507,10 @@ impl InstallsHub {
         fs::metadata(&explorer_bin_path).context("Failed to access explorer binary")?;
 
         // Prepare explorer parameters
-        let explorer_params = self.explorer_params().await;
+        let explorer_params = self.explorer_params(deeplink).await;
         log::info!(
-            "Opening Explorer at {:?} with params: {:?}",
-            explorer_bin_path,
+            "Opening Explorer at {} with params: {:?}",
+            explorer_bin_path.display(),
             explorer_params
         );
 
@@ -471,15 +524,17 @@ impl InstallsHub {
             .map_err(|e| anyhow!("Failed to start explorer process: {}", e))
             .with_context(|| {
                 format!(
-                    "Dir: {:?}, Bin: {:?} Args: {:?}",
-                    explorer_bin_dir, explorer_bin_path, explorer_params
+                    "Dir: {}, Bin: {} Args: {:?}",
+                    explorer_bin_dir.display(),
+                    explorer_bin_path.display(),
+                    explorer_params
                 )
             })?;
 
-        log::info!("Process run with id: {}", child.id());
-
-        const WAIT_TIMEOUT: Duration = Duration::from_secs(3);
-        const CHECK_INTERVAL: Duration = Duration::from_millis(100);
+        {
+            let guard = self.running_instances.lock().await;
+            guard.register_instance(child.id());
+        }
 
         #[cfg(windows)]
         let graceful_exit_code: ExitStatus = std::process::ExitStatus::from_raw(0);
@@ -490,6 +545,8 @@ impl InstallsHub {
         #[cfg(windows)]
         let still_active_exit_code: ExitStatus = std::process::ExitStatus::from_raw(259);
 
+        // it's clear that CHECK_INTERVAL is never 0 by the const value
+        #[allow(clippy::arithmetic_side_effects)]
         for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
             if let Some(exit_status) = child.try_wait()? {
                 if exit_status == graceful_exit_code {

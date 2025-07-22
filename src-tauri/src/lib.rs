@@ -1,5 +1,19 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::todo,
+    clippy::dbg_macro
+)]
+#![allow(clippy::uninlined_format_args, clippy::used_underscore_binding)]
+
+use dcl_launcher_core::environment::{AppEnvironment, Args};
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
+use dcl_launcher_core::protocols::Protocol;
 use dcl_launcher_core::types::LauncherUpdate;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::env;
@@ -61,6 +75,7 @@ async fn launch(
         })?;
 
     guard.cleanup().await;
+    drop(guard);
     app.cleanup_before_exit();
     app.exit(0);
 
@@ -68,40 +83,32 @@ async fn launch(
 }
 
 fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
-    const KEY_UPDATER_URL: &str = "--use-updater-url";
-    const KEY_ALWAYS_TRIGGER_UPDATER: &str = "--always-trigger-updater";
+    let args: Args = AppEnvironment::cmd_args();
 
-    let args: Vec<String> = env::args().collect();
-
-    if let Some(pos) = args.iter().position(|a| a == KEY_UPDATER_URL) {
-        let url = args.get(pos + 1);
-        match url {
-            Some(url) => {
-                info!(
-                    "Use custom updater by flag {} with its value {}",
-                    KEY_UPDATER_URL, url
-                );
-                let parsed_url: Url = Url::parse(url)?;
-
-                let builder = app.updater_builder().endpoints(vec![parsed_url])?;
-
-                if args.iter().any(|a| a == KEY_ALWAYS_TRIGGER_UPDATER) {
-                    info!("Always trigger updater by flag {}", KEY_UPDATER_URL);
-                    return builder.version_comparator(|_, _| true).build();
-                }
-
-                return builder.build();
+    // comparison to support rollbacks
+    let builder = app
+        .updater_builder()
+        .version_comparator(move |current_version, remote| {
+            if args.never_trigger_updater {
+                info!("Never trigger updater by flag");
+                return false;
             }
-            None => {
-                error!(
-                    "Flag {} is provided but its value is missed",
-                    KEY_UPDATER_URL
-                )
+
+            if args.always_trigger_updater {
+                info!("Always trigger updater by flag");
+                return true;
             }
-        }
+
+            current_version != remote.version
+        });
+
+    if let Some(url) = args.use_updater_url {
+        info!("Use custom updater by flag with its value {}", url);
+        let parsed_url: Url = Url::parse(url.as_str())?;
+        return builder.endpoints(vec![parsed_url])?.build();
     }
 
-    app.updater()
+    builder.build()
 }
 
 async fn update_if_needed_and_restart(
@@ -111,22 +118,35 @@ async fn update_if_needed_and_restart(
 ) -> tauri_plugin_updater::Result<()> {
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
-        let mut downloaded = 0;
+        let mut downloaded: usize = 0;
 
         let content = update
             .download(
                 |chunk_length, content_length| {
-                    downloaded += chunk_length;
+                    downloaded = downloaded.saturating_add(chunk_length);
                     info!("downloaded {downloaded} from {content_length:?}");
                     match content_length {
-                        Some(l) => {
-                            let progress: u8 = ((downloaded as f64 / l as f64) * 100.0) as u8;
-                            channel.send_silent(
-                                LauncherUpdate::Downloading {
-                                    progress: Some(progress),
+                        Some(length) => {
+                            let current = (downloaded as u64).saturating_mul(100);
+                            let percentage = current.checked_div(length);
+
+                            match percentage {
+                                Some(p) => {
+                                    let progress: u8 = p.min(100) as u8;
+
+                                    channel.send_silent(
+                                        LauncherUpdate::Downloading {
+                                            progress: Some(progress),
+                                        }
+                                        .into(),
+                                    );
                                 }
-                                .into(),
-                            );
+                                None => {
+                                    channel.send_silent(
+                                        LauncherUpdate::Downloading { progress: None }.into(),
+                                    );
+                                }
+                            }
                         }
                         None => {
                             channel
@@ -154,17 +174,18 @@ async fn update_if_needed_and_restart(
 }
 
 #[cfg_attr(windows, allow(unused_variables))]
-fn setup_deeplink(a: &mut App) {
+fn setup_deeplink(a: &App, protocol: &Protocol) {
     #[cfg(target_os = "macos")]
     {
-        a.deep_link().on_open_url(|event| {
+        let protocol = protocol.clone();
+        a.deep_link().on_open_url(move |event| {
             let urls = event.urls();
             match urls.first() {
                 Some(url) => {
-                    dcl_launcher_core::protocols::Protocol::try_assign_value(url.to_string());
+                    protocol.try_assign_value(url.to_string());
                 }
                 None => {
-                    error!("No values are provided in deep link")
+                    error!("No values are provided in deep link");
                 }
             }
         });
@@ -172,8 +193,8 @@ fn setup_deeplink(a: &mut App) {
 
     #[cfg(target_os = "windows")]
     {
-        let args: Vec<String> = std::env::args().collect();
-        dcl_launcher_core::protocols::Protocol::try_assign_value_from_vec(&args);
+        let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
+        protocol.try_assign_value_from_vec(&args);
     }
 }
 
@@ -181,13 +202,20 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let app_state = tauri::async_runtime::block_on(AppState::setup())
         .inspect_err(|e| error!("Error during setup: {:#}", e))?;
 
-    setup_deeplink(a);
+    setup_deeplink(a, &app_state.protocol);
 
     let mut_state: MutState = Arc::new(Mutex::new(app_state));
     a.manage(mut_state);
     Ok(())
 }
 
+/// Run the Tauri application.
+///
+/// # Panics
+///
+/// This function will panic if the Tauri application fails to run,
+/// which can happen if there is an error generating the context or initializing plugins.
+#[allow(clippy::expect_used)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

@@ -2,7 +2,7 @@ name: Store Release
 
 on:
   release:
-    types: 
+    types:
       - published
   workflow_dispatch:
     inputs:
@@ -31,7 +31,19 @@ jobs:
 
       - name: Get short SHA
         id: shortsha
+        if: ${{ !inputs.short_sha }}
         uses: ./.github/actions/get-short-sha
+
+      - name: Set short SHA
+        id: set_short_sha
+        run: |
+          if [ -n "${{ inputs.short_sha }}" ]; then
+            echo "short_sha=${{ inputs.short_sha }}" >> $GITHUB_OUTPUT
+            echo "✅ Using manual input short SHA: ${{ inputs.short_sha }}"
+          else
+            echo "short_sha=${{ steps.shortsha.outputs.short_sha }}" >> $GITHUB_OUTPUT
+            echo "✅ Using auto-detected short SHA: ${{ steps.shortsha.outputs.short_sha }}"
+          fi
 
       - name: Copy artifacts in S3
         uses: ./.github/actions/copy-in-s3
@@ -40,5 +52,5 @@ jobs:
           aws-secret-access-key: ${{ secrets.EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.EXPLORER_TEAM_AWS_DEFAULT_REGION }}
           s3-bucket: ${{ secrets.EXPLORER_TEAM_S3_BUCKET }}
-          source-dir: draft-release-${{ github.event.repository.name }}-${{ steps.shortsha.outputs.short_sha }}
+          source-dir: draft-release-${{ github.event.repository.name }}-${{ steps.set_short_sha.outputs.short_sha }}
           dest-dir: ${{ github.event.repository.name }}

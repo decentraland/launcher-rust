@@ -42,25 +42,44 @@ const resizeWindow = async (size: WindowSize) => {
   await getCurrentWindow().setSize(logicalSize).catch(console.error);
 };
 
-const useChannelUpdates = (channel: Channel<Status>) => {
+interface ChannelProxy {
+  subscribe: (listener: (message: Status) => void) => void;
+}
+
+const newChannelProxy = () => {
+  let currentChannel: Channel<Status> | null = null;
+  let subscriber: ((message: Status) => void) | null = null;
+
+  return {
+    assignNewChannel: (channel: Channel<Status>) => {
+      // remove previous listener
+      if (currentChannel) currentChannel.onmessage = () => {};
+      currentChannel = channel;
+      currentChannel.onmessage = (arg) => {
+        if (subscriber) subscriber(arg);
+      };
+    },
+    subscribe: (listener: (message: Status) => void) => {
+      subscriber = listener;
+    },
+  };
+};
+
+const useChannelUpdates = (channel: ChannelProxy) => {
   const [currentStatus, setCurrentStatus] = useState<Status | null>(null);
-
-  useEffect(() => {
-    const handleUpdate = (message: Status) => {
-      setCurrentStatus(message);
-    };
-    channel.onmessage = handleUpdate;
-  }, [channel]);
-
+  useEffect(() => channel.subscribe(setCurrentStatus), [channel]);
   return currentStatus;
 };
 
+const channel = newChannelProxy();
+
 export const Home: React.FC = memo(() => {
-  const [channel] = useState(new Channel<Status>());
   const currentStatus = useChannelUpdates(channel);
 
   const launchFlow = async () => {
-    await invoke("launch", { channel }).catch(console.error);
+    const newChannel = new Channel<Status>();
+    channel.assignNewChannel(newChannel);
+    await invoke("launch", { channel: newChannel }).catch(console.error);
   };
 
   useEffect(() => {
@@ -90,6 +109,8 @@ export const Home: React.FC = memo(() => {
                 return renderStep("Restarting app...");
             }
           }
+          case "deeplinkOpening":
+            return renderDeeplinkOpeningStep();
           case "fetching":
             return renderFetchStep();
           case "downloading": {
@@ -111,6 +132,8 @@ export const Home: React.FC = memo(() => {
         return null;
     }
   };
+
+  const renderDeeplinkOpeningStep = () => renderStep("Opening Deeplink...");
 
   const renderFetchStep = () => renderStep("Fetching Latest...");
 
