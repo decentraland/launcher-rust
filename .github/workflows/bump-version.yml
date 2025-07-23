@@ -67,16 +67,15 @@ jobs:
         run: |
           set -euo pipefail
           echo "Detecting semantic version bump..."
-          if git describe --tags --abbrev=0 >/dev/null 2>&1; then
-            LAST_TAG=$(git describe --tags --abbrev=0)
-            COMMITS=$(git log $LAST_TAG..HEAD --pretty=format:"%s%n%b")
+          LAST_BUMP_COMMIT=$(git log --pretty=format:"%H" -n 1 --grep="^chore(release): bump version to ")
+          if [[ -n "$LAST_BUMP_COMMIT" ]]; then
+            COMMITS=$(git log $LAST_BUMP_COMMIT..HEAD --pretty=format:"%s%n%b")
           else
-            LAST_TAG=""
             COMMITS=$(git log --pretty=format:"%s%n%b")
           fi
 
-          echo "Last tag: $LAST_TAG"
-          echo "Commits since $LAST_TAG:"
+          echo "Last bump commit: $LAST_BUMP_COMMIT"
+          echo "Commits since last bump:"
           echo "$COMMITS"
 
           if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
