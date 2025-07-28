@@ -221,7 +221,7 @@ mod tests {
             always_trigger_updater: false,
             never_trigger_updater: true,
             use_updater_url: Some("https://two.com".into()),
-            local_scene: false
+            local_scene: false,
         };
 
         let merged = a.merge_with(&b);

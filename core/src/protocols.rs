@@ -1,5 +1,7 @@
-use std::result::Result;
+use std::collections::HashMap;
 use std::sync::Mutex;
+use std::result::Result;
+use url::form_urlencoded;
 
 use log::{error, warn};
 
@@ -14,23 +16,63 @@ pub enum DeepLinkCreateError {
 }
 
 #[derive(Clone)]
-pub struct DeepLink(String);
+pub struct DeepLink {
+    original: String,
+    args: HashMap<String, String>,
+}
 
 impl DeepLink {
     fn new(value: String) -> Result<Self, DeepLinkCreateError> {
         if value.starts_with(PROTOCOL_PREFIX) {
-            Ok(Self(value))
+            let args = Self::parsed_args(value.as_str());
+            let result = Self {
+                original: value,
+                args,
+            };
+            Ok(result)
         } else {
             Err(DeepLinkCreateError::WrongPrefix {
                 original_content: value,
             })
         }
     }
+
+    fn parsed_args(value: &str) -> HashMap<String, String> {
+        let parts: Vec<&str> = value.splitn(2, "://").collect();
+
+        match parts.get(1) {
+            Some(query) => {
+                let scheme = parts.get(0).unwrap_or(&"unknown");
+                log::info!("Deeplink scheme: {}", scheme);
+
+                let parsed = form_urlencoded::parse(query.as_bytes());
+                let mut map: HashMap<String, String> = HashMap::new();
+
+                for (key, value) in parsed {
+                    map.insert(key.into_owned(), value.into_owned());
+                }
+
+                map
+            }
+            None => {
+                log::info!("Cannot get query from: {}", value);
+                HashMap::new()
+            }
+        }
+    }
+
+    pub fn has_true_value(&self, key: &str) -> bool {
+        if let Some(value) = self.args.get(key) {
+            value == "true"
+        } else {
+            false
+        }
+    }
 }
 
 impl From<DeepLink> for String {
     fn from(deeplink: DeepLink) -> Self {
-        deeplink.0
+        deeplink.original
     }
 }
 

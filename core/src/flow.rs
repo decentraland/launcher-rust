@@ -427,7 +427,8 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
             Some(deeplink) => {
                 let open_new_instance = AppEnvironment::cmd_args().open_deeplink_in_new_instance;
                 let any_is_running = self.is_any_instance_running().await?;
-                if !open_new_instance && any_is_running {
+                let is_local_scene = deeplink.has_true_value("local-scene");
+                if !open_new_instance && any_is_running && !is_local_scene {
                     channel.send(Status::State {
                         step: Step::DeeplinkOpening,
                     })?;
