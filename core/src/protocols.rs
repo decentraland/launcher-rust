@@ -42,7 +42,7 @@ impl DeepLink {
 
         match parts.get(1) {
             Some(query) => {
-                let scheme = parts.get(0).unwrap_or(&"unknown");
+                let scheme = parts.first().unwrap_or(&"unknown");
                 log::info!("Deeplink scheme: {}", scheme);
 
                 let parsed = form_urlencoded::parse(query.as_bytes());
