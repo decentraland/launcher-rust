@@ -531,7 +531,9 @@ impl InstallsHub {
                 )
             })?;
 
-        {
+        // local scene development instances are ignored and are not tracked as running instances
+        let has_local_scene_flag = AppEnvironment::cmd_args().local_scene;
+        if !has_local_scene_flag {
             let guard = self.running_instances.lock().await;
             guard.register_instance(child.id());
         }
