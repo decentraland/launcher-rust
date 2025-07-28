@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::result::Result;
+use std::sync::Mutex;
 use url::form_urlencoded;
 
 use log::{error, warn};
