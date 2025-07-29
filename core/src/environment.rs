@@ -13,6 +13,7 @@ const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
 const ARG_ALWAYS_TRIGGER_UPDATER: &str = "always-trigger-updater";
 const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
 const ARG_USE_UPDATER_URL: &str = "use-updater-url";
+const ARG_LOCAL_SCENE: &str = "local-scene";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
@@ -32,6 +33,9 @@ pub struct Args {
     pub always_trigger_updater: bool,
     pub never_trigger_updater: bool,
     pub use_updater_url: Option<String>,
+
+    // used by the client
+    pub local_scene: bool,
 }
 
 impl Args {
@@ -47,6 +51,7 @@ impl Args {
                 .use_updater_url
                 .clone()
                 .or_else(|| other.use_updater_url.clone()),
+            local_scene: self.local_scene || other.local_scene,
         }
     }
 
@@ -62,6 +67,7 @@ impl Args {
             always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
+            local_scene: Self::has_flag(ARG_LOCAL_SCENE, &vector),
         }
     }
 
@@ -206,6 +212,7 @@ mod tests {
             always_trigger_updater: true,
             never_trigger_updater: false,
             use_updater_url: Some("https://one.com".into()),
+            local_scene: false,
         };
 
         let b = Args {
@@ -214,6 +221,7 @@ mod tests {
             always_trigger_updater: false,
             never_trigger_updater: true,
             use_updater_url: Some("https://two.com".into()),
+            local_scene: false,
         };
 
         let merged = a.merge_with(&b);
@@ -222,6 +230,7 @@ mod tests {
         assert!(merged.open_deeplink_in_new_instance);
         assert!(merged.always_trigger_updater);
         assert!(merged.never_trigger_updater);
+        assert!(!merged.local_scene);
         // Should keep first if present
         assert_eq!(merged.use_updater_url.as_deref(), Some("https://one.com"));
     }
