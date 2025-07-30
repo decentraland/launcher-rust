@@ -1,6 +1,9 @@
 use anyhow::{Result, anyhow};
 use log::error;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use segment::Client;
 use tokio::{sync::Mutex, task::JoinHandle, time::sleep};
@@ -61,6 +64,27 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
             // TODO use notify for graceful cancellation
             task.abort();
             self.task = None;
+        }
+    }
+
+    pub async fn wait_until_empty_queue_or_abandon(&self, timeout: Option<Duration>) {
+        const CHECK_PERIOD: Duration = Duration::from_millis(50);
+        let timeout = timeout.unwrap_or(Duration::from_millis(500));
+
+        // if cannot add timeout expiry happens immediately
+        let expiry = Instant::now().checked_add(timeout).unwrap_or_else(Instant::now);
+
+        loop {
+            let event = self.queue.lock().await.peek();
+            if event.is_none() {
+                break;
+            }
+
+            if Instant::now() >= expiry {
+                break;
+            }
+
+            sleep(CHECK_PERIOD).await;
         }
     }
 

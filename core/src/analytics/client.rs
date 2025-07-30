@@ -22,7 +22,7 @@ pub struct AnalyticsClient {
     launcher_version: String,
     session_id: SessionId,
     batcher: QueuedBatcher,
-    _send_daemon: AnalyticsEventSendDaemon<HttpClient>,
+    send_daemon: AnalyticsEventSendDaemon<HttpClient>,
 }
 
 impl AnalyticsClient {
@@ -50,7 +50,7 @@ impl AnalyticsClient {
             launcher_version,
             session_id,
             batcher,
-            _send_daemon: send_daemon,
+            send_daemon,
         }
     }
 
@@ -117,6 +117,12 @@ impl AnalyticsClient {
 
     pub const fn session_id(&self) -> &SessionId {
         &self.session_id
+    }
+
+    pub async fn cleanup(&self) {
+        self.send_daemon
+            .wait_until_empty_queue_or_abandon(None)
+            .await;
     }
 }
 

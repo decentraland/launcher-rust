@@ -108,4 +108,10 @@ impl Analytics {
             Self::Null(client) => client.session_id(),
         }
     }
+
+    pub async fn cleanup(&self) {
+        if let Self::Client(client) = &self {
+            client.cleanup().await;
+        }
+    }
 }
