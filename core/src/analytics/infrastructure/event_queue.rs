@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::VecDeque, path::Path};
+use std::{collections::VecDeque, path::Path};
 
 use anyhow::{Context, Result};
 use log::{error, info};
@@ -10,9 +10,9 @@ use crate::environment::AppEnvironment;
 const DEFAULT_EVENT_COUNT_LIMIT: u32 = 200;
 
 #[derive(Clone)]
-pub struct AnalyticsEvent<'a> {
+pub struct AnalyticsEvent {
     pub id: u64,
-    pub message: Cow<'a, Message>,
+    pub message: Message,
 }
 
 pub trait AnalyticsEventQueue {
@@ -92,10 +92,7 @@ impl AnalyticsEventQueue for PersistentAnalyticsEventQueue {
                     let id: u64 = row.get(0).ok()?;
                     let text: String = row.get(1).ok()?;
                     let message: Message = serde_json::from_str(&text).ok()?;
-                    Some(AnalyticsEvent {
-                        id,
-                        message: Cow::Owned(message),
-                    })
+                    Some(AnalyticsEvent { id, message })
                 } else {
                     None
                 }
@@ -115,13 +112,13 @@ impl AnalyticsEventQueue for PersistentAnalyticsEventQueue {
     }
 }
 
-pub struct InMemoryAnalyticsEventQueue<'a> {
-    events: VecDeque<AnalyticsEvent<'a>>,
+pub struct InMemoryAnalyticsEventQueue {
+    events: VecDeque<AnalyticsEvent>,
     next_id: u64,
     event_count_limit: usize,
 }
 
-impl InMemoryAnalyticsEventQueue<'_> {
+impl InMemoryAnalyticsEventQueue {
     pub const fn new(event_count_limit: u32) -> Self {
         Self {
             events: VecDeque::new(),
@@ -137,11 +134,11 @@ impl InMemoryAnalyticsEventQueue<'_> {
     }
 }
 
-impl AnalyticsEventQueue for InMemoryAnalyticsEventQueue<'_> {
+impl AnalyticsEventQueue for InMemoryAnalyticsEventQueue {
     fn enque(&mut self, msg: Message) -> Result<()> {
         let event = AnalyticsEvent {
             id: self.next_id,
-            message: Cow::Owned(msg),
+            message: msg,
         };
 
         match self.next_id.checked_add(1) {
@@ -159,11 +156,8 @@ impl AnalyticsEventQueue for InMemoryAnalyticsEventQueue<'_> {
         Ok(())
     }
 
-    fn peek(&self) -> Option<AnalyticsEvent<'_>> {
-        self.events.back().map(|e| AnalyticsEvent {
-            id: e.id,
-            message: Cow::Borrowed(e.message.as_ref()),
-        })
+    fn peek(&self) -> Option<AnalyticsEvent> {
+        self.events.back().map(|e| e.clone())
     }
 
     fn consume(&mut self, id: u64) {
@@ -173,12 +167,12 @@ impl AnalyticsEventQueue for InMemoryAnalyticsEventQueue<'_> {
     }
 }
 
-pub enum CombinedAnalyticsEventQueue<'a> {
+pub enum CombinedAnalyticsEventQueue {
     Persistent(PersistentAnalyticsEventQueue),
-    InMemory(InMemoryAnalyticsEventQueue<'a>),
+    InMemory(InMemoryAnalyticsEventQueue),
 }
 
-impl AnalyticsEventQueue for CombinedAnalyticsEventQueue<'_> {
+impl AnalyticsEventQueue for CombinedAnalyticsEventQueue {
     fn enque(&mut self, msg: Message) -> Result<()> {
         match self {
             Self::Persistent(queue) => queue.enque(msg),
@@ -186,7 +180,7 @@ impl AnalyticsEventQueue for CombinedAnalyticsEventQueue<'_> {
         }
     }
 
-    fn peek(&self) -> Option<AnalyticsEvent<'_>> {
+    fn peek(&self) -> Option<AnalyticsEvent> {
         match self {
             Self::Persistent(queue) => queue.peek(),
             Self::InMemory(queue) => queue.peek(),
@@ -205,7 +199,7 @@ impl AnalyticsEventQueue for CombinedAnalyticsEventQueue<'_> {
     }
 }
 
-impl Default for CombinedAnalyticsEventQueue<'_> {
+impl Default for CombinedAnalyticsEventQueue {
     fn default() -> Self {
         if AppEnvironment::cmd_args().force_in_memory_analytics_queue {
             info!(

@@ -69,14 +69,10 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
         client: Arc<Mutex<TClient>>,
         write_key: String,
     ) -> Result<()> {
-        if let Some(event) = queue.lock().await.peek().clone() {
+        let event = queue.lock().await.peek();
+        if let Some(event) = event {
             let AnalyticsEvent { id, message } = event;
-            if let Err(e) = client
-                .lock()
-                .await
-                .send(write_key, message.into_owned())
-                .await
-            {
+            if let Err(e) = client.lock().await.send(write_key, message).await {
                 Err(anyhow!(
                     "Cannot send event in daemon loop due error (will retry): {:#?}",
                     e
