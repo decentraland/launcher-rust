@@ -1,6 +1,6 @@
 [package]
 name = "dcl-launcher-core"
-version = "1.6.0"
+version = "1.8.0"
 edition = "2024"
 
 [lib]
@@ -32,6 +32,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 regex = "1.11.1"
+url = "2.5.4"
 anyhow = "1.0.97"
 
 futures-util = "0.3.14"
@@ -65,3 +66,9 @@ sentry-log = "0.37.0"
 sentry-types = "0.37.0"
 
 windows-sys = { version = "0.59.0", features = ["Win32_System_Threading"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+rusqlite = { version = "0.37.0" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+rusqlite = { version = "0.37.0", features = ["bundled"] }
