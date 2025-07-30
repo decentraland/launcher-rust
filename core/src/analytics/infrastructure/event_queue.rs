@@ -9,6 +9,7 @@ use crate::environment::AppEnvironment;
 
 const DEFAULT_EVENT_COUNT_LIMIT: u32 = 200;
 
+#[derive(Clone)]
 pub struct AnalyticsEvent<'a> {
     pub id: u64,
     pub message: Cow<'a, Message>,
