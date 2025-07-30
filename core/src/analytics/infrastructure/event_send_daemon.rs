@@ -1,3 +1,4 @@
+use anyhow::{Result, anyhow};
 use log::error;
 use std::{sync::Arc, time::Duration};
 
@@ -6,7 +7,7 @@ use tokio::{sync::Mutex, task::JoinHandle, time::sleep};
 
 use crate::analytics::infrastructure::event_queue::{AnalyticsEvent, AnalyticsEventQueue};
 
-const DEFAULT_PROCESS_DELAY: Duration = Duration::from_millis(200);
+const DEFAULT_PROCESS_DELAY_AFTER_ERROR: Duration = Duration::from_millis(200);
 
 pub struct AnalyticsEventSendDaemon<TClient: Client + Send> {
     queue: Arc<Mutex<dyn AnalyticsEventQueue + Send>>,
@@ -27,8 +28,11 @@ impl<TClient: Client + Send + 'static> AnalyticsEventSendDaemon<TClient> {
 
         let handle = tokio::spawn(async move {
             loop {
-                Self::send(queue.clone(), client.clone(), write_key.clone()).await;
-                sleep(process_delay).await;
+                let result = Self::send(queue.clone(), client.clone(), write_key.clone()).await;
+                if let Err(e) = result {
+                    error!("Error executing send loop: {:#?}", e);
+                    sleep(process_delay).await;
+                }
             }
         });
 
@@ -45,7 +49,7 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
     ) -> Self {
         Self {
             queue,
-            process_delay: process_delay.unwrap_or(DEFAULT_PROCESS_DELAY),
+            process_delay: process_delay.unwrap_or(DEFAULT_PROCESS_DELAY_AFTER_ERROR),
             write_key,
             client: Arc::new(Mutex::new(client)),
             task: None,
@@ -64,7 +68,7 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
         queue: Arc<Mutex<dyn AnalyticsEventQueue + Send>>,
         client: Arc<Mutex<TClient>>,
         write_key: String,
-    ) {
+    ) -> Result<()> {
         if let Some(event) = queue.lock().await.peek() {
             let AnalyticsEvent { id, message } = event;
             if let Err(e) = client
@@ -73,13 +77,16 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
                 .send(write_key, message.into_owned())
                 .await
             {
-                error!(
+                Err(anyhow!(
                     "Cannot send event in daemon loop due error (will retry): {:#?}",
                     e
-                );
+                ))
             } else {
                 queue.lock().await.consume(id);
+                Ok(())
             }
+        } else {
+            Ok(())
         }
     }
 }

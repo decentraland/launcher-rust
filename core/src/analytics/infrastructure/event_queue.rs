@@ -207,7 +207,9 @@ impl AnalyticsEventQueue for CombinedAnalyticsEventQueue<'_> {
 impl Default for CombinedAnalyticsEventQueue<'_> {
     fn default() -> Self {
         if AppEnvironment::cmd_args().force_in_memory_analytics_queue {
-            info!("CombinedAnalyticsEventQueue created with InMemory queue by flag, InMemoryAnalyticsEventQueue in use");
+            info!(
+                "CombinedAnalyticsEventQueue created with InMemory queue by flag, InMemoryAnalyticsEventQueue in use"
+            );
             return Self::InMemory(InMemoryAnalyticsEventQueue::new(DEFAULT_EVENT_COUNT_LIMIT));
         }
 
