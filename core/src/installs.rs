@@ -66,10 +66,6 @@ pub fn config_path() -> PathBuf {
     explorer_path().join("config.json")
 }
 
-pub fn analytics_queue_db_path() -> PathBuf {
-    explorer_path().join("analytics_queue.db")
-}
-
 pub fn running_instances_path() -> PathBuf {
     explorer_path().join("running-instances.json")
 }

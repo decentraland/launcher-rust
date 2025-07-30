@@ -1,6 +1,5 @@
 mod client;
 pub mod event;
-mod infrastructure;
 mod null_client;
 mod session;
 
@@ -24,7 +23,6 @@ pub struct CreateArgs {
     launcher_version: String,
 }
 
-#[allow(clippy::large_enum_variant)]
 pub enum Analytics {
     Client(AnalyticsClient),
     Null(NullClient),
