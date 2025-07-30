@@ -157,7 +157,7 @@ impl AnalyticsEventQueue for InMemoryAnalyticsEventQueue {
     }
 
     fn peek(&self) -> Option<AnalyticsEvent> {
-        self.events.back().map(|e| e.clone())
+        self.events.back().cloned()
     }
 
     fn consume(&mut self, id: u64) {
