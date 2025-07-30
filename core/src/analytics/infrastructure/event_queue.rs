@@ -1,9 +1,11 @@
 use std::{borrow::Cow, collections::VecDeque, path::Path};
 
 use anyhow::{Context, Result};
-use log::error;
+use log::{error, info};
 use rusqlite::{Connection, params};
 use segment::message::Message;
+
+use crate::environment::AppEnvironment;
 
 const DEFAULT_EVENT_COUNT_LIMIT: u32 = 200;
 
@@ -204,6 +206,11 @@ impl AnalyticsEventQueue for CombinedAnalyticsEventQueue<'_> {
 
 impl Default for CombinedAnalyticsEventQueue<'_> {
     fn default() -> Self {
+        if AppEnvironment::cmd_args().force_in_memory_analytics_queue {
+            info!("CombinedAnalyticsEventQueue created with InMemory queue by flag, InMemoryAnalyticsEventQueue in use");
+            return Self::InMemory(InMemoryAnalyticsEventQueue::new(DEFAULT_EVENT_COUNT_LIMIT));
+        }
+
         let persistent = PersistentAnalyticsEventQueue::new(
             crate::installs::analytics_queue_db_path(),
             DEFAULT_EVENT_COUNT_LIMIT,
@@ -213,7 +220,7 @@ impl Default for CombinedAnalyticsEventQueue<'_> {
             Ok(persistent) => Self::Persistent(persistent),
             Err(e) => {
                 error!(
-                    "Cannot create persistent event queue, fallback to inmemory queue: {}",
+                    "Cannot create persistent event queue, fallback to InMemory queue: {}",
                     e
                 );
                 Self::InMemory(InMemoryAnalyticsEventQueue::new(DEFAULT_EVENT_COUNT_LIMIT))
