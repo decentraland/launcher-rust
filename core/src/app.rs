@@ -64,12 +64,12 @@ impl AppState {
     }
 
     pub async fn cleanup(&self) {
-        self.analytics
-            .lock()
-            .await
+        let mut analytics = self.analytics.lock().await;
+        analytics
             .track_and_flush_silent(Event::LAUNCHER_CLOSE {
                 version: utils::app_version().to_owned(),
             })
             .await;
+        analytics.cleanup().await;
     }
 }

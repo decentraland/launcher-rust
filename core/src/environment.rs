@@ -9,6 +9,7 @@ const PROVIDER: Option<&str> = option_env!("VITE_PROVIDER");
 const LAUNCHER_ENVIRONMENT: Option<&str> = option_env!("LAUNCHER_ENVIRONMENT");
 
 const ARG_SKIP_ANALYTICS: &str = "skip-analytics";
+const ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE: &str = "force-in-memory-analytics-queue";
 const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
 const ARG_ALWAYS_TRIGGER_UPDATER: &str = "always-trigger-updater";
 const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
@@ -28,6 +29,7 @@ pub struct AppEnvironment {}
 #[derive(Debug, Default)]
 pub struct Args {
     pub skip_analytics: bool,
+    pub force_in_memory_analytics_queue: bool,
     pub open_deeplink_in_new_instance: bool,
 
     pub always_trigger_updater: bool,
@@ -43,6 +45,8 @@ impl Args {
     pub fn merge_with(&self, other: &Self) -> Self {
         Self {
             skip_analytics: self.skip_analytics || other.skip_analytics,
+            force_in_memory_analytics_queue: self.force_in_memory_analytics_queue
+                || other.force_in_memory_analytics_queue,
             open_deeplink_in_new_instance: self.open_deeplink_in_new_instance
                 || other.open_deeplink_in_new_instance,
             always_trigger_updater: self.always_trigger_updater || other.always_trigger_updater,
@@ -60,6 +64,10 @@ impl Args {
 
         Self {
             skip_analytics: Self::has_flag(ARG_SKIP_ANALYTICS, &vector),
+            force_in_memory_analytics_queue: Self::has_flag(
+                ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE,
+                &vector,
+            ),
             open_deeplink_in_new_instance: Self::has_flag(
                 ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
                 &vector,
@@ -208,6 +216,7 @@ mod tests {
     fn test_merge_with() {
         let a = Args {
             skip_analytics: true,
+            force_in_memory_analytics_queue: false,
             open_deeplink_in_new_instance: false,
             always_trigger_updater: true,
             never_trigger_updater: false,
@@ -217,6 +226,7 @@ mod tests {
 
         let b = Args {
             skip_analytics: false,
+            force_in_memory_analytics_queue: false,
             open_deeplink_in_new_instance: true,
             always_trigger_updater: false,
             never_trigger_updater: true,

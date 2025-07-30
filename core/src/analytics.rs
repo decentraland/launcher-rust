@@ -1,5 +1,6 @@
 mod client;
 pub mod event;
+mod infrastructure;
 mod null_client;
 mod session;
 
@@ -23,6 +24,7 @@ pub struct CreateArgs {
     launcher_version: String,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum Analytics {
     Client(AnalyticsClient),
     Null(NullClient),
@@ -104,6 +106,12 @@ impl Analytics {
         match self {
             Self::Client(client) => client.session_id(),
             Self::Null(client) => client.session_id(),
+        }
+    }
+
+    pub async fn cleanup(&self) {
+        if let Self::Client(client) = &self {
+            client.cleanup().await;
         }
     }
 }
