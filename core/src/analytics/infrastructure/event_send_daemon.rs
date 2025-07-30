@@ -69,7 +69,8 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
         client: Arc<Mutex<TClient>>,
         write_key: String,
     ) -> Result<()> {
-        if let Some(event) = queue.lock().await.peek() {
+        let mut guard = queue.lock().await;
+        if let Some(event) = guard.peek() {
             let AnalyticsEvent { id, message } = event;
             if let Err(e) = client
                 .lock()
@@ -82,7 +83,7 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
                     e
                 ))
             } else {
-                queue.lock().await.consume(id);
+                guard.consume(id);
                 Ok(())
             }
         } else {
