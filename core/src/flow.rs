@@ -2,7 +2,7 @@ use crate::channel::EventChannel;
 use crate::deeplink_bridge::{
     PlaceDeeplinkError, PlaceDeeplinkResult, place_deeplink_and_wait_until_consumed,
 };
-use crate::errors::{StepError, StepResultTyped};
+use crate::errors::{AttemptError, StepError, StepResultTyped};
 use crate::instances::RunningInstances;
 use crate::protocols::Protocol;
 use crate::{
@@ -73,6 +73,8 @@ pub struct LaunchFlow {
     download_step: DownloadStep,
     install_step: InstallStep,
     app_launch_step: AppLaunchStep,
+
+    analytics: Arc<Mutex<Analytics>>,
 }
 
 impl LaunchFlow {
@@ -87,12 +89,15 @@ impl LaunchFlow {
             download_step: DownloadStep {
                 analytics: analytics.clone(),
             },
-            install_step: InstallStep { analytics },
+            install_step: InstallStep {
+                analytics: analytics.clone(),
+            },
             app_launch_step: AppLaunchStep {
                 installs_hub,
                 running_instances,
                 protocol,
             },
+            analytics,
         }
     }
 
@@ -101,17 +106,43 @@ impl LaunchFlow {
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> std::result::Result<(), FlowError> {
-        let result = self.launch_internal(channel, state.clone()).await;
-        if let Err(e) = result {
-            log::error!("Error during the flow {} {:#?}", e, e);
-            sentry::capture_error(&e);
-            let error = FlowError {
-                user_message: e.user_message().to_owned(),
-            };
-            return std::result::Result::Err(error);
+        const SILENT_ATTEMPTS_COUNT: u8 = 3;
+
+        let mut last_error: Option<AttemptError> = None;
+
+        for attempt in 1..=SILENT_ATTEMPTS_COUNT {
+            let result = self.launch_internal(channel, state.clone()).await;
+
+            if let Err(e) = result {
+                log::error!(
+                    "Error during the flow. Attempt: {}, Cause {} {:#?}",
+                    attempt,
+                    e,
+                    e
+                );
+                let e = AttemptError {
+                    error: e,
+                    attempt,
+                };
+
+                sentry::capture_error(&e);
+                self.analytics.lock().await.track_and_flush_silent((&e).into()).await;
+
+                last_error = Some(e);
+                continue;
+            }
+
+            return std::result::Result::Ok(());
         }
 
-        std::result::Result::Ok(())
+        if let Some(e) = last_error {
+            let error = FlowError {
+                user_message: e.error.user_message().to_owned(),
+            };
+            std::result::Result::Err(error)
+        } else {
+            std::result::Result::Ok(())
+        }
     }
 
     async fn launch_internal<T: EventChannel>(
