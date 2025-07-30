@@ -70,7 +70,7 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
             if let Err(e) = client
                 .lock()
                 .await
-                .send(write_key.clone(), message.into_owned())
+                .send(write_key, message.into_owned())
                 .await
             {
                 error!(
