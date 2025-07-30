@@ -101,7 +101,6 @@ impl AnalyticsClient {
         self.batcher.flush().await
     }
 
-    // TODO remove async
     pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         let properties = properties_from_event(&event);
         let event_name = format!("{}", event);
