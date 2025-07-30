@@ -1,8 +1,15 @@
-use anyhow::{Context, Result};
+use std::sync::Arc;
+
+use anyhow::{Context, Result, anyhow};
 use log::error;
+use segment::HttpClient;
 use segment::message::{Track, User};
-use segment::{AutoBatcher, Batcher, HttpClient};
 use serde_json::{Map, Value, json};
+use tokio::sync::Mutex;
+
+use crate::analytics::infrastructure::event_queue::CombinedAnalyticsEventQueue;
+use crate::analytics::infrastructure::event_send_daemon::AnalyticsEventSendDaemon;
+use crate::analytics::infrastructure::queued_batcher::QueuedBatcher;
 
 use super::event::Event;
 use super::session::SessionId;
@@ -14,7 +21,8 @@ pub struct AnalyticsClient {
     os: String,
     launcher_version: String,
     session_id: SessionId,
-    batcher: AutoBatcher,
+    batcher: QueuedBatcher,
+    _send_daemon: AnalyticsEventSendDaemon<HttpClient>,
 }
 
 impl AnalyticsClient {
@@ -24,11 +32,17 @@ impl AnalyticsClient {
         os: String,
         launcher_version: String,
     ) -> Self {
-        let client = HttpClient::default();
+        let queue = CombinedAnalyticsEventQueue::default();
+        let queue = Arc::new(Mutex::new(queue));
+
         let context = json!({"direct": true});
-        let batcher = Batcher::new(Some(context));
-        let batcher = AutoBatcher::new(client, batcher, write_key);
+        let batcher = QueuedBatcher::new(queue.clone(), Some(context));
         let session_id = SessionId::random();
+
+        let client = HttpClient::default();
+        let mut send_daemon = AnalyticsEventSendDaemon::new(queue, None, write_key, client);
+
+        send_daemon.start();
 
         Self {
             anonymous_id,
@@ -36,6 +50,7 @@ impl AnalyticsClient {
             launcher_version,
             session_id,
             batcher,
+            _send_daemon: send_daemon,
         }
     }
 
@@ -64,15 +79,29 @@ impl AnalyticsClient {
             ..Default::default()
         };
 
-        self.batcher.push(msg).await.context("Cannot push")?;
-        Ok(())
+        match self.batcher.push(msg) {
+            Ok(option) => {
+                // if something returned then it has not been enqued
+                if let Some(msg) = option {
+                    self.batcher.flush().await?;
+                    if let Err(e) = self.batcher.push(msg) {
+                        Err(anyhow!("Cannot push message even after flush: {e}"))
+                    } else {
+                        Ok(())
+                    }
+                } else {
+                    Ok(())
+                }
+            }
+            Err(e) => Err(anyhow!("Cannot push message to batcher: {e}")),
+        }
     }
 
     async fn flush(&mut self) -> Result<()> {
-        self.batcher.flush().await?;
-        Ok(())
+        self.batcher.flush().await
     }
 
+    // TODO remove async
     pub async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         let properties = properties_from_event(&event);
         let event_name = format!("{}", event);
