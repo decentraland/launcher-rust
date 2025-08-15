@@ -104,11 +104,11 @@ jobs:
 
           echo "[INFO] Evaluating each unpublished draft SHA against latest published commit date..."
           > delete_candidates.txt
-          while read sha commit_date; do
+          while read -r sha commit_date; do
             if [[ "$commit_date" > "$latest_published_commit_date" ]]; then
-              echo "[KEEP] $sha (commit $commit_date newer than $latest_published_commit_date)"
+              echo "[KEEP]   $sha (commit $commit_date newer than $latest_published_commit_date)"
             else
-              echo "[DELETE] $sha (commit $commit_date <= $latest_published_commit_date)"
+              echo "[DELETE] $sha (commit $commit_date not newer than $latest_published_commit_date)"
               echo "$sha" >> delete_candidates.txt
             fi
           done < <(grep -Ff unpublished_drafts.txt draft_sha_dates.txt)
