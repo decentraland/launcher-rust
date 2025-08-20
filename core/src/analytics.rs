@@ -1,9 +1,9 @@
 mod client;
 pub mod event;
 mod infrastructure;
+mod network_info;
 mod null_client;
 mod session;
-mod network_info;
 
 use anyhow::{Context, Result};
 use client::AnalyticsClient;

@@ -72,7 +72,9 @@ impl<TClient: Client + Send> AnalyticsEventSendDaemon<TClient> {
         let timeout = timeout.unwrap_or(Duration::from_millis(500));
 
         // if cannot add timeout expiry happens immediately
-        let expiry = Instant::now().checked_add(timeout).unwrap_or_else(Instant::now);
+        let expiry = Instant::now()
+            .checked_add(timeout)
+            .unwrap_or_else(Instant::now);
 
         loop {
             let event = self.queue.lock().await.peek();

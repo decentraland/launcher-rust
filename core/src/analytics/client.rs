@@ -162,7 +162,6 @@ fn properties_from_event(event: &Event) -> Map<String, Value> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,7 +183,6 @@ mod tests {
 
         //TODO strict check
         println!("message: {}", json_value);
-
 
         let mut batcher = segment::Batcher::new(Some(json!("{\"type\": \"default context\"}")));
         let _ = batcher.push(track);

@@ -66,7 +66,9 @@ pub async fn get_latest_explorer_release() -> StepResultTyped<ReleaseResponse> {
 
     log::info!(
         "[get_latest_explorer_release] Release URL generated: {{ os: {}, version: {}, url: {} }}",
-        os, latest_release.version, release_url
+        os,
+        latest_release.version,
+        release_url
     );
 
     let response = ReleaseResponse {
