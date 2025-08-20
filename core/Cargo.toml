@@ -67,7 +67,6 @@ sentry-anyhow = { version = "0.37.0" }
 sentry-log = "0.37.0"
 sentry-types = "0.37.0"
 
-windows-sys = { version = "0.59.0", features = ["Win32_System_Threading"] }
 get_if_addrs = "0.5.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -76,3 +75,10 @@ rusqlite = { version = "0.37.0" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 rusqlite = { version = "0.37.0", features = ["bundled"] }
+windows-sys = { version = "0.59", features = [
+  "Win32_System_Threading",
+] }
+windows = { version = "0.61.3", features = [
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock",
+] }
