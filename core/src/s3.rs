@@ -30,7 +30,7 @@ async fn fetch_explorer_latest_release() -> StepResultTyped<LatestRelease> {
         bucket_url, RELEASE_PREFIX, timestamp
     );
 
-    println!(
+    log::info!(
         "[fetch_explorer_latest_release] Fetching latest release from: {}",
         url
     );
@@ -46,7 +46,7 @@ async fn fetch_explorer_latest_release() -> StepResultTyped<LatestRelease> {
     }
 
     let data = response.json::<LatestRelease>().await?;
-    println!(
+    log::info!(
         "[fetch_explorer_latest_release] Latest release fetched successfully: {:?}",
         data
     );
@@ -64,7 +64,7 @@ pub async fn get_latest_explorer_release() -> StepResultTyped<ReleaseResponse> {
         url, RELEASE_PREFIX, latest_release.version, release_name
     );
 
-    println!(
+    log::info!(
         "[get_latest_explorer_release] Release URL generated: {{ os: {}, version: {}, url: {} }}",
         os, latest_release.version, release_url
     );
