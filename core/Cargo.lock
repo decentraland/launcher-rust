@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.7.2"
+version = "1.9.5"
 dependencies = [
  "anyhow",
  "deranged",

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use anyhow::{Context, Result, anyhow};
 use std::collections::HashSet;
 
-use anyhow::{Context, Result};
 use log::error;
 use segment::HttpClient;
 use segment::message::{Track, User};
@@ -297,7 +296,7 @@ mod tests {
         println!("message: {}", json_value);
 
 
-        let mut batcher = Batcher::new(Some(json!("{\"type\": \"default context\"}")));
+        let mut batcher = segment::Batcher::new(Some(json!("{\"type\": \"default context\"}")));
         let _ = batcher.push(track);
         let message = batcher.into_message();
         let json_value = serde_json::to_value(message)?;
