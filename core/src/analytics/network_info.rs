@@ -103,7 +103,7 @@ fn network_context_internal() -> NetworkInfo {
         unsafe {
             match (*sa).sa_family {
                 AF_INET => {
-                    let v4 = *(sa as *const SOCKADDR_IN);
+                    let v4: SOCKADDR_IN = *(sa.cast());
                     let octets = v4.sin_addr.S_un.S_addr.to_ne_bytes(); // IPv4 in LE
                     // Convert to standard order
                     let ip = [octets[0], octets[1], octets[2], octets[3]];
@@ -111,7 +111,7 @@ fn network_context_internal() -> NetworkInfo {
                     !(ip[0] == 127 || (ip[0] == 169 && ip[1] == 254))
                 }
                 AF_INET6 => {
-                    let v6 = *(sa as *const SOCKADDR_IN6);
+                    let v6: SOCKADDR_IN6 = *(sa.cast());
                     let ip = v6.sin6_addr.u.Byte;
                     // ::1 loopback
                     let is_loopback = ip.iter().take(15).all(|&b| b == 0) && ip[15] == 1;
@@ -158,7 +158,8 @@ fn network_context_internal() -> NetworkInfo {
             | GAA_FLAG_SKIP_MULTICAST
             | GAA_FLAG_SKIP_DNS_SERVER
             | GAA_FLAG_SKIP_FRIENDLY_NAME;
-        let mut ret = GetAdaptersAddresses(AF_UNSPEC.0 as u32, flags, None, None, &mut size);
+        let mut ret =
+            GetAdaptersAddresses(u32::from(AF_UNSPEC.0), flags, None, None, &raw mut size);
 
         if ret != 0 && size == 0 {
             // unable to query
@@ -167,14 +168,20 @@ fn network_context_internal() -> NetworkInfo {
 
         // allocate buffer and fetch
         let mut buf: Vec<u8> = vec![0u8; size as usize];
-        let aa_head = buf.as_mut_ptr() as *mut IP_ADAPTER_ADDRESSES_LH;
-        ret = GetAdaptersAddresses(AF_UNSPEC.0 as u32, flags, None, Some(aa_head), &mut size);
+        let aa_head: *mut IP_ADAPTER_ADDRESSES_LH = buf.as_mut_ptr().cast();
+        ret = GetAdaptersAddresses(
+            u32::from(AF_UNSPEC.0),
+            flags,
+            None,
+            Some(aa_head),
+            &raw mut size,
+        );
         if ret != 0 {
             return NetworkInfo::default();
         }
 
         // iterate linked list
-        let mut cur = aa_head as *const IP_ADAPTER_ADDRESSES_LH;
+        let mut cur: *const IP_ADAPTER_ADDRESSES_LH = aa_head.cast_const();
         let mut info = NetworkInfo::default();
         while !cur.is_null() {
             if adapter_is_active(cur) {
