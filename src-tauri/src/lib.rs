@@ -58,6 +58,7 @@ async fn retry(
     state: State<'_, MutState>,
     channel: Channel<types::Status>,
 ) -> Result<(), String> {
+    info!("tauri command: retry");
     let event = Event::RETRY_FLOW_BUTTON_CLICK {
         version: utils::app_version().to_owned(),
     };
@@ -69,11 +70,20 @@ async fn retry(
         .await
         .track_and_flush_silent(event)
         .await;
-    launch(app, state, channel).await
+    launch_internal(app, state, channel).await
 }
 
 #[tauri::command]
 async fn launch(
+    app: AppHandle,
+    state: State<'_, MutState>,
+    channel: Channel<types::Status>,
+) -> Result<(), String> {
+    info!("tauri command: launch");
+    launch_internal(app, state, channel).await
+}
+
+async fn launch_internal(
     app: AppHandle,
     state: State<'_, MutState>,
     channel: Channel<types::Status>,
