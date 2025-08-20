@@ -21,7 +21,7 @@ runs:
     - name: Upload artifacts
       shell: bash
       run: |
-        set -e
+        set -euo pipefail
 
         upload_file() {
           local file="$1"
@@ -40,7 +40,6 @@ runs:
 
         PROJECT_PATH="${{ inputs.project-path }}"
         BUNDLES=$(echo '${{ toJson(matrix.bundles) }}' | jq -r '.[]')
-        EXTENSIONS="exe tar.gz dmg"
 
         detected_version=$(find "$PROJECT_PATH" -type f -name 'Decentraland_*_*' | head -n1 | sed -E 's/^.*Decentraland_([0-9]+\.[0-9]+\.[0-9]+)_.*/\1/')
         echo "Detected version: $detected_version"
@@ -48,7 +47,7 @@ runs:
         for bundle in $BUNDLES; do
           ARTIFACT_DIR="$PROJECT_PATH/target/release/bundle/$bundle"
           if [[ -d "$ARTIFACT_DIR" ]]; then
-          echo "Renaming artifacts in $ARTIFACT_DIR"
+            echo "Renaming artifacts in $ARTIFACT_DIR"
 
             for file in "$ARTIFACT_DIR"/*; do
               if [[ -f "$file" && "$file" == *"Decentraland_${detected_version}_"* ]]; then
@@ -59,12 +58,25 @@ runs:
               fi
             done
 
+            # Windows -> Decentraland_installer.exe
+            win_src="$(ls "$ARTIFACT_DIR"/Decentraland_*setup.exe 2>/dev/null | head -n1 || true)"
+            if [[ -z "$win_src" ]]; then
+              win_src="$(ls "$ARTIFACT_DIR"/Decentraland_*.exe 2>/dev/null | head -n1 || true)"
+            fi
+            if [[ -n "$win_src" ]]; then
+              cp -f "$win_src" "$ARTIFACT_DIR/Decentraland_installer.exe"
+            fi
+
+            # macOS -> Decentraland_installer.dmg
+            mac_src="$(ls "$ARTIFACT_DIR"/Decentraland_*.dmg 2>/dev/null | head -n1 || true)"
+            if [[ -n "$mac_src" ]]; then
+              cp -f "$mac_src" "$ARTIFACT_DIR/Decentraland_installer.dmg"
+            fi
+
             cd "$ARTIFACT_DIR"
             echo "Uploading artifacts from $ARTIFACT_DIR"
-            for ext in $EXTENSIONS; do
-              for file in *.$ext; do
-                upload_file "$file" "s3://${{ inputs.s3-bucket }}/${{ inputs.target-dir }}/$file"
-              done
+            for file in Decentraland_installer.exe Decentraland_installer.dmg Decentraland.app.tar.gz; do
+              upload_file "$file" "s3://${{ inputs.s3-bucket }}/${{ inputs.target-dir }}/$file"
             done
             cd -
           fi
@@ -73,7 +85,7 @@ runs:
         DOMAIN="https://explorer-artifacts.decentraland.org"
         TARGET_PATH="launcher-rust"
         FILENAME_TAR="Decentraland.app.tar.gz"
-        FILENAME_EXE="Decentraland_x64-setup.exe"
+        FILENAME_EXE="Decentraland_installer.exe"
 
         if [[ -f "./latest.json" ]]; then
           echo "Found latest.json at ./latest.json"
