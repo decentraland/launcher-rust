@@ -10,11 +10,13 @@
 )]
 #![allow(clippy::uninlined_format_args, clippy::used_underscore_binding)]
 
+use dcl_launcher_core::analytics::event::Event;
 use dcl_launcher_core::environment::{AppEnvironment, Args};
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
 use dcl_launcher_core::protocols::Protocol;
 use dcl_launcher_core::types::LauncherUpdate;
+use dcl_launcher_core::utils;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::env;
 use std::sync::Arc;
@@ -49,6 +51,26 @@ trait EventChannelExt: EventChannel {
 }
 
 impl<T: EventChannel + ?Sized> EventChannelExt for T {}
+
+#[tauri::command]
+async fn retry(
+    app: AppHandle,
+    state: State<'_, MutState>,
+    channel: Channel<types::Status>,
+) -> Result<(), String> {
+    let event = Event::RETRY_FLOW_BUTTON_CLICK {
+        version: utils::app_version().to_owned(),
+    };
+    state
+        .lock()
+        .await
+        .analytics
+        .lock()
+        .await
+        .track_and_flush_silent(event)
+        .await;
+    launch(app, state, channel).await
+}
 
 #[tauri::command]
 async fn launch(
@@ -223,7 +245,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .setup(setup)
-        .invoke_handler(tauri::generate_handler![launch])
+        .invoke_handler(tauri::generate_handler![launch, retry])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
