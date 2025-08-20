@@ -9,12 +9,6 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - package.json
-      - package-lock.json
-      - src-tauri/tauri.conf.json
-      - src-tauri/Cargo.toml
-      - core/Cargo.toml
   pull_request:
 
 concurrency:
@@ -22,19 +16,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  bump_version_check:
+    uses: ./.github/workflows/bump-version.yml
+    secrets:
+      DCL_BOT_REPO_WORKFLOW_TOKEN: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
+
   typechecking:
+    if: needs.bump_version_check.outputs.should_run_tests_and_release == 'true'
+    needs: [bump_version_check]
     uses: ./.github/workflows/typechecking.yml
 
   tests:
+    if: needs.bump_version_check.outputs.should_run_tests_and_release == 'true'
+    needs: [bump_version_check]
     uses: ./.github/workflows/tests.yml
 
-  bump_version:
-    needs: [typechecking, tests]
-    uses: ./.github/workflows/bump-version.yml
+  set_dry_run:
+    if: needs.bump_version_check.outputs.should_run_tests_and_release == 'true'
+    needs: [bump_version_check]
+    runs-on: ubuntu-latest
+    outputs:
+      dry_run: ${{ steps.set.outputs.dry_run }}
+    steps:
+      - id: set
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          BUMP: ${{ needs.bump_version_check.outputs.bump }}
+        run: |
+          echo "EVENT_NAME=$EVENT_NAME"
+          echo "REF_NAME=$REF_NAME"
+          echo "BUMP=$BUMP"
+          if [[ "$EVENT_NAME" != "push" || "$REF_NAME" != "main" || "$BUMP" != "yes" ]]; then
+            echo "dry_run=true" >> $GITHUB_OUTPUT
+            echo "Setting dry_run to true"
+          else
+            echo "dry_run=false" >> $GITHUB_OUTPUT
+            echo "Setting dry_run to false"
+          fi
 
   comment_start:
     if: github.event_name == 'pull_request'
-    needs: tests
+    needs: [typechecking, tests]
     uses: ./.github/workflows/pr-deploy-status.yml
     with:
       pr-number: ${{ github.event.pull_request.number }}
@@ -44,12 +67,12 @@ jobs:
       status: "requested"
 
   draft_release:
-    needs: [bump_version]
+    needs: [set_dry_run, typechecking, tests]
     permissions:
       contents: write # Allows this job to create releases
     uses: ./.github/workflows/release.yml
     with:
-      dry-run: ${{ github.event_name != 'push' || github.ref_name != 'main' }}
+      dry-run: ${{ needs.set_dry_run.outputs.dry_run == 'true' }}
       pr-number: ${{ github.event.pull_request.number || 'na' }}
     secrets:
       # Secrets required to sign and notarize the app in MacOS
@@ -83,8 +106,8 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
   comment_end:
-    if: github.event_name == 'pull_request' && always()
-    needs: draft_release
+    if: github.event_name == 'pull_request' && needs.bump_version_check.outputs.should_run_tests_and_release == 'true' && always()
+    needs: [draft_release]
     uses: ./.github/workflows/pr-deploy-status.yml
     with:
       pr-number: ${{ github.event.pull_request.number }}
@@ -93,3 +116,19 @@ jobs:
       run-number: ${{ github.run_number }}
       status: "completed"
       conclusion: ${{ needs.draft_release.result }}
+
+  check_release_status:
+    needs: [draft_release]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check draft_release result
+        run: |
+          result="${{ needs.draft_release.result }}"
+          echo "draft_release result: $result"
+          if [[ "$result" == "success" ]] || [[ "$result" == "skipped" ]]; then
+            echo "Release completed or skipped."
+          else
+            echo "Release failed (result: $result)"
+            exit 1
+          fi

@@ -124,8 +124,10 @@ jobs:
           cache: 'npm'
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.88.0
+          components: clippy,rustfmt
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - run: npm ci
@@ -139,19 +141,6 @@ jobs:
           VITE_SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-
-      - name: Generate Release Version
-        id: version
-        uses: paulhatch/semantic-version@v5.4.0
-        with:
-          tag_prefix: ""
-          version_format: ${major}.${minor}.${patch}
-          major_pattern: "/^(major|breaking).+/"
-          minor_pattern: "/^(minor|feat).+/"
-          bump_each_commit: false
-          bump_each_commit_patch_pattern: "/^(patch|fix).+/"
-          search_commit_body: true
-          user_format_type: "json"
 
       - name: Import Apple Developer certificate
         if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
