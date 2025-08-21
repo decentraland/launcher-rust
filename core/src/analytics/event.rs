@@ -71,6 +71,9 @@ pub enum Event {
         message: String,
         attempt: u8,
     },
+    RETRY_FLOW_BUTTON_CLICK {
+        version: String,
+    },
 }
 
 impl Display for Event {
@@ -100,6 +103,7 @@ impl Display for Event {
                 Event::LAUNCHER_UPDATE_ERROR { .. } => "Launcher Update Error",
                 Event::LAUNCHER_UPDATE_DOWNLOADED { .. } => "Launcher Update Downloaded",
                 Event::FLOW_ATTEMPT_ERROR { .. } => "Launcher Attempt Error",
+                Event::RETRY_FLOW_BUTTON_CLICK { .. } => "Retry Flow Button Click",
             }
         )
     }
