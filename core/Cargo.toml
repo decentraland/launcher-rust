@@ -81,4 +81,5 @@ windows-sys = { version = "0.59", features = [
 windows = { version = "0.61.3", features = [
   "Win32_NetworkManagement_IpHelper",
   "Win32_Networking_WinSock",
+  "Win32_NetworkManagement_Ndis",
 ] }
