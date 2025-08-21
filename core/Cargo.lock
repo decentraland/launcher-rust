@@ -1768,15 +1768,16 @@ dependencies = [
 [[package]]
 name = "segment"
 version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "971369158e31ad10bd73b558625f99de39554a2f00c2ff886a6796d950e69664"
+source = "git+https://github.com/decentraland/segment?branch=main#60975a59daec3551a1e57e51b9ef871c059b70b7"
 dependencies = [
  "async-trait",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
  "time",
+ "tokio",
 ]
 
 [[package]]
