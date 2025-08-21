@@ -73,7 +73,7 @@ pub enum Event {
     },
     RETRY_FLOW_BUTTON_CLICK {
         version: String,
-    }
+    },
 }
 
 impl Display for Event {
@@ -111,6 +111,9 @@ impl Display for Event {
 
 impl From<&AttemptError> for Event {
     fn from(value: &AttemptError) -> Self {
-        Self::FLOW_ATTEMPT_ERROR { message: value.error.to_string(), attempt: value.attempt }
+        Self::FLOW_ATTEMPT_ERROR {
+            message: value.error.to_string(),
+            attempt: value.attempt,
+        }
     }
 }
