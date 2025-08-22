@@ -10,9 +10,12 @@ use segment::queue::event_queue::{
 use segment::queue::event_send_daemon::AnalyticsEventSendDaemon;
 use segment::queue::queued_batcher::QueuedBatcher;
 use serde_json::{Map, Value, json};
+use time::OffsetDateTime;
+
 use tokio::sync::Mutex;
 
 use crate::environment::AppEnvironment;
+use crate::analytics::network_info::network_context;
 
 use super::event::Event;
 use super::session::SessionId;
@@ -74,11 +77,14 @@ impl AnalyticsClient {
         };
 
         let properties: Value = Value::Object(properties);
+        let context: Option<Value> = Some(network_context());
 
         let msg = Track {
             user,
             event,
             properties,
+            context,
+            timestamp: Some(OffsetDateTime::now_utc()),
             ..Default::default()
         };
 
@@ -186,5 +192,38 @@ fn new_event_queue() -> CombinedAnalyticsEventQueue {
                 DEFAULT_EVENT_COUNT_LIMIT,
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_attachments() -> Result<()> {
+        let track = Track {
+            user: User::AnonymousId {
+                anonymous_id: String::new(),
+            },
+            properties: Value::Null,
+            event: "test".to_owned(),
+            timestamp: None,
+            context: Some(network_context()),
+            extra: Map::new(),
+            integrations: None,
+        };
+        let json_value = serde_json::to_value(track.clone())?;
+
+        //TODO strict check
+        println!("message: {}", json_value);
+
+        let mut batcher = segment::Batcher::new(Some(json!("{\"type\": \"default context\"}")));
+        let _ = batcher.push(track);
+        let message = batcher.into_message();
+        let json_value = serde_json::to_value(message)?;
+
+        println!("message: {}", json_value);
+
+        Ok(())
     }
 }
