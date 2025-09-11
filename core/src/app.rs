@@ -17,7 +17,7 @@ pub struct AppState {
     pub flow: LaunchFlow,
     pub state: Arc<Mutex<LaunchFlowState>>,
     pub protocol: Protocol,
-    analytics: Arc<Mutex<Analytics>>,
+    pub analytics: Arc<Mutex<Analytics>>,
 }
 
 impl AppState {

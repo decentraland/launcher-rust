@@ -1,6 +1,6 @@
 mod client;
 pub mod event;
-mod infrastructure;
+mod network_info;
 mod null_client;
 mod session;
 

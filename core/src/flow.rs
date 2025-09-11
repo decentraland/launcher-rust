@@ -120,13 +120,14 @@ impl LaunchFlow {
                     e,
                     e
                 );
-                let e = AttemptError {
-                    error: e,
-                    attempt,
-                };
+                let e = AttemptError { error: e, attempt };
 
                 sentry::capture_error(&e);
-                self.analytics.lock().await.track_and_flush_silent((&e).into()).await;
+                self.analytics
+                    .lock()
+                    .await
+                    .track_and_flush_silent((&e).into())
+                    .await;
 
                 last_error = Some(e);
                 continue;
