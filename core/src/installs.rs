@@ -1,5 +1,6 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
+use crate::config;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
@@ -425,6 +426,9 @@ impl InstallsHub {
         if let Some(value) = deeplink {
             output.insert(0, value.into());
         }
+
+        let mut additionals = config::client_additional_arguments();
+        output.append(&mut additionals);
 
         output
     }
