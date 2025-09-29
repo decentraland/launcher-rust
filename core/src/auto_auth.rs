@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+#[cfg(target_os = "macos")]
 use std::path::Path;
 
 pub struct AutoAuth {}
@@ -28,6 +29,10 @@ impl AutoAuth {
     }
 
     #[cfg(target_os = "windows")]
+    // For dev only, remove later ====
+    #[allow(clippy::unnecessary_wraps)]
+    #[allow(clippy::missing_const_for_fn)]
+    // ====
     fn obtain_token_internal() -> Result<()> {
         //TODO
         Ok(())
