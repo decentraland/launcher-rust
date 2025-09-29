@@ -1,3 +1,4 @@
+use crate::auto_auth::AutoAuth;
 use crate::channel::EventChannel;
 use crate::deeplink_bridge::{
     PlaceDeeplinkError, PlaceDeeplinkResult, place_deeplink_and_wait_until_consumed,
@@ -107,6 +108,8 @@ impl LaunchFlow {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> std::result::Result<(), FlowError> {
         const SILENT_ATTEMPTS_COUNT: u8 = 3;
+
+        AutoAuth::try_obtain_auth_token();
 
         let mut last_error: Option<AttemptError> = None;
 

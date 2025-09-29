@@ -14,8 +14,8 @@ use time::OffsetDateTime;
 
 use tokio::sync::Mutex;
 
-use crate::environment::AppEnvironment;
 use crate::analytics::network_info::network_context;
+use crate::environment::AppEnvironment;
 
 use super::event::Event;
 use super::session::SessionId;
