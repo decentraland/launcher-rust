@@ -138,11 +138,9 @@ fn where_from_attr(dmg_path: &Path) -> Result<Option<Vec<String>>> {
     }
 }
 
-use std::process::Command;
-
 #[cfg(target_os = "macos")]
 fn dmg_backing_file(mount_point: &str) -> Result<Option<PathBuf>> {
-    let output = Command::new("hdiutil").args(["info", "-plist"]).output()?;
+    let output = std::process::Command::new("hdiutil").args(["info", "-plist"]).output()?;
     let plist = plist::Value::from_reader_xml(&*output.stdout)?;
     let dict = plist
         .as_dictionary()
