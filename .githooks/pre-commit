@@ -6,10 +6,14 @@ for dir in core src-tauri; do
   echo "Executing $dir"
   (
     cd "$dir"
+    echo "Format $dir"
+    cargo fmt
     echo "Check $dir"
     cargo check
     echo "Clippy $dir"
     cargo clippy --all-targets --all-features -- -D warnings
+    echo "Test $dir"
+    cargo test
   )
 done
 
