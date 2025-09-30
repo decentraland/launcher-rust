@@ -179,7 +179,7 @@ fn resolve_dmg_file(mntfrom: &Path) -> Result<PathBuf> {
 
         CFRelease(desc.cast());
         CFRelease(disk.cast());
-        CFRelease(session .cast());
+        CFRelease(session.cast());
 
         Ok(PathBuf::from(cfstring.to_string()))
     }
