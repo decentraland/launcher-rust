@@ -66,9 +66,7 @@ impl AutoAuth {
         };
 
         // TODO trim redundant data and purify token
-        let token = where_from
-            .first()
-            .map(ToOwned::to_owned);
+        let token = where_from.first().map(ToOwned::to_owned);
 
         Ok(token)
     }
