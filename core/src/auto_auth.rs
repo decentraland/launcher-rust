@@ -28,9 +28,10 @@ impl AutoAuth {
         };
         log::info!("Dmg parent: {}", dmg_dir.display());
 
-        //let dmg_dir = dmg_dir.to_str();
-        //TODO dmg_dir to real file path -> call where_from_attr
-        let _ = where_from_attr(dmg_dir);
+        let resolved_path = resolve_dmg_file(dmg_mount_path.as_path())?;
+        let where_from = where_from_attr(resolved_path.as_path())?;
+
+        log::info!("Where from attr: {where_from:?}");
 
         Ok(())
     }
@@ -117,7 +118,10 @@ fn where_from_attr(dmg_path: &Path) -> Result<Option<Vec<String>>> {
     let val = Value::from_reader(&mut cursor)?;
 
     if let Some(arr) = val.into_array() {
-        let urls: Vec<String> = arr.into_iter().filter_map(plist::Value::into_string).collect();
+        let urls: Vec<String> = arr
+            .into_iter()
+            .filter_map(plist::Value::into_string)
+            .collect();
         if urls.is_empty() {
             Ok(None)
         } else {
@@ -126,6 +130,78 @@ fn where_from_attr(dmg_path: &Path) -> Result<Option<Vec<String>>> {
     } else {
         Ok(None)
     }
+}
+
+#[allow(unsafe_code)]
+#[cfg(target_os = "macos")]
+fn resolve_dmg_file(mntfrom: &Path) -> Result<PathBuf> {
+    use core_foundation::{
+        base::{CFRelease, TCFType},
+        string::CFString,
+        url::CFURL,
+    };
+    use core_foundation_sys::base::CFTypeRef;
+    use core_foundation_sys::url::{CFURLCopyFileSystemPath, kCFURLPOSIXPathStyle};
+    use std::{ffi::CString, path::PathBuf, ptr};
+
+    unsafe {
+        let session = DASessionCreate(ptr::null());
+        if session.is_null() {
+            return Err(anyhow::anyhow!("Could not create DASession"));
+        }
+
+        let dev_c = CString::new(mntfrom.to_string_lossy().to_string())?;
+        let disk: CFTypeRef = DADiskCreateFromBSDName(ptr::null(), session, dev_c.as_ptr());
+        if disk.is_null() {
+            return Err(anyhow::anyhow!(
+                "Could not create DADisk for {}",
+                mntfrom.display()
+            ));
+        }
+
+        let desc = DADiskCopyDescription(disk);
+        if desc.is_null() {
+            return Err(anyhow::anyhow!("Could not get disk description"));
+        }
+
+        let key = CFString::new("DAMediaPath");
+        let val = core_foundation_sys::dictionary::CFDictionaryGetValue(
+            desc,
+            key.as_concrete_TypeRef().cast(),
+        );
+        if val.is_null() {
+            return Err(anyhow::anyhow!("DAMediaPath not found"));
+        }
+
+        let url: CFURL = CFURL::wrap_under_get_rule(val.cast());
+        let cfstr = CFURLCopyFileSystemPath(url.as_concrete_TypeRef(), kCFURLPOSIXPathStyle);
+        let cfstring = CFString::wrap_under_create_rule(cfstr);
+
+        CFRelease(desc.cast());
+        CFRelease(disk.cast());
+        CFRelease(session .cast());
+
+        Ok(PathBuf::from(cfstring.to_string()))
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+#[link(name = "DiskArbitration", kind = "framework")]
+unsafe extern "C" {
+    pub fn DASessionCreate(
+        allocator: core_foundation_sys::base::CFAllocatorRef,
+    ) -> core_foundation_sys::base::CFTypeRef;
+
+    pub fn DADiskCreateFromBSDName(
+        allocator: core_foundation_sys::base::CFAllocatorRef,
+        session: core_foundation_sys::base::CFTypeRef,
+        bsdName: *const std::os::raw::c_char,
+    ) -> core_foundation_sys::base::CFTypeRef;
+
+    pub fn DADiskCopyDescription(
+        disk: core_foundation_sys::base::CFTypeRef,
+    ) -> core_foundation_sys::dictionary::CFDictionaryRef;
 }
 
 #[cfg(test)]
@@ -143,6 +219,20 @@ mod tests {
         let path = Path::new(path);
         let attr = where_from_attr(path)?;
         println!("Where from attr: {attr:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_dmg_file_integration() -> Result<()> {
+        let path = std::option_env!("TEST_MNT_FROM");
+        let Some(path) = path else {
+            println!("TEST_MNT_FROM is not provided, ignoring test");
+            return Ok(());
+        };
+
+        let path = Path::new(path);
+        let resolved = resolve_dmg_file(path)?;
+        println!("Image path: {resolved:?}");
         Ok(())
     }
 }
