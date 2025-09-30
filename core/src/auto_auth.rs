@@ -8,12 +8,14 @@ pub struct AutoAuth {}
 impl AutoAuth {
     pub fn try_obtain_auth_token() {
         if let Err(e) = Self::obtain_token_internal() {
-            log::error!("Obtain auth error: {e}");
+            log::error!("Obtain auth token error: {e}");
         }
     }
 
     #[cfg(target_os = "macos")]
     fn obtain_token_internal() -> Result<()> {
+        use anyhow::Context;
+
         let path = std::env::current_exe()?;
         let dmg_mount_path = dmg_mount_path(&path)?;
         log::info!("Exe is running from dmg: {dmg_mount_path:?}");
@@ -28,8 +30,10 @@ impl AutoAuth {
         };
         log::info!("Dmg parent: {}", dmg_dir.display());
 
-        let resolved_path = resolve_dmg_file(dmg_mount_path.as_path())?;
-        let where_from = where_from_attr(resolved_path.as_path())?;
+        let resolved_path = resolve_dmg_file(dmg_mount_path.as_path())
+            .with_context(|| "Cannot resolve mount path: {dmg_mount_path}")?;
+        let where_from = where_from_attr(resolved_path.as_path())
+            .with_context(|| "Cannot read where from attr: {resolved_path}")?;
 
         log::info!("Where from attr: {where_from:?}");
 
