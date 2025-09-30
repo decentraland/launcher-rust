@@ -17,6 +17,7 @@ impl AutoAuth {
         use anyhow::Context;
 
         let path = std::env::current_exe()?;
+        log::info!("Exe path: {path:?}");
         let dmg_mount_path = dmg_mount_path(&path)?;
         log::info!("Exe is running from dmg: {dmg_mount_path:?}");
 
@@ -240,4 +241,19 @@ mod tests {
         println!("Image path: {resolved:?}");
         Ok(())
     }
+
+    #[test]
+    fn test_dmg_mount_path_integration() -> Result<()> {
+        let path = std::option_env!("TEST_EXE_MOUNT_PATH");
+        let Some(path) = path else {
+            println!("TEST_EXE_MOUNT_PATH is not provided, ignoring test");
+            return Ok(());
+        };
+
+        let path = Path::new(path);
+        let dmg_mount_path = dmg_mount_path(&path)?;
+        println!("Exe is running from dmg: {dmg_mount_path:?}");
+        Ok(())
+    }
+
 }
