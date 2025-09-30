@@ -1,13 +1,6 @@
 use anyhow::{Result, anyhow};
 
 #[cfg(target_os = "macos")]
-use core_foundation::{base::CFAllocatorRef, url::CFURLRef};
-#[cfg(target_os = "macos")]
-use core_foundation_sys::base::CFTypeRef;
-#[cfg(target_os = "macos")]
-use core_foundation_sys::dictionary::CFDictionaryRef;
-
-#[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 
 pub struct AutoAuth {}
@@ -185,75 +178,6 @@ fn dmg_backing_file(mount_point: &str) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-#[allow(unsafe_code)]
-#[cfg(target_os = "macos")]
-fn resolve_dmg_file(mntfrom: &Path) -> Result<PathBuf> {
-    use core_foundation::{
-        base::{CFRelease, TCFType},
-        string::CFString,
-        url::CFURL,
-    };
-    use std::{path::PathBuf, ptr};
-
-    unsafe {
-        let session = DASessionCreate(ptr::null());
-        if session.is_null() {
-            return Err(anyhow::anyhow!("Could not create DASession"));
-        }
-
-        let url = CFURL::from_path(mntfrom, true)
-            .ok_or_else(|| anyhow::anyhow!("Cannot resolve path to CFURL"))?;
-        let disk = DADiskCreateFromVolumePath(ptr::null(), session, url.as_concrete_TypeRef());
-
-        if disk.is_null() {
-            return Err(anyhow::anyhow!(
-                "Could not create DADisk for {}",
-                mntfrom.display()
-            ));
-        }
-
-        let desc = DADiskCopyDescription(disk);
-        if desc.is_null() {
-            return Err(anyhow::anyhow!("Could not get disk description"));
-        }
-
-        let key = CFString::new("DAMediaPath");
-        let val = core_foundation_sys::dictionary::CFDictionaryGetValue(
-            desc,
-            key.as_concrete_TypeRef().cast(),
-        );
-        if val.is_null() {
-            return Err(anyhow::anyhow!("DAMediaPath not found"));
-        }
-
-        let cfstring: CFString = TCFType::wrap_under_get_rule(val.cast());
-        let path_str = cfstring.to_string();
-        let path = PathBuf::from(path_str);
-
-        CFRelease(desc.cast());
-        CFRelease(disk.cast());
-        CFRelease(session.cast());
-
-        Ok(path)
-    }
-}
-
-#[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
-#[link(name = "DiskArbitration", kind = "framework")]
-unsafe extern "C" {
-
-    pub fn DASessionCreate(allocator: CFAllocatorRef) -> CFTypeRef;
-
-    pub fn DADiskCreateFromVolumePath(
-        allocator: CFAllocatorRef,
-        session: CFTypeRef,
-        path: CFURLRef,
-    ) -> CFTypeRef;
-
-    pub fn DADiskCopyDescription(disk: CFTypeRef) -> CFDictionaryRef;
-}
-
 #[cfg(target_os = "macos")]
 #[cfg(test)]
 mod tests {
@@ -270,20 +194,6 @@ mod tests {
         let path = Path::new(path);
         let attr = where_from_attr(path)?;
         println!("Where from attr: {attr:?}");
-        Ok(())
-    }
-
-    #[test]
-    fn test_resolve_dmg_file_integration() -> Result<()> {
-        let path = std::option_env!("TEST_MNT_FROM");
-        let Some(path) = path else {
-            println!("TEST_MNT_FROM is not provided, ignoring test");
-            return Ok(());
-        };
-
-        let path = Path::new(path);
-        let resolved = resolve_dmg_file(path)?;
-        println!("Image path: {resolved:?}");
         Ok(())
     }
 
