@@ -11,6 +11,7 @@
 #![allow(clippy::uninlined_format_args, clippy::used_underscore_binding)]
 
 use dcl_launcher_core::analytics::event::Event;
+use dcl_launcher_core::auto_auth::AutoAuth;
 use dcl_launcher_core::environment::{AppEnvironment, Args};
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
@@ -231,6 +232,8 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
 }
 
 fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    AutoAuth::try_obtain_auth_token();
+
     let app_state = tauri::async_runtime::block_on(AppState::setup())
         .inspect_err(|e| error!("Error during setup: {:#}", e))?;
 

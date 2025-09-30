@@ -22,7 +22,7 @@
 
 pub mod analytics;
 pub mod app;
-mod auto_auth;
+pub mod auto_auth;
 pub mod channel;
 mod config;
 mod deeplink_bridge;
