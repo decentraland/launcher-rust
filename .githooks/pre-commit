@@ -1,0 +1,16 @@
+#!/bin/sh
+
+echo "Running checks..."
+
+for dir in core src-tauri; do
+  echo "Executing $dir"
+  (
+    cd "$dir"
+    echo "Check $dir"
+    cargo check
+    echo "Clippy $dir"
+    cargo clippy --all-targets --all-features -- -D warnings
+  )
+done
+
+echo "All checks passed!"
