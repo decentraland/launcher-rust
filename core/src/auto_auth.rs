@@ -1,20 +1,43 @@
+mod auth_token_storage;
+
 use anyhow::{Result, anyhow};
 
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 
+use auth_token_storage::AuthTokenStorage;
+
 pub struct AutoAuth {}
 
 impl AutoAuth {
     pub fn try_obtain_auth_token() {
-        if let Err(e) = Self::obtain_token_internal() {
-            log::error!("Obtain auth token error: {e}");
+        if AuthTokenStorage::has_token() {
+            log::info!("Token already obtained");
+            return;
+        }
+
+        match Self::obtain_token_internal() {
+            Ok(token) => {
+                let Some(token) = token else {
+                    log::warn!("Token value is empty");
+                    return;
+                };
+
+                log::info!("Token obtained");
+                if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
+                    log::error!("Cannot write token: {e}");
+                }
+            }
+            Err(e) => {
+                log::error!("Obtain auth token error: {e}");
+            }
         }
     }
 
     #[cfg(target_os = "macos")]
-    fn obtain_token_internal() -> Result<()> {
+    fn obtain_token_internal() -> Result<Option<String>> {
         use anyhow::Context;
+        use std::borrow::ToOwned;
 
         let path = std::env::current_exe()?;
         log::info!("Exe path: {}", path.display());
@@ -22,12 +45,11 @@ impl AutoAuth {
         log::info!("Exe is running from dmg: {dmg_mount_path:?}");
 
         let Some(dmg_mount_path) = dmg_mount_path else {
-            return Ok(());
+            return Ok(None);
         };
 
         let Some(dmg_dir) = dmg_mount_path.parent() else {
-            log::info!("Dmg doesn't have a parent");
-            return Ok(());
+            return Err(anyhow!("Dmg doesn't have a parent"));
         };
         log::info!("Dmg parent: {}", dmg_dir.display());
 
@@ -39,7 +61,16 @@ impl AutoAuth {
 
         log::info!("Where from attr: {where_from:?}");
 
-        Ok(())
+        let Some(where_from) = where_from else {
+            return Err(anyhow!("Dmg does not have where from data"));
+        };
+
+        // TODO trim redundant data and purify token
+        let token = where_from
+            .first()
+            .map(ToOwned::to_owned);
+
+        Ok(token)
     }
 
     #[cfg(target_os = "windows")]
@@ -47,7 +78,7 @@ impl AutoAuth {
     #[allow(clippy::unnecessary_wraps)]
     #[allow(clippy::missing_const_for_fn)]
     // ====
-    fn obtain_token_internal() -> Result<()> {
+    fn obtain_token_internal() -> Result<Option<String>> {
         //TODO
         Err(anyhow!("Not implemented"))
     }
@@ -140,7 +171,9 @@ fn where_from_attr(dmg_path: &Path) -> Result<Option<Vec<String>>> {
 
 #[cfg(target_os = "macos")]
 fn dmg_backing_file(mount_point: &str) -> Result<Option<PathBuf>> {
-    let output = std::process::Command::new("hdiutil").args(["info", "-plist"]).output()?;
+    let output = std::process::Command::new("hdiutil")
+        .args(["info", "-plist"])
+        .output()?;
     let plist = plist::Value::from_reader_xml(&*output.stdout)?;
     let dict = plist
         .as_dictionary()
