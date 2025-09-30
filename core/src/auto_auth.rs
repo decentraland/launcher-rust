@@ -1,4 +1,11 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+
+#[cfg(target_os = "macos")]
+use core_foundation::{base::CFAllocatorRef, url::CFURLRef};
+#[cfg(target_os = "macos")]
+use core_foundation_sys::base::CFTypeRef;
+#[cfg(target_os = "macos")]
+use core_foundation_sys::dictionary::CFDictionaryRef;
 
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
@@ -31,10 +38,11 @@ impl AutoAuth {
         };
         log::info!("Dmg parent: {}", dmg_dir.display());
 
-        let resolved_path = resolve_dmg_file(dmg_mount_path.as_path())
-            .with_context(|| "Cannot resolve mount path: {dmg_mount_path}")?;
-        let where_from = where_from_attr(resolved_path.as_path())
-            .with_context(|| "Cannot read where from attr: {resolved_path}")?;
+        let dmg_file_path = dmg_backing_file(&dmg_dir.to_string_lossy())
+            .with_context(|| "Cannot resolve mount path: {dmg_dir}")?
+            .ok_or_else(|| anyhow!("Dmg original file not found"))?;
+        let where_from = where_from_attr(dmg_file_path.as_path())
+            .with_context(|| "Cannot read where from attr: {dmg_file_path}")?;
 
         log::info!("Where from attr: {where_from:?}");
 
@@ -48,7 +56,7 @@ impl AutoAuth {
     // ====
     fn obtain_token_internal() -> Result<()> {
         //TODO
-        Ok(())
+        Err(anyhow!("Not implemented"))
     }
 }
 
@@ -137,6 +145,46 @@ fn where_from_attr(dmg_path: &Path) -> Result<Option<Vec<String>>> {
     }
 }
 
+use std::process::Command;
+
+#[cfg(target_os = "macos")]
+fn dmg_backing_file(mount_point: &str) -> Result<Option<PathBuf>> {
+    let output = Command::new("hdiutil").args(&["info", "-plist"]).output()?;
+    let plist = plist::Value::from_reader_xml(&*output.stdout)?;
+    let dict = plist
+        .as_dictionary()
+        .ok_or_else(|| anyhow!("Cannot convert plist to dictionary"))?;
+    let images = dict
+        .get("images")
+        .ok_or_else(|| anyhow!("No images found in plist"))?
+        .as_array()
+        .ok_or_else(|| anyhow!("Images is not an array"))?;
+    for image in images {
+        if let Some(props) = image.as_dictionary() {
+            if let (Some(img_path), Some(system_entities)) =
+                (props.get("image-path"), props.get("system-entities"))
+            {
+                if let (Some(img_path), Some(system_entities)) =
+                    (img_path.as_string(), system_entities.as_array())
+                {
+                    for ent in system_entities {
+                        if let Some(ent) = ent.as_dictionary() {
+                            if let Some(mount_point_str) =
+                                ent.get("mount-point").and_then(|v| v.as_string())
+                            {
+                                if mount_point_str == mount_point {
+                                    return Ok(Some(PathBuf::from(img_path)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
 #[allow(unsafe_code)]
 #[cfg(target_os = "macos")]
 fn resolve_dmg_file(mntfrom: &Path) -> Result<PathBuf> {
@@ -145,9 +193,7 @@ fn resolve_dmg_file(mntfrom: &Path) -> Result<PathBuf> {
         string::CFString,
         url::CFURL,
     };
-    use core_foundation_sys::base::CFTypeRef;
-    use core_foundation_sys::url::{CFURLCopyFileSystemPath, kCFURLPOSIXPathStyle};
-    use std::{ffi::CString, path::PathBuf, ptr};
+    use std::{path::PathBuf, ptr};
 
     unsafe {
         let session = DASessionCreate(ptr::null());
@@ -155,8 +201,10 @@ fn resolve_dmg_file(mntfrom: &Path) -> Result<PathBuf> {
             return Err(anyhow::anyhow!("Could not create DASession"));
         }
 
-        let dev_c = CString::new(mntfrom.to_string_lossy().to_string())?;
-        let disk: CFTypeRef = DADiskCreateFromBSDName(ptr::null(), session, dev_c.as_ptr());
+        let url = CFURL::from_path(mntfrom, true)
+            .ok_or_else(|| anyhow::anyhow!("Cannot resolve path to CFURL"))?;
+        let disk = DADiskCreateFromVolumePath(ptr::null(), session, url.as_concrete_TypeRef());
+
         if disk.is_null() {
             return Err(anyhow::anyhow!(
                 "Could not create DADisk for {}",
@@ -178,15 +226,15 @@ fn resolve_dmg_file(mntfrom: &Path) -> Result<PathBuf> {
             return Err(anyhow::anyhow!("DAMediaPath not found"));
         }
 
-        let url: CFURL = CFURL::wrap_under_get_rule(val.cast());
-        let cfstr = CFURLCopyFileSystemPath(url.as_concrete_TypeRef(), kCFURLPOSIXPathStyle);
-        let cfstring = CFString::wrap_under_create_rule(cfstr);
+        let cfstring: CFString = TCFType::wrap_under_get_rule(val.cast());
+        let path_str = cfstring.to_string();
+        let path = PathBuf::from(path_str);
 
         CFRelease(desc.cast());
         CFRelease(disk.cast());
         CFRelease(session.cast());
 
-        Ok(PathBuf::from(cfstring.to_string()))
+        Ok(path)
     }
 }
 
@@ -194,19 +242,16 @@ fn resolve_dmg_file(mntfrom: &Path) -> Result<PathBuf> {
 #[allow(unsafe_code)]
 #[link(name = "DiskArbitration", kind = "framework")]
 unsafe extern "C" {
-    pub fn DASessionCreate(
-        allocator: core_foundation_sys::base::CFAllocatorRef,
-    ) -> core_foundation_sys::base::CFTypeRef;
 
-    pub fn DADiskCreateFromBSDName(
-        allocator: core_foundation_sys::base::CFAllocatorRef,
-        session: core_foundation_sys::base::CFTypeRef,
-        bsdName: *const std::os::raw::c_char,
-    ) -> core_foundation_sys::base::CFTypeRef;
+    pub fn DASessionCreate(allocator: CFAllocatorRef) -> CFTypeRef;
 
-    pub fn DADiskCopyDescription(
-        disk: core_foundation_sys::base::CFTypeRef,
-    ) -> core_foundation_sys::dictionary::CFDictionaryRef;
+    pub fn DADiskCreateFromVolumePath(
+        allocator: CFAllocatorRef,
+        session: CFTypeRef,
+        path: CFURLRef,
+    ) -> CFTypeRef;
+
+    pub fn DADiskCopyDescription(disk: CFTypeRef) -> CFDictionaryRef;
 }
 
 #[cfg(target_os = "macos")]
@@ -253,6 +298,19 @@ mod tests {
         let path = Path::new(path);
         let dmg_mount_path = dmg_mount_path(path)?;
         println!("Exe is running from dmg: {dmg_mount_path:?}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_dmg_backing_file_integration() -> Result<()> {
+        let path = std::option_env!("TEST_DMG_BACKING");
+        let Some(path) = path else {
+            println!("TEST_DMG_BACKING is not provided, ignoring test");
+            return Ok(());
+        };
+
+        let dmg_mount_path = dmg_backing_file(path)?;
+        println!("Exe is running from backing dmg: {dmg_mount_path:?}");
         Ok(())
     }
 }
