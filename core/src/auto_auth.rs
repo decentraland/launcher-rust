@@ -42,7 +42,7 @@ impl AutoAuth {
         let cpath = CString::new(exe_path.to_string_lossy().to_string())?;
         let mut sfs: statfs = unsafe { std::mem::zeroed() };
 
-        let res = unsafe { statfs(cpath.as_ptr(), &mut sfs) };
+        let res = unsafe { statfs(cpath.as_ptr(), &raw mut sfs) };
         if res != 0 {
             return Err(anyhow::anyhow!("Cannot read statfs"));
         }
