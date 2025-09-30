@@ -204,11 +204,11 @@ unsafe extern "C" {
     ) -> core_foundation_sys::dictionary::CFDictionaryRef;
 }
 
+#[cfg(target_os = "macos")]
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn test_where_from_integration() -> Result<()> {
         let path = std::option_env!("TEST_DMG_PATH");
@@ -223,7 +223,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn test_resolve_dmg_file_integration() -> Result<()> {
         let path = std::option_env!("TEST_MNT_FROM");
