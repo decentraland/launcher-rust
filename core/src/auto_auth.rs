@@ -15,14 +15,7 @@ impl AutoAuth {
     #[cfg(target_os = "macos")]
     fn obtain_token_internal() -> Result<()> {
         let path = std::env::current_exe()?;
-        let parent = path.parent();
-
-        let Some(parent) = parent else {
-            log::info!("Exe has no parent and is not running in .dmg");
-            return Ok(());
-        };
-
-        let is_dmg = Self::is_running_from_dmg(parent)?;
+        let is_dmg = Self::is_running_from_dmg(&path)?;
         log::info!("Exe is running from dmg: {is_dmg}");
 
         Ok(())
@@ -40,23 +33,32 @@ impl AutoAuth {
 
     #[cfg(target_os = "macos")]
     #[allow(unsafe_code)]
-    fn is_running_from_dmg(parent_path: &Path) -> Result<bool> {
-        use nix::libc::statfs;
+    fn is_running_from_dmg(exe_path: &Path) -> Result<bool> {
         use std::ffi::CString;
+        use std::ffi::CStr;
+        use libc::statfs;
+        use libc::MNT_RDONLY;
 
-        let cpath = CString::new(parent_path.to_string_lossy().to_string())?;
+        let cpath = CString::new(exe_path.to_string_lossy().to_string())?;
         let mut sfs: statfs = unsafe { std::mem::zeroed() };
-        unsafe {
-            if statfs(cpath.as_ptr(), &raw mut sfs) == 0 {
-                // HFS/ExFAT images mounted from DMG typically show up as "hfs", "apfs", etc
-                // But the device path (sfs.f_mntfromname) starts with "/dev/disk"
-                let mntfrom = std::ffi::CStr::from_ptr(sfs.f_mntfromname.as_ptr())
-                    .to_string_lossy()
-                    .to_string();
-                Ok(mntfrom.starts_with("/dev/disk"))
-            } else {
-                Ok(false)
-            }
+
+        let res = unsafe { statfs(cpath.as_ptr(), &mut sfs) };
+        if res != 0 {
+            return Err(anyhow::anyhow!("Cannot read statfs"));
         }
+
+        let mntfrom = unsafe { CStr::from_ptr(sfs.f_mntfromname.as_ptr()) }
+            .to_string_lossy()
+            .to_string();
+        let mnton = unsafe { CStr::from_ptr(sfs.f_mntonname.as_ptr()) }
+            .to_string_lossy()
+            .to_string();
+
+        let is_readonly = sfs.f_flags & MNT_RDONLY as u32 != 0;
+        log::info!("exe mount data, from: {mntfrom}, on: {mnton}, readonly: {is_readonly}");
+
+        Ok(mntfrom.starts_with("/dev/disk")
+            && mnton.starts_with("/Volumes/")
+            && is_readonly)
     }
 }
