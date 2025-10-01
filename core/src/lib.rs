@@ -31,7 +31,7 @@ pub mod errors;
 pub mod flow;
 pub mod installs;
 pub mod instances;
-mod logs;
+pub mod logs;
 mod monitoring;
 mod processes;
 pub mod protocols;
