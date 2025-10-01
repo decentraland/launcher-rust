@@ -1,4 +1,4 @@
-mod auth_token_storage;
+pub mod auth_token_storage;
 
 use anyhow::{Result, anyhow};
 
