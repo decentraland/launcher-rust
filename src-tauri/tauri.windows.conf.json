@@ -4,6 +4,9 @@
     "resources": [
       "resources/auto-auth-token-fetch.exe"
     ]
+  },
+  "build": {
+     "beforeBuildCommand": "cargo build --manifest-path ../src-auto-auth/Cargo.toml --release; cp ../src-auto-auth/target/release/src-auto-auth.exe resources/auto-auth-token-fetch.exe"
   }
 }
 
