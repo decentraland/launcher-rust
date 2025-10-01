@@ -3,7 +3,7 @@ set -e
 
 echo "Running checks..."
 
-for dir in core src-tauri; do
+for dir in core src-tauri src-auto-auth; do
   echo "Executing $dir"
   (
     cd "$dir"
