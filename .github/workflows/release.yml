@@ -200,8 +200,17 @@ jobs:
           SIGN_SCRIPT_PATH="${GITHUB_WORKSPACE}/src-tauri/scripts/sign.ps1"
           sed -i.bak "s|\"sign.ps1\"|\"${SIGN_SCRIPT_PATH//\\/\/}\"|g" src-tauri/tauri.conf.json
 
+      - name: Prebuild AutoAuth
+        working-directory: ${{ github.workspace }}
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: powershell -ExecutionPolicy Bypass -File ./pre-build-auto-auth.ps1
+
       - name: Code Analysis Core
         working-directory: ${{ github.workspace }}/core
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Code Analysis AutoAuth
+        working-directory: ${{ github.workspace }}/src-auto-auth
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Code Analysis Tauri
