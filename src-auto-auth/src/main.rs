@@ -1,3 +1,6 @@
+// Avoid popup terminal window
+#![windows_subsystem = "windows"]
+
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::process::exit;
@@ -24,7 +27,7 @@ fn main_internal() -> Result<()> {
     // read the token from installer.exe
     // parse token
 
-    log::info!("Start auto auth script");
+    log::info!("Start auto auth script v{}", std::env!("CARGO_PKG_VERSION"));
     if AuthTokenStorage::has_token() {
         log::info!("Token already installed");
         return Ok(());
