@@ -68,11 +68,11 @@ pub fn config_path() -> PathBuf {
 }
 
 pub fn auth_token_marker_path() -> PathBuf {
-    explorer_path().join("auth-token-marker.json")
+    explorer_path().join("auth-token-marker.txt")
 }
 
 pub fn auth_token_bridge_path() -> PathBuf {
-    explorer_path().join("auth-token-bridge.json")
+    explorer_path().join("auth-token-bridge.txt")
 }
 
 pub fn analytics_queue_db_path() -> PathBuf {

@@ -1,7 +1,6 @@
 use std::fs;
 
 use anyhow::Result;
-use serde_json::json;
 
 use crate::installs::auth_token_bridge_path;
 use crate::installs::auth_token_marker_path;
@@ -22,18 +21,8 @@ impl AuthTokenStorage {
     }
 
     pub fn write_token(token: &str) -> Result<()> {
-        let json = json!(
-            {
-                "token": token
-            }
-        );
-
-        let marker_file = fs::File::create(auth_token_marker_path())?;
-        serde_json::to_writer_pretty(marker_file, &json)?;
-
-        let bridge_file = fs::File::create(auth_token_bridge_path())?;
-        serde_json::to_writer_pretty(bridge_file, &json)?;
-
+        fs::write(auth_token_marker_path(), token)?;
+        fs::write(auth_token_bridge_path(), token)?;
         Ok(())
     }
 }
