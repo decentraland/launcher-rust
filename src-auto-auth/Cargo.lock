@@ -2063,11 +2063,8 @@ name = "src-auto-auth"
 version = "1.11.2"
 dependencies = [
  "anyhow",
+ "base64",
  "dcl-launcher-core",
- "fern",
- "humantime",
- "log",
- "pretty_env_logger",
  "serde",
  "serde_json",
 ]
