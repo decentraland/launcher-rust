@@ -2062,11 +2062,7 @@ dependencies = [
 name = "src-auto-auth"
 version = "1.11.2"
 dependencies = [
- "anyhow",
- "base64",
  "dcl-launcher-core",
- "serde",
- "serde_json",
 ]
 
 [[package]]

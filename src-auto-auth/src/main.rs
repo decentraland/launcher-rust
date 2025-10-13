@@ -1,16 +1,18 @@
 // Avoid popup terminal window
 #![windows_subsystem = "windows"]
 
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::process::exit;
+use std::{
+    fs::File,
+    io,
+    io::{Read, Seek, SeekFrom},
+    process::exit,
+};
 
-use anyhow::Result;
-use anyhow::anyhow;
-use dcl_launcher_core::{auto_auth::auth_token_storage::AuthTokenStorage, log, logs};
-use std::io;
-
-use base64::prelude::*;
+use dcl_launcher_core::{
+    anyhow::{Result, anyhow},
+    auto_auth::auth_token_storage::AuthTokenStorage,
+    log, logs,
+};
 
 fn main() {
     if let Err(e) = logs::dispath_logs() {
@@ -23,10 +25,6 @@ fn main() {
 }
 
 fn main_internal() -> Result<()> {
-    // TODO
-    // read the token from installer.exe
-    // parse token
-
     log::info!("Start auto auth script v{}", std::env!("CARGO_PKG_VERSION"));
     if AuthTokenStorage::has_token() {
         log::info!("Token already installed");
@@ -40,26 +38,54 @@ fn main_internal() -> Result<()> {
         .first()
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
 
-    let token_binary = read_token(installer_path)?;
-
-    // TODO actual encoding (json?)
-    let token = BASE64_STANDARD.encode(token_binary);
+    let token = read_token(installer_path)?;
     AuthTokenStorage::write_token(token.as_str())?;
-
     log::info!("Token write complete");
     Ok(())
 }
 
-fn read_token(path: &str) -> io::Result<Vec<u8>> {
+// MAGIC (8B)      = ASCII "DCLSIGv1"
+// DATA  (LEN B)   = UTF-8 of token (UUIDv4)
+// LEN   (4B LE)   = length of DATA (uint32)
+pub fn read_token(path: &str) -> io::Result<String> {
     let mut file = File::open(path)?;
     let file_size = file.metadata()?.len();
 
-    // TODO replace to actual strategy
-    let read_size = 64.min(file_size as usize);
+    // Seek to the last 4 bytes (LEN field)
+    file.seek(SeekFrom::End(-4))?;
 
-    file.seek(SeekFrom::End(-(read_size as i64)))?;
+    let mut len_buf = [0u8; 4];
+    file.read_exact(&mut len_buf)?;
+    let len = u32::from_le_bytes(len_buf) as u64;
 
-    let mut buffer = vec![0u8; read_size];
-    file.read_exact(&mut buffer)?;
-    Ok(buffer)
+    // Seek backward to read the DATA (token UTF-8 string)
+    // Total to read: MAGIC(8) + DATA(len) + LEN(4)
+    let trailer_size = 8 + len + 4;
+    if trailer_size > file_size {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "File too small for trailer",
+        ));
+    }
+
+    file.seek(SeekFrom::End(-(trailer_size as i64)))?;
+
+    let mut trailer = vec![0u8; trailer_size as usize];
+    file.read_exact(&mut trailer)?;
+
+    // Validate MAGIC and extract DATA
+    let magic = &trailer[..8];
+    if magic != b"DCLSIGv1" {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid trailer magic",
+        ));
+    }
+
+    let data = &trailer[8..(8 + len as usize)];
+    let token = std::str::from_utf8(data)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8 in token"))?
+        .to_owned();
+
+    Ok(token)
 }

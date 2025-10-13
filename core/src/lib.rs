@@ -39,4 +39,5 @@ pub mod s3;
 pub mod types;
 pub mod utils;
 
+pub use anyhow;
 pub use log;
