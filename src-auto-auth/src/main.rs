@@ -38,7 +38,7 @@ fn main_internal() -> Result<()> {
         .first()
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
 
-    let token = read_token(installer_path)?;
+    let token = token_from_file(installer_path)?;
     AuthTokenStorage::write_token(token.as_str())?;
     log::info!("Token write complete");
     Ok(())
@@ -47,7 +47,7 @@ fn main_internal() -> Result<()> {
 // MAGIC (8B)      = ASCII "DCLSIGv1"
 // DATA  (LEN B)   = UTF-8 of token (UUIDv4)
 // LEN   (4B LE)   = length of DATA (uint32)
-pub fn read_token(path: &str) -> io::Result<String> {
+pub fn token_from_file(path: &str) -> io::Result<String> {
     let mut file = File::open(path)?;
     let file_size = file.metadata()?.len();
 
@@ -88,4 +88,23 @@ pub fn read_token(path: &str) -> io::Result<String> {
         .to_owned();
 
     Ok(token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dcl_launcher_core::anyhow::Result;
+
+    #[test]
+    fn test_integration_token_from_file() -> Result<()> {
+        let file_path = option_env!("EXE_WITH_TOKEN");
+        let Some(path) = file_path else {
+            println!("no env var provided EXE_WITH_TOKEN");
+            return Ok(());
+        };
+
+        let token = token_from_file(path)?;
+        println!("{token}");
+        Ok(())
+    }
 }
