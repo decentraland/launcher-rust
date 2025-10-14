@@ -275,15 +275,21 @@ jobs:
           echo "APP_NAME=Decentraland" >> $GITHUB_ENV
           echo "DMG_BACKGROUND=${GITHUB_WORKSPACE}/src-tauri/dmg/background.png" >> $GITHUB_ENV
 
+      - name: Debug app path (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          set -x
+          find src-tauri/target -maxdepth 6 -type d -name "${APP_NAME}.app" -print || true
+
       - name: Find built .app path (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
         run: |
           set -euo pipefail
           APP_PATH=$(
-            ls -1 src-tauri/target/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
-            ls -1 src-tauri/target/universal-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
-            ls -1 src-tauri/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
-            ls -1 src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null
+            ls -1d src-tauri/target/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
+            ls -1d src-tauri/target/universal-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
+            ls -1d src-tauri/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
+            ls -1d src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null
           )
           echo "APP_PATH=$APP_PATH" | tee -a $GITHUB_ENV
           [[ -d "$APP_PATH" ]]
