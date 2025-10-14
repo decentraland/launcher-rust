@@ -266,6 +266,97 @@ jobs:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
+      # ===== Custom DMG (macOS) =====
+      - name: Set DMG env (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          echo "APP_NAME=Decentraland" >> $GITHUB_ENV
+          echo "DMG_BACKGROUND=${GITHUB_WORKSPACE}/src-tauri/dmg/background.png" >> $GITHUB_ENV
+
+      - name: Find built .app path (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          set -euo pipefail
+          APP_PATH=$( \
+            ls -1 src-tauri/target/universal-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
+            ls -1 src-tauri/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
+            ls -1 src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null \
+          )
+          echo "APP_PATH=$APP_PATH" | tee -a $GITHUB_ENV
+          [[ -d "$APP_PATH" ]]
+
+      - name: Install create-dmg (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: npm i -g create-dmg
+
+      - name: Generate custom DMG (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          OUTDIR="src-tauri/target/custom-dmg"
+          mkdir -p "$OUTDIR"
+          create-dmg \
+            --volname "Decentraland Installer" \
+            --background "$DMG_BACKGROUND" \
+            --window-pos 200 120 \
+            --window-size 600 520 \
+            --icon-size 120 \
+            --icon "${APP_NAME}.app" 300 230 \
+            --app-drop-link 520 230 \
+            --no-internet-enable \
+            "${APP_PATH}" \
+            "$OUTDIR"
+          NEW_DMG_PATH=$(ls -1 "$OUTDIR"/*.dmg | head -n1)
+          echo "NEW_DMG_PATH=$NEW_DMG_PATH" | tee -a $GITHUB_ENV
+          [[ -f "$NEW_DMG_PATH" ]]
+
+      - name: Codesign custom DMG (release only, macOS)
+        # if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        if: ${{ matrix.os == 'macos-latest' }}
+        env:
+          CERT_ID: ${{ env.CERT_ID }}
+        run: |
+          set -euo pipefail
+          codesign --force --sign "$CERT_ID" --timestamp "$NEW_DMG_PATH"
+          codesign --verify --verbose "$NEW_DMG_PATH"
+
+      - name: Notarize + staple custom DMG (release only, macOS)
+        # if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        if: ${{ matrix.os == 'macos-latest' }}
+        env:
+          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+          APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          xcrun notarytool submit "$NEW_DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_PASSWORD" \
+            --wait
+          xcrun stapler staple "$NEW_DMG_PATH"
+
+      - name: Replace Tauri DMG with custom one (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          set -euo pipefail
+          DMG_DIR=$( \
+            ls -1d src-tauri/target/universal-apple-darwin/release/bundle/dmg 2>/dev/null || \
+            ls -1d src-tauri/target/aarch64-apple-darwin/release/bundle/dmg 2>/dev/null || \
+            ls -1d src-tauri/target/x86_64-apple-darwin/release/bundle/dmg 2>/dev/null \
+          )
+          if [[ -d "$DMG_DIR" ]]; then
+            rm -f "$DMG_DIR"/*.dmg
+            FINAL_DMG="$DMG_DIR/Decentraland.dmg"
+            cp "$NEW_DMG_PATH" "$FINAL_DMG"
+            echo "FINAL_DMG=$FINAL_DMG" | tee -a $GITHUB_ENV
+            echo "✅ Replaced Tauri DMG with custom DMG at $FINAL_DMG"
+          else
+            echo "⚠️ Tauri DMG dir not found; leaving custom DMG at $NEW_DMG_PATH"
+            exit 1
+          fi
+
       - name: Verify Windows signature
         if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         run: |
