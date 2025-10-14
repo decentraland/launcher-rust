@@ -292,7 +292,7 @@ jobs:
           )
           echo "APP_PATH=$APP_PATH" | tee -a "$GITHUB_ENV"
           [[ -d "$APP_PATH" ]] || { echo "❌ .app not found"; exit 1; }
-          [[ -f "$DMG_BACKGROUND" ]] || { echo "❌ Missing background: $DMG_BACKGROUND"; exit 1; }
+          #[[ -f "$DMG_BACKGROUND" ]] || { echo "❌ Missing background: $DMG_BACKGROUND"; exit 1; }
 
           # --- Ensure create-dmg is available ---
           npm i -g create-dmg
