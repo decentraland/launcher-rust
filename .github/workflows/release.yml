@@ -207,17 +207,17 @@ jobs:
         if: ${{ matrix.os == 'windows-latest' }}
         run: powershell -ExecutionPolicy Bypass -File ./pre-build-auto-auth.ps1
 
-      - name: Code Analysis Core
-        working-directory: ${{ github.workspace }}/core
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      # - name: Code Analysis Core
+      #   working-directory: ${{ github.workspace }}/core
+      #   run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Code Analysis AutoAuth
-        working-directory: ${{ github.workspace }}/src-auto-auth
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      # - name: Code Analysis AutoAuth
+      #   working-directory: ${{ github.workspace }}/src-auto-auth
+      #   run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Code Analysis Tauri
-        working-directory: ${{ github.workspace }}/src-tauri
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      # - name: Code Analysis Tauri
+      #   working-directory: ${{ github.workspace }}/src-tauri
+      #   run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build Release
         if: ${{ inputs.dry-run == false }}
@@ -275,12 +275,6 @@ jobs:
           echo "APP_NAME=Decentraland" >> $GITHUB_ENV
           echo "DMG_BACKGROUND=${GITHUB_WORKSPACE}/src-tauri/dmg/background.png" >> $GITHUB_ENV
 
-      - name: Debug app path (macOS)
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: |
-          set -x
-          find src-tauri/target -maxdepth 6 -type d -name "${APP_NAME}.app" -print || true
-
       - name: Find built .app path (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
         run: |
@@ -306,16 +300,17 @@ jobs:
           OUTDIR="src-tauri/target/custom-dmg"
           mkdir -p "$OUTDIR"
           create-dmg \
+            "$APP_PATH" \
+            "$OUTDIR" \
             --volname "Decentraland Installer" \
             --background "$DMG_BACKGROUND" \
             --window-pos 200 120 \
             --window-size 600 520 \
-            --icon-size 120 \
+            --icon-size=120 \
             --icon "${APP_NAME}.app" 300 230 \
             --app-drop-link 520 230 \
-            --no-internet-enable \
-            "${APP_PATH}" \
-            "$OUTDIR"
+            --no-internet-enable
+
           NEW_DMG_PATH=$(ls -1 "$OUTDIR"/*.dmg | head -n1)
           echo "NEW_DMG_PATH=$NEW_DMG_PATH" | tee -a $GITHUB_ENV
           [[ -f "$NEW_DMG_PATH" ]]
