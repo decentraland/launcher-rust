@@ -143,7 +143,8 @@ jobs:
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
       - name: Import Apple Developer certificate
-        if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        # if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        if: ${{ matrix.os == 'macos-latest' }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
@@ -159,7 +160,8 @@ jobs:
           security find-identity -v -p codesigning build.keychain
 
       - name: Verify Apple certificate
-        if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        # if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        if: ${{ matrix.os == 'macos-latest' }}
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
@@ -277,10 +279,11 @@ jobs:
         if: ${{ matrix.os == 'macos-latest' }}
         run: |
           set -euo pipefail
-          APP_PATH=$( \
+          APP_PATH=$(
+            ls -1 src-tauri/target/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
             ls -1 src-tauri/target/universal-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
             ls -1 src-tauri/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
-            ls -1 src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null \
+            ls -1 src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null
           )
           echo "APP_PATH=$APP_PATH" | tee -a $GITHUB_ENV
           [[ -d "$APP_PATH" ]]
@@ -341,10 +344,11 @@ jobs:
         if: ${{ matrix.os == 'macos-latest' }}
         run: |
           set -euo pipefail
-          DMG_DIR=$( \
+          DMG_DIR=$(
+            ls -1d src-tauri/target/release/bundle/dmg 2>/dev/null || \
             ls -1d src-tauri/target/universal-apple-darwin/release/bundle/dmg 2>/dev/null || \
             ls -1d src-tauri/target/aarch64-apple-darwin/release/bundle/dmg 2>/dev/null || \
-            ls -1d src-tauri/target/x86_64-apple-darwin/release/bundle/dmg 2>/dev/null \
+            ls -1d src-tauri/target/x86_64-apple-darwin/release/bundle/dmg 2>/dev/null
           )
           if [[ -d "$DMG_DIR" ]]; then
             rm -f "$DMG_DIR"/*.dmg
