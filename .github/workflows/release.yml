@@ -352,9 +352,16 @@ jobs:
             ls -1d src-tauri/target/x86_64-apple-darwin/release/bundle/dmg 2>/dev/null
           )
           if [[ -d "$DMG_DIR" ]]; then
+            ORIG_DMG=$(ls -1 "$DMG_DIR"/*.dmg 2>/dev/null | head -n1 || true)
+            if [[ -z "${ORIG_DMG}" ]]; then
+              echo "❌ No existing Tauri DMG found in $DMG_DIR to infer original name"; exit 1
+            fi
+            ORIG_NAME="$(basename "$ORIG_DMG")"
+
             rm -f "$DMG_DIR"/*.dmg
-            FINAL_DMG="$DMG_DIR/Decentraland.dmg"
+            FINAL_DMG="$DMG_DIR/$ORIG_NAME"
             cp "$NEW_DMG_PATH" "$FINAL_DMG"
+
             echo "FINAL_DMG=$FINAL_DMG" | tee -a $GITHUB_ENV
             echo "✅ Replaced Tauri DMG with custom DMG at $FINAL_DMG"
           else
