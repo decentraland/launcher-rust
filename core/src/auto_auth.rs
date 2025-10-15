@@ -92,7 +92,6 @@ impl AutoAuth {
     #[cfg(target_os = "macos")]
     fn obtain_token_internal() -> Result<Option<String>> {
         use anyhow::Context;
-        use std::borrow::ToOwned;
 
         use crate::environment::macos::{dmg_backing_file, dmg_mount_path, where_from_attr};
 
@@ -122,10 +121,21 @@ impl AutoAuth {
             return Err(anyhow!("Dmg does not have where from data"));
         };
 
-        // TODO trim redundant data and purify token
-        let token = where_from.first().map(ToOwned::to_owned);
+        for attr in &where_from {
+            let url = token_from_url(attr);
+            match url {
+                Ok(token) => {
+                    if token.is_some() {
+                        return Ok(token);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Cannot read url '{}' due: {}", attr, e);
+                }
+            }
+        }
 
-        Ok(token)
+        Ok(None)
     }
 }
 
@@ -142,4 +152,36 @@ fn app_bundle_from_exe_path(exe_path: &Path) -> std::io::Result<PathBuf> {
         std::io::ErrorKind::NotFound,
         "App bundle not found",
     ))
+}
+
+#[cfg(target_os = "macos")]
+fn token_from_url(url_str: &str) -> Result<Option<String>> {
+    let url = url::Url::parse(url_str)?;
+    // Split into path segments e.g. "391a85da-a3bb-49e2-a45e-96c740c38424"
+    let mut segments = url
+        .path_segments()
+        .ok_or_else(|| anyhow!("Cannot split url"))?;
+    // Regex for token find
+    let re = regex::Regex::new(
+        r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    )?;
+    Ok(segments.find(|s| re.is_match(s)).map(ToString::to_string))
+}
+
+#[cfg(target_os = "macos")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(
+        "https://test-download.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
+        "391a85da-a3bb-49e2-a45e-96c740c38424"
+    )]
+    fn test_token_from_url(#[case] url: &str, #[case] expected_token: &str) -> Result<()> {
+        let token = token_from_url(url)?.ok_or_else(|| anyhow!("Empty url"))?;
+        assert_eq!(expected_token, token.as_str());
+        Ok(())
+    }
 }
