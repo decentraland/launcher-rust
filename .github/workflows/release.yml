@@ -290,24 +290,35 @@ jobs:
           [[ -d "$APP_PATH" ]] || { echo "❌ .app not found"; exit 1; }
           [[ -f "$DMG_BACKGROUND" ]] || { echo "⚠️ Missing background: $DMG_BACKGROUND"; }
 
-          # --- Ensure create-dmg is available ---
-          npm i -g create-dmg
+          # --- Ensure shell create-dmg is available ---
+          brew update
+          brew install create-dmg
+
+          # --- Prepare unique staging folder ---
+          mkdir -p "$OUTDIR"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          STAGE="$OUTDIR/dmg-src-$TIMESTAMP"
+          mkdir -p "$STAGE"
+          echo "Using staging folder: $STAGE"
+
+          # Copy only the .app into the staging folder
+          cp -R "$APP_PATH" "$STAGE/${APP_NAME}.app"
 
           # --- Build custom DMG ---
-          mkdir -p "$OUTDIR"
+          DMG_NAME="${APP_NAME}-custom.dmg"
           create-dmg \
-            "$APP_PATH" \
-            "$OUTDIR" \
             --volname "Decentraland Installer" \
             --background "$DMG_BACKGROUND" \
             --window-pos 200 120 \
             --window-size 600 520 \
-            --icon-size=120 \
+            --icon-size 120 \
             --icon "${APP_NAME}.app" 300 230 \
-            --no-internet-enable
+            --no-internet-enable \
+            --format ULFO \
+            "$OUTDIR/$DMG_NAME" \
+            "$STAGE"
 
-          ls "$OUTDIR"
-          NEW_DMG_PATH=$(ls -1 "$OUTDIR"/*.dmg | head -n1)
+          NEW_DMG_PATH="$OUTDIR/$DMG_NAME"
           echo "NEW_DMG_PATH=$NEW_DMG_PATH" | tee -a "$GITHUB_ENV"
           [[ -f "$NEW_DMG_PATH" ]] || { echo "❌ Custom DMG not created"; exit 1; }
 
