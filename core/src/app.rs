@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
+use crate::auto_auth::AutoAuth;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
 use crate::instances::RunningInstances;
@@ -43,6 +44,10 @@ impl AppState {
             analytics.clone(),
             running_instances.clone(),
         )));
+
+        AutoAuth::try_obtain_auth_token();
+        #[cfg(target_os = "macos")]
+        AutoAuth::try_install_to_app_dir_if_from_dmg();
 
         let flow = LaunchFlow::new(
             installs_hub,
