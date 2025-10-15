@@ -41,6 +41,7 @@ impl AutoAuth {
         }
     }
 
+    #[cfg(target_os = "macos")]
     fn install_to_app_dir_if_from_dmg() -> Result<()> {
         let from_dmg = crate::environment::macos::is_running_from_dmg()?;
 
