@@ -43,8 +43,7 @@ impl AutoAuth {
         log::info!("Auto install attempt begin");
         if let Err(e) = Self::install_to_app_dir_if_from_dmg() {
             log::error!("Cannot auto install from dmg: {}", e);
-        }
-        else {
+        } else {
             log::info!("Auto install attempt complete");
         }
     }
