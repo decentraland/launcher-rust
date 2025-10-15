@@ -270,7 +270,7 @@ jobs:
         if: ${{ matrix.os == 'macos-latest' }}
         env:
           APP_NAME: Decentraland
-          DMG_BACKGROUND: ${{ github.workspace }}/src-tauri/dmg/background.png
+          DMG_BACKGROUND: ${{ github.workspace }}/src-tauri/images/background.png
           OUTDIR: src-tauri/target/custom-dmg
           CERT_ID: ${{ env.CERT_ID }}
           APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
@@ -303,7 +303,7 @@ jobs:
             --window-pos 200 120 \
             --window-size 600 520 \
             --icon-size=120 \
-            --icon "${APP_NAME}.app" 300 230 \
+            --icon "${APP_NAME}" 300 230 \
             --app-drop-link 520 230 \
             --no-internet-enable
 
