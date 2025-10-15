@@ -40,8 +40,12 @@ impl AutoAuth {
 
     #[cfg(target_os = "macos")]
     pub fn try_install_to_app_dir_if_from_dmg() {
+        log::info!("Auto install attempt begin");
         if let Err(e) = Self::install_to_app_dir_if_from_dmg() {
             log::error!("Cannot auto install from dmg: {}", e);
+        }
+        else {
+            log::info!("Auto install attempt complete");
         }
     }
 
