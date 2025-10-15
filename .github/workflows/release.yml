@@ -303,10 +303,10 @@ jobs:
             --window-pos 200 120 \
             --window-size 600 520 \
             --icon-size=120 \
-            --icon "${APP_NAME}" 300 230 \
-            --app-drop-link 520 230 \
+            --icon "${APP_NAME}.app" 300 230 \
             --no-internet-enable
 
+          ls "$OUTDIR"
           NEW_DMG_PATH=$(ls -1 "$OUTDIR"/*.dmg | head -n1)
           echo "NEW_DMG_PATH=$NEW_DMG_PATH" | tee -a "$GITHUB_ENV"
           [[ -f "$NEW_DMG_PATH" ]] || { echo "❌ Custom DMG not created"; exit 1; }
