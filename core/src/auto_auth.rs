@@ -13,6 +13,9 @@ impl AutoAuth {
     pub fn try_obtain_auth_token() {
         if AuthTokenStorage::has_token() {
             log::info!("Token already obtained");
+
+            // No need to return on windows, just check if token obtained
+            #[cfg(target_os = "macos")]
             return;
         }
 
