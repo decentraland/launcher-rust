@@ -16,6 +16,7 @@ impl AutoAuth {
             return;
         }
 
+        #[cfg(target_os = "macos")]
         match Self::obtain_token_internal() {
             Ok(token) => {
                 let Some(token) = token else {
@@ -69,16 +70,6 @@ impl AutoAuth {
         let token = where_from.first().map(ToOwned::to_owned);
 
         Ok(token)
-    }
-
-    #[cfg(target_os = "windows")]
-    // For dev only, remove later ====
-    #[allow(clippy::unnecessary_wraps)]
-    #[allow(clippy::missing_const_for_fn)]
-    // ====
-    fn obtain_token_internal() -> Result<Option<String>> {
-        //TODO
-        Err(anyhow!("Not implemented"))
     }
 }
 
