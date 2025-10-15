@@ -10,11 +10,12 @@ const LAUNCHER_ENVIRONMENT: Option<&str> = option_env!("LAUNCHER_ENVIRONMENT");
 
 const ARG_SKIP_ANALYTICS: &str = "skip-analytics";
 const ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE: &str = "force-in-memory-analytics-queue";
-const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
 const ARG_ALWAYS_TRIGGER_UPDATER: &str = "always-trigger-updater";
 const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
 const ARG_USE_UPDATER_URL: &str = "use-updater-url";
-const ARG_LOCAL_SCENE: &str = "local-scene";
+
+pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
+pub const ARG_LOCAL_SCENE: &str = "local-scene";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
