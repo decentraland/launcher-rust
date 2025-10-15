@@ -249,6 +249,8 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
 
 fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
     AutoAuth::try_obtain_auth_token();
+    #[cfg(target_os = "macos")]
+    AutoAuth::try_install_to_app_dir_if_from_dmg();
 
     let app_state = tauri::async_runtime::block_on(AppState::setup())
         .inspect_err(|e| error!("Error during setup: {:#}", e))?;

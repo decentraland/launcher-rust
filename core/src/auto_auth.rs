@@ -1,6 +1,8 @@
 pub mod auth_token_storage;
 
 use anyhow::{Result, anyhow};
+#[cfg(target_os = "macos")]
+use std::path::{Path, PathBuf};
 
 use auth_token_storage::AuthTokenStorage;
 
@@ -33,7 +35,51 @@ impl AutoAuth {
     }
 
     #[cfg(target_os = "macos")]
-    pub fn try_auto_copy_from_dmg() {}
+    pub fn try_install_to_app_dir_if_from_dmg() {
+        if let Err(e) = Self::install_to_app_dir_if_from_dmg() {
+            log::error!("Cannot auto install from dmg: {}", e);
+        }
+    }
+
+    fn install_to_app_dir_if_from_dmg() -> Result<()> {
+        let from_dmg = crate::environment::macos::is_running_from_dmg()?;
+
+        if !from_dmg {
+            log::info!("App is not running from dmg, no copying needed");
+            return Ok(());
+        }
+
+        let exe_path = std::env::current_exe()?;
+        let app_bundle = app_bundle_from_exe_path(&exe_path)?;
+        let app_name = app_bundle
+            .file_name()
+            .ok_or_else(|| anyhow!("Cannot get name from app bundle"))?;
+        let dest_path = PathBuf::from("/Applications").join(app_name);
+
+        if dest_path.exists() {
+            log::info!("App is already in /Applications, skipping copying from dmg");
+            return Ok(());
+        }
+
+        log::info!(
+            "Copying app bundle from {} to {}",
+            app_bundle.display(),
+            dest_path.display()
+        );
+
+        // Use Apple's ditto, safest and signature-preserving
+        let status = std::process::Command::new("ditto")
+            .arg(&app_bundle)
+            .arg(&dest_path)
+            .status()?;
+
+        if !status.success() {
+            return Err(anyhow!("ditto failed to copy the app bundle"));
+        }
+
+        log::info!("Copy successful");
+        Ok(())
+    }
 
     #[cfg(target_os = "macos")]
     fn obtain_token_internal() -> Result<Option<String>> {
@@ -73,4 +119,19 @@ impl AutoAuth {
 
         Ok(token)
     }
+}
+
+#[cfg(target_os = "macos")]
+fn app_bundle_from_exe_path(exe_path: &Path) -> std::io::Result<PathBuf> {
+    let mut path = exe_path.to_path_buf();
+    while let Some(parent) = path.parent() {
+        if parent.extension().is_some_and(|e| e == "app") {
+            return Ok(parent.to_path_buf());
+        }
+        path = parent.to_path_buf();
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "App bundle not found",
+    ))
 }
