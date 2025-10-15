@@ -37,8 +37,10 @@ pub fn dmg_mount_path(exe_path: &Path) -> Result<Option<PathBuf>> {
     let is_readonly = sfs.f_flags & MNT_RDONLY as u32 != 0;
     log::info!("exe mount data, from: {mntfrom}, on: {mnton}, readonly: {is_readonly}");
 
-    if is_readonly && mntfrom.to_lowercase().starts_with("/volumes/") {
-        Ok(Some(mntfrom.into()))
+    let refer_mnt = &mnton;
+
+    if is_readonly && refer_mnt.to_lowercase().starts_with("/volumes/") {
+        Ok(Some(refer_mnt.into()))
     } else {
         Ok(None)
     }
