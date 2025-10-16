@@ -1,3 +1,5 @@
+pub mod macos;
+
 use log::info;
 
 use crate::config;

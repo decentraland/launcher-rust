@@ -22,6 +22,7 @@
 
 pub mod analytics;
 pub mod app;
+pub mod auto_auth;
 pub mod channel;
 mod config;
 mod deeplink_bridge;
@@ -30,7 +31,7 @@ pub mod errors;
 pub mod flow;
 pub mod installs;
 pub mod instances;
-mod logs;
+pub mod logs;
 mod monitoring;
 mod processes;
 pub mod protocols;
@@ -38,4 +39,5 @@ pub mod s3;
 pub mod types;
 pub mod utils;
 
+pub use anyhow;
 pub use log;

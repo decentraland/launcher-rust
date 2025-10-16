@@ -1,0 +1,19 @@
+[package]
+name = "src-auto-auth"
+version = "1.11.2"
+edition = "2024"
+
+[profile.dev]
+overflow-checks = true
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+overflow-checks = true
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = "symbols" # Ensures debug symbols are removed.
+
+[dependencies.dcl-launcher-core]
+path = "../core"

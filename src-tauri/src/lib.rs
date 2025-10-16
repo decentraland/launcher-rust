@@ -147,7 +147,23 @@ async fn update_if_needed_and_restart(
     app: &AppHandle,
     app_state: &AppState,
     channel: &StatusChannel,
-) -> tauri_plugin_updater::Result<()> {
+) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    match dcl_launcher_core::environment::macos::is_running_from_dmg() {
+        Ok(from_dmg) => {
+            if from_dmg {
+                info!("App is running from dmg, skipping update since mount is read-only");
+                return Ok(());
+            }
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Cannot define if dmg or not, skipping update: {}",
+                e
+            ));
+        }
+    }
+
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
         let mut downloaded: usize = 0;
