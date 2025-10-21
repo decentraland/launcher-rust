@@ -171,7 +171,7 @@ mod tests {
 
     #[rstest]
     #[case(
-        "https://test-download.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
+        "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
         "391a85da-a3bb-49e2-a45e-96c740c38424"
     )]
     fn test_token_from_url(#[case] url: &str, #[case] expected_token: &str) -> Result<()> {
