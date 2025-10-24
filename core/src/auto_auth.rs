@@ -110,7 +110,11 @@ impl AutoAuth {
         let where_from = where_from_attr(dmg_file_path.as_path())
             .with_context(|| "Cannot read where from attr: {dmg_file_path}")?;
 
-        log::info!("Where from attr: {:?} for path: {}", where_from, dmg_file_path.display());
+        log::info!(
+            "Where from attr: {:?} for path: {}",
+            where_from,
+            dmg_file_path.display()
+        );
 
         let Some(where_from) = where_from else {
             return Err(anyhow!("Dmg does not have where from data"));
