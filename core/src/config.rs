@@ -52,9 +52,9 @@ pub fn user_id_or_none() -> String {
 }
 
 pub fn arguments_from_key(key: &str) -> Vec<String> {
-    let config = config_content().ok();
+    let config = config_content();
     match config {
-        Some(config) => {
+        Ok(config) => {
             if let Some(raw) = config.get(key) {
                 let raw = raw.as_str();
                 match raw {
@@ -65,7 +65,10 @@ pub fn arguments_from_key(key: &str) -> Vec<String> {
                 Vec::new()
             }
         }
-        None => Vec::new(),
+        Err(e) => {
+            log::error!("Error on reading config content: {}", e);
+            Vec::new()
+        }
     }
 }
 
