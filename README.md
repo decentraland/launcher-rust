@@ -50,11 +50,20 @@ npm install
 npm run tauri dev
 ```
 
+## Building the Project
+
+1. Ensure your rust version is 1.88.0 (it has not been tested with versions above, CI uses the specified version)
+2. Ensure you have TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD env variables (for more information refer to https://v2.tauri.app/plugin/updater/#building)
+3. Ensure you have VITE_AWS_S3_BUCKET_PUBLIC_URL env var
+4. Execute in the root dir: npm i
+5. Execute tauri build: npm run tauri build
+
 ## Development Guidelines
 
 - Use `npm run format` for formatting and linting in both Rust and JavaScript.
 - Follow Conventional Commits: `feat:`, `fix:`, `chore:`
 - Keep frontend TypeScript enum in sync with Rust `enum` for proper communication.
+
 
 ### Logs
 
