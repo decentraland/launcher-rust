@@ -515,7 +515,11 @@ impl InstallsHub {
         fs::metadata(&explorer_launch_path).context("Failed to access explorer binary")?;
 
         // Prepare explorer parameters
+        #[cfg(target_os = "macos")]
         let mut explorer_params = self.explorer_params(deeplink).await;
+        #[cfg(target_os = "windows")]
+        let explorer_params = self.explorer_params(deeplink).await;
+
         log::info!(
             "Opening Explorer at {} with params: {:?}",
             explorer_launch_path.display(),

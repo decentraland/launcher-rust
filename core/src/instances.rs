@@ -1,9 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::Entry;
 use std::{
     collections::HashMap,
-    ffi::OsStr,
     fs::File,
     path::{Path, PathBuf},
 };
@@ -40,6 +38,9 @@ impl RunningInstances {
 
     #[cfg(target_os = "macos")]
     pub fn register_new_opened_instance_by_name(&self, process_name: &str) {
+        use std::collections::hash_map::Entry;
+        use std::ffi::OsStr;
+
         let system = sysinfo::System::new_all();
         let exact_name = OsStr::new(process_name);
         let mut content: Storage = Self::file_content(self.path.as_path());
