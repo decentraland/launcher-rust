@@ -19,6 +19,9 @@ use std::sync::Arc;
 use std::{fs, fs::create_dir_all};
 use tokio::sync::Mutex;
 
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::PermissionsExt;
+
 #[cfg(windows)]
 use std::os::windows::process::ExitStatusExt;
 #[cfg(windows)]
@@ -358,9 +361,19 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     #[cfg(target_os = "macos")]
     {
+        const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
+
         let from = &branch_path.join("build");
         let to = &branch_path;
         move_recursive(from, to).context("Cannot move build folder")?;
+
+        let explorer_bin_path = branch_path.join(EXPLORER_MAC_BIN_PATH);
+        if explorer_bin_path.exists() {
+            let metadata = fs::metadata(&explorer_bin_path)?;
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(explorer_bin_path, permissions)?;
+        }
     }
 
     let mut version_data = get_version_data_or_empty();
