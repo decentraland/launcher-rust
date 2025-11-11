@@ -1,7 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::Entry;
 use std::{
     collections::HashMap,
+    ffi::OsStr,
     fs::File,
     path::{Path, PathBuf},
 };
@@ -19,6 +21,7 @@ struct Storage {
 }
 
 impl RunningInstances {
+    #[cfg(target_os = "windows")]
     pub fn register_instance(&self, pid_raw: u32) {
         let system = sysinfo::System::new_all();
         let pid = Pid::from_u32(pid_raw);
@@ -31,6 +34,39 @@ impl RunningInstances {
         log::info!("Process run with id: {} and name {}", pid_raw, name);
 
         if let Err(e) = self.write_to_json_file(pid_raw, name) {
+            log::error!("Cannot register running instance: {:#?}", e);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn register_new_opened_instance_by_name(&self, process_name: &str) {
+        let system = sysinfo::System::new_all();
+        let exact_name = OsStr::new(process_name);
+        let mut content: Storage = Self::file_content(self.path.as_path());
+        let initial_count = content.processes.len();
+
+        for candidate in system.processes_by_exact_name(exact_name) {
+            let raw_pid = candidate.pid().as_u32();
+
+            if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
+                let name = candidate
+                    .name()
+                    .to_str()
+                    .unwrap_or("cannot parse os string");
+                e.insert(name.to_owned());
+                log::info!(
+                    "Registered process run with id: {} and name {}",
+                    raw_pid,
+                    name
+                );
+            }
+        }
+
+        if initial_count == content.processes.len() {
+            log::error!(
+                "No new running instances were found. Likely instance is crashed or closed if it has been launched recently"
+            );
+        } else if let Err(e) = Self::write_content(&self.path, &content) {
             log::error!("Cannot register running instance: {:#?}", e);
         }
     }
@@ -101,6 +137,7 @@ impl RunningInstances {
         Ok(())
     }
 
+    #[cfg(target_os = "windows")]
     fn write_to_json_file(&self, pid: u32, name: &str) -> Result<()> {
         let path = self.path.as_path();
         let mut content: Storage = Self::file_content(path);
