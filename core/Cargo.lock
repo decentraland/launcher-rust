@@ -261,7 +261,7 @@ dependencies = [
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.12.1"
+version = "1.12.2"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",

@@ -12,21 +12,24 @@ use serde_json::{Map, Value};
 use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::Display;
+use std::path::Path;
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 use std::{fs, fs::create_dir_all};
 use tokio::sync::Mutex;
 
 #[cfg(target_os = "macos")]
 use std::os::unix::fs::PermissionsExt;
 
-#[cfg(target_os = "macos")]
-use std::os::unix::process::ExitStatusExt;
 #[cfg(windows)]
 use std::os::windows::process::ExitStatusExt;
+#[cfg(windows)]
+use std::process::ExitStatus;
+#[cfg(windows)]
+use std::thread;
+#[cfg(windows)]
+use std::time::Duration;
 
 pub mod compression;
 pub mod downloads;
@@ -35,7 +38,7 @@ const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 
 #[cfg(target_os = "macos")]
-const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
+const EXPLORER_MAC_APP_PATH: &str = "Decentraland.app";
 
 #[cfg(target_os = "windows")]
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
@@ -155,24 +158,22 @@ fn get_version_data_or_empty() -> Map<String, Value> {
     })
 }
 
-#[cfg(target_os = "macos")]
-fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
+fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
         Some("dev") => explorer_dev_version_path(),
         Some(v) => explorer_path().join(v),
         None => explorer_latest_version_path()?,
     };
-    Ok(base_path.join(EXPLORER_MAC_BIN_PATH))
-}
 
-#[cfg(target_os = "windows")]
-fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
-    let base_path = match version {
-        Some("dev") => explorer_dev_version_path(),
-        Some(v) => explorer_path().join(v),
-        None => explorer_latest_version_path()?,
-    };
-    Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
+    #[cfg(target_os = "macos")]
+    {
+        Ok(base_path.join(EXPLORER_MAC_APP_PATH))
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -329,7 +330,7 @@ fn is_app_updated(version: &str) -> bool {
 }
 
 pub fn is_explorer_installed(version: Option<&str>) -> bool {
-    let path = get_explorer_bin_path(version);
+    let path = get_explorer_launch_path(version);
     match path {
         Ok(path) => path.exists(),
         Err(_) => false,
@@ -360,9 +361,10 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     #[cfg(target_os = "macos")]
     {
+        const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
+
         let from = &branch_path.join("build");
         let to = &branch_path;
-
         move_recursive(from, to).context("Cannot move build folder")?;
 
         let explorer_bin_path = branch_path.join(EXPLORER_MAC_BIN_PATH);
@@ -502,39 +504,116 @@ impl InstallsHub {
         deeplink: Option<DeepLink>,
         preferred_version: Option<&str>,
     ) -> Result<()> {
-        const WAIT_TIMEOUT: Duration = Duration::from_secs(3);
-        const CHECK_INTERVAL: Duration = Duration::from_millis(100);
-
         log::info!("Launching Explorer...");
 
-        let explorer_bin_path = get_explorer_bin_path(preferred_version)?;
-        let explorer_bin_dir = explorer_bin_path
+        // macOS uses .app instaed of launching direct binary
+        let explorer_launch_path = get_explorer_launch_path(preferred_version)?;
+
+        let explorer_launch_dir = explorer_launch_path
             .parent()
             .ok_or_else(|| anyhow!("Failed to get explorer binary directory"))?;
 
-        if !explorer_bin_path.exists() {
+        if !explorer_launch_path.exists() {
             let error_message = match preferred_version {
                 Some(ver) => format!("The explorer version specified ({}) is not installed.", ver),
                 None => "The explorer is not installed.".to_string(),
             };
-            log::error!("{}, {}", error_message, explorer_bin_path.display());
+            log::error!("{}, {}", error_message, explorer_launch_path.display());
             return Err(anyhow!(error_message));
         }
 
-        // Ensure binary is executable
-        fs::metadata(&explorer_bin_path).context("Failed to access explorer binary")?;
+        // Ensure binary is executable, windows only, macOS doesn't use direct launch due
+        // the permissions issue
+        #[cfg(windows)]
+        fs::metadata(&explorer_launch_path).context("Failed to access explorer binary")?;
 
         // Prepare explorer parameters
+        #[cfg(target_os = "macos")]
+        let mut explorer_params = self.explorer_params(deeplink).await;
+        #[cfg(target_os = "windows")]
         let explorer_params = self.explorer_params(deeplink).await;
+
         log::info!(
             "Opening Explorer at {} with params: {:?}",
-            explorer_bin_path.display(),
+            explorer_launch_path.display(),
             explorer_params
         );
 
-        let mut child = Command::new(&explorer_bin_path)
-            .current_dir(explorer_bin_dir)
-            .args(&explorer_params)
+        #[cfg(target_os = "macos")]
+        {
+            let mut macos_params: Vec<String> = vec![
+                "-n".to_owned(),
+                explorer_launch_path.to_string_lossy().to_string(),
+                "--args".to_owned(),
+            ];
+
+            macos_params.append(&mut explorer_params);
+            Self::launch_command("open", explorer_launch_dir, &macos_params)?;
+        }
+
+        #[cfg(target_os = "windows")]
+        let mut child =
+            Self::launch_command(&explorer_launch_path, explorer_launch_dir, &explorer_params)?;
+
+        {
+            let guard = self.running_instances.lock().await;
+
+            #[cfg(target_os = "windows")]
+            {
+                guard.register_instance(child.id());
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                // Default name of the Explorer client, won't conflict on macOS like it could on
+                // Windows with the default explorer.exe
+                const NAME: &str = "Explorer";
+                guard.register_new_opened_instance_by_name(NAME);
+            }
+        }
+
+        // Check is not applyable on macOS due the indirect launch via the open command
+        #[cfg(target_os = "windows")]
+        {
+            const WAIT_TIMEOUT: Duration = Duration::from_secs(3);
+            const CHECK_INTERVAL: Duration = Duration::from_millis(100);
+
+            let graceful_exit_code: ExitStatus = std::process::ExitStatus::from_raw(0);
+            let still_active_exit_code: ExitStatus = std::process::ExitStatus::from_raw(259);
+
+            // it's clear that CHECK_INTERVAL is never 0 by the const value
+            #[allow(clippy::arithmetic_side_effects)]
+            for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
+                if let Some(exit_status) = child.try_wait()? {
+                    if exit_status == graceful_exit_code {
+                        return Ok(());
+                    }
+
+                    if exit_status == still_active_exit_code {
+                        break;
+                    }
+
+                    return Err(anyhow!(
+                        "Child process died shorly after launch with code: {}",
+                        exit_status
+                    ));
+                }
+
+                thread::sleep(CHECK_INTERVAL);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn launch_command<S: AsRef<std::ffi::OsStr> + std::fmt::Debug>(
+        command: S,
+        dir: &Path,
+        args: &[String],
+    ) -> Result<std::process::Child> {
+        Command::new(&command)
+            .current_dir(dir)
+            .args(args.iter())
             .detached()
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -542,49 +621,11 @@ impl InstallsHub {
             .map_err(|e| anyhow!("Failed to start explorer process: {}", e))
             .with_context(|| {
                 format!(
-                    "Dir: {}, Bin: {} Args: {:?}",
-                    explorer_bin_dir.display(),
-                    explorer_bin_path.display(),
-                    explorer_params
+                    "Dir: {}, Launch: {:?}, Args: {:?}",
+                    dir.display(),
+                    command,
+                    args
                 )
-            })?;
-
-        {
-            let guard = self.running_instances.lock().await;
-            guard.register_instance(child.id());
-        }
-
-        #[cfg(windows)]
-        let graceful_exit_code: ExitStatus = std::process::ExitStatus::from_raw(0);
-
-        #[cfg(unix)]
-        let graceful_exit_code: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
-
-        #[cfg(windows)]
-        let still_active_exit_code: ExitStatus = std::process::ExitStatus::from_raw(259);
-
-        // it's clear that CHECK_INTERVAL is never 0 by the const value
-        #[allow(clippy::arithmetic_side_effects)]
-        for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
-            if let Some(exit_status) = child.try_wait()? {
-                if exit_status == graceful_exit_code {
-                    return Ok(());
-                }
-
-                #[cfg(windows)]
-                if exit_status == still_active_exit_code {
-                    break;
-                }
-
-                return Err(anyhow!(
-                    "Child process died shorly after launch with code: {}",
-                    exit_status
-                ));
-            }
-
-            thread::sleep(CHECK_INTERVAL);
-        }
-
-        Ok(())
+            })
     }
 }
