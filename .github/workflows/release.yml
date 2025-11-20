@@ -291,8 +291,9 @@ jobs:
           [[ -f "$DMG_BACKGROUND" ]] || { echo "⚠️ Missing background: $DMG_BACKGROUND"; }
 
           # --- Ensure shell create-dmg is available ---
-          brew update
-          brew install create-dmg
+          if ! command -v create-dmg >/dev/null; then
+            brew install create-dmg
+          fi
 
           # --- Prepare unique staging folder ---
           mkdir -p "$OUTDIR"
@@ -389,10 +390,11 @@ jobs:
             exit 1
           fi
 
-          echo "$RELEASE" | jq '.'
+          RELEASE_JSON="$RELEASE"
+          echo "$RELEASE_JSON" | jq '.'
 
-          RELEASE_ID=$(echo "$RELEASE" | jq -r '.id')
-          UPLOAD_URL=$(echo "$RELEASE" | jq -r '.upload_url' | sed 's/{?name,label}//')
+          RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url' | sed 's/{?name,label}//')
 
           echo ""
           echo "Release ID:  $RELEASE_ID"
@@ -403,12 +405,18 @@ jobs:
           echo " Selecting DMG assets (*.dmg)"
           echo "================================================="
 
-          DMG_ASSET=$(echo "$RELEASE" | jq '.assets[] | select(.name | endswith(".dmg"))')
+          # Count how many DMGs exist (must be exactly 1)
+          DMG_COUNT=$(echo "$RELEASE_JSON" \
+            | jq '[.assets[] | select(.name | endswith(".dmg"))] | length')
 
-          if [[ -z "$DMG_ASSET" ]]; then
-            echo "No .dmg assets found in this draft release."
+          if [[ "$DMG_COUNT" -ne 1 ]]; then
+            echo "Unexpected number of DMG assets: $DMG_COUNT"
             exit 1
           fi
+
+          # Extract the only .dmg asset
+          DMG_ASSET=$(echo "$RELEASE_JSON" \
+            | jq '.assets[] | select(.name | endswith(".dmg"))')
 
           echo "$DMG_ASSET" | jq '.'
 
@@ -424,20 +432,6 @@ jobs:
           echo ""
 
           echo "================================================="
-          echo " Downloading original DMG for backup"
-          echo "================================================="
-
-          BACKUP_FILE="backup-${ORIGINAL_DMG_NAME}"
-
-          curl -L \
-            -H "Authorization: token $GH_TOKEN" \
-            -o "$BACKUP_FILE" \
-            "$ORIGINAL_DMG_URL"
-
-          echo "Backup saved as: $BACKUP_FILE"
-          echo ""
-
-          echo "================================================="
           echo " Deleting original DMG from release"
           echo "================================================="
 
@@ -449,7 +443,7 @@ jobs:
           echo ""
 
           echo "================================================="
-          echo " Uploading backup DMG back to the draft release"
+          echo " Uploading custom DMG to the draft release"
           echo "================================================="
 
           gh api \
