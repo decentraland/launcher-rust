@@ -359,6 +359,56 @@ jobs:
           echo "FINAL_DMG=$FINAL_DMG" | tee -a "$GITHUB_ENV"
           echo "✅ Replaced Tauri DMG with custom DMG at $FINAL_DMG (kept original filename)"
 
+      - name: TEMP TEST Inspect releases & select test release
+        if: ${{ matrix.os == 'macos-latest' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          echo "=============================================="
+          echo " 🔍 LISTING ALL RELEASES"
+          echo "=============================================="
+          gh api repos/${{ github.repository }}/releases --jq '.[] | {id, tag_name, name, draft, prerelease, created_at}'
+
+          echo ""
+          echo "=============================================="
+          echo " 🔍 IDENTIFYING LATEST DRAFT RELEASE"
+          echo "=============================================="
+          LATEST_DRAFT=$(gh api repos/${{ github.repository }}/releases --jq 'sort_by(.created_at) | reverse | map(select(.draft==true))[0]')
+          echo "Latest draft release:"
+          echo "$LATEST_DRAFT" | jq '.'
+
+          echo ""
+          echo "=============================================="
+          echo " 📌 OVERRIDING FOR TESTING PURPOSES"
+          echo " Using FIXED release: untagged-1370eb5bd22a591d5faa (v1.12.3)"
+          echo "=============================================="
+
+          # This is your known release for testing
+          TEST_TAG="untagged-1370eb5bd22a591d5faa"
+
+          TEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/tags/$TEST_TAG)
+          echo "Selected test release:"
+          echo "$TEST_RELEASE" | jq '.'
+
+          TEST_UPLOAD_URL=$(echo "$TEST_RELEASE" | jq -r '.upload_url' | sed 's/{?name,label}//')
+          TEST_RELEASE_ID=$(echo "$TEST_RELEASE" | jq -r '.id')
+
+          echo ""
+          echo "=============================================="
+          echo " Test Release Details"
+          echo "=============================================="
+          echo "ID:  $TEST_RELEASE_ID"
+          echo "TAG: $TEST_TAG"
+          echo "URL: $TEST_UPLOAD_URL"
+
+          echo ""
+          echo "=============================================="
+          echo " Listing assets in test release"
+          echo "=============================================="
+          echo "$TEST_RELEASE" | jq '.assets[] | {id, name, size}'
+
       - name: Verify Windows signature
         if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         run: |
