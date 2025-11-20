@@ -371,79 +371,71 @@ jobs:
           TAG_TO_USE="app-v1.12.3"
 
           echo "================================================="
-          echo " Listing all releases"
+          echo " Listing releases (compact view)"
           echo "================================================="
-
           ALL_RELEASES=$(gh api repos/decentraland/launcher-rust/releases)
-          echo "$ALL_RELEASES" | jq '.[] | {id, tag_name, draft, created_at}'
+          echo "$ALL_RELEASES" | jq -r '.[] | "\(.id)  \(.tag_name)  draft=\(.draft)  created=\(.created_at)"'
 
           echo ""
           echo "================================================="
-          echo " Selecting draft release with tag_name: ${TAG_TO_USE}"
+          echo " Selecting draft release: ${TAG_TO_USE}"
           echo "================================================="
 
           RELEASE=$(echo "$ALL_RELEASES" \
             | jq --arg TAG "$TAG_TO_USE" '.[] | select(.draft == true and .tag_name == $TAG)')
 
           if [[ -z "$RELEASE" ]]; then
-            echo "Draft release with tag_name $TAG_TO_USE not found."
+            echo "Release not found: $TAG_TO_USE"
             exit 1
           fi
 
           RELEASE_JSON="$RELEASE"
-          echo "$RELEASE_JSON" | jq '.'
 
           RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
           UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url' | sed 's/{?name,label}//')
 
-          echo ""
-          echo "Release ID:  $RELEASE_ID"
-          echo "Upload URL:  $UPLOAD_URL"
+          echo "Using release ID:  $RELEASE_ID"
+          echo "Upload URL:        $UPLOAD_URL"
           echo ""
 
           echo "================================================="
-          echo " Selecting DMG assets (*.dmg)"
+          echo " Locating DMG asset"
           echo "================================================="
 
-          # Count how many DMGs exist (must be exactly 1)
+          # Ensure exactly one DMG exists
           DMG_COUNT=$(echo "$RELEASE_JSON" \
             | jq '[.assets[] | select(.name | endswith(".dmg"))] | length')
 
           if [[ "$DMG_COUNT" -ne 1 ]]; then
-            echo "Unexpected number of DMG assets: $DMG_COUNT"
+            echo "Unexpected DMG count: $DMG_COUNT"
             exit 1
           fi
 
-          # Extract the only .dmg asset
           DMG_ASSET=$(echo "$RELEASE_JSON" \
             | jq '.assets[] | select(.name | endswith(".dmg"))')
-
-          echo "$DMG_ASSET" | jq '.'
 
           ORIGINAL_DMG_NAME=$(echo "$DMG_ASSET" | jq -r '.name')
           ORIGINAL_DMG_ID=$(echo "$DMG_ASSET" | jq -r '.id')
           ORIGINAL_DMG_URL=$(echo "$DMG_ASSET" | jq -r '.browser_download_url')
 
-          echo ""
-          echo "DMG asset selected:"
+          echo "DMG asset:"
           echo "  Name: $ORIGINAL_DMG_NAME"
           echo "  ID:   $ORIGINAL_DMG_ID"
-          echo "  URL:  $ORIGINAL_DMG_URL"
           echo ""
 
           echo "================================================="
-          echo " Deleting original DMG from release"
+          echo " Deleting DMG from release"
           echo "================================================="
 
           gh api \
             --method DELETE \
             "repos/decentraland/launcher-rust/releases/assets/${ORIGINAL_DMG_ID}"
 
-          echo "Deleted original: ${ORIGINAL_DMG_NAME}"
+          echo "Deleted: ${ORIGINAL_DMG_NAME}"
           echo ""
 
           echo "================================================="
-          echo " Uploading custom DMG to the draft release"
+          echo " Uploading new DMG"
           echo "================================================="
 
           gh api \
