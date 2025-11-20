@@ -455,7 +455,7 @@ jobs:
           gh api \
             --method POST \
             -H "Content-Type: application/octet-stream" \
-            --input "$BACKUP_FILE" \
+            --input "$FINAL_DMG" \
             "${UPLOAD_URL}?name=${ORIGINAL_DMG_NAME}"
 
           echo "Upload complete: ${ORIGINAL_DMG_NAME}"
