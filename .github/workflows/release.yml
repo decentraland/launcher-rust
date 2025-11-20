@@ -376,7 +376,7 @@ jobs:
           echo "$ALL_RELEASES" \
             | jq -r '.[] | select(.draft == true) | "\(.id)  \(.tag_name)  draft=\(.draft)  created=\(.created_at)"'
 
-          printf "\n=================================================\n"
+          printf " \n=================================================\n"
           echo " Selecting draft release: ${TAG_TO_USE}"
 
           RELEASE=$(echo "$ALL_RELEASES" \
@@ -394,7 +394,7 @@ jobs:
 
           echo "Using release ID:  $RELEASE_ID"
           echo "Upload URL:        $UPLOAD_URL"
-          printf "\n=================================================\n"
+          printf " \n=================================================\n"
           echo " Locating DMG asset"
 
           # Ensure exactly one DMG exists
@@ -416,7 +416,7 @@ jobs:
           echo "DMG asset:"
           echo "  Name: $ORIGINAL_DMG_NAME"
           echo "  ID:   $ORIGINAL_DMG_ID"
-          printf "\n=================================================\n"
+          printf " \n=================================================\n"
           echo " Deleting DMG from release"
 
           gh api \
@@ -424,7 +424,7 @@ jobs:
             "repos/decentraland/launcher-rust/releases/assets/${ORIGINAL_DMG_ID}"
 
           echo "Deleted: ${ORIGINAL_DMG_NAME}"
-          printf "\n=================================================\n"
+          printf " \n=================================================\n"
           echo " Uploading custom DMG"
 
           gh api \
