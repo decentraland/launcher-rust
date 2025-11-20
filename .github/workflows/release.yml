@@ -371,15 +371,19 @@ jobs:
           TAG_TO_USE="app-v1.12.3"
 
           echo "================================================="
-          echo " Listing releases (compact view)"
+          echo " Listing draft releases"
+          ALL_RELEASES=$(gh api --paginate repos/decentraland/launcher-rust/releases)
+          echo "$ALL_RELEASES" \
+            | jq -r '.[] | select(.draft == true) | "\(.id)  \(.tag_name)  draft=\(.draft)  created=\(.created_at)"'
+
+          echo ""
           echo "================================================="
-          ALL_RELEASES=$(gh api repos/decentraland/launcher-rust/releases)
-          echo "$ALL_RELEASES" | jq -r '.[] | "\(.id)  \(.tag_name)  draft=\(.draft)  created=\(.created_at)"'
+          echo "$ALL_RELEASES" \
+            | jq -r '.[] | "\(.id)  \(.tag_name)  draft=\(.draft)  created=\(.created_at)"'
 
           echo ""
           echo "================================================="
           echo " Selecting draft release: ${TAG_TO_USE}"
-          echo "================================================="
 
           RELEASE=$(echo "$ALL_RELEASES" \
             | jq --arg TAG "$TAG_TO_USE" '.[] | select(.draft == true and .tag_name == $TAG)')
@@ -397,10 +401,8 @@ jobs:
           echo "Using release ID:  $RELEASE_ID"
           echo "Upload URL:        $UPLOAD_URL"
           echo ""
-
           echo "================================================="
           echo " Locating DMG asset"
-          echo "================================================="
 
           # Ensure exactly one DMG exists
           DMG_COUNT=$(echo "$RELEASE_JSON" \
@@ -422,10 +424,8 @@ jobs:
           echo "  Name: $ORIGINAL_DMG_NAME"
           echo "  ID:   $ORIGINAL_DMG_ID"
           echo ""
-
           echo "================================================="
           echo " Deleting DMG from release"
-          echo "================================================="
 
           gh api \
             --method DELETE \
@@ -433,10 +433,8 @@ jobs:
 
           echo "Deleted: ${ORIGINAL_DMG_NAME}"
           echo ""
-
           echo "================================================="
-          echo " Uploading new DMG"
-          echo "================================================="
+          echo " Uploading custom DMG"
 
           gh api \
             --method POST \
@@ -444,6 +442,7 @@ jobs:
             --input "$FINAL_DMG" \
             "${UPLOAD_URL}?name=${ORIGINAL_DMG_NAME}"
 
+          echo ""
           echo "Upload complete: ${ORIGINAL_DMG_NAME}"
 
       - name: Verify Windows signature
