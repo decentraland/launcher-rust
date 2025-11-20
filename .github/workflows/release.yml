@@ -366,48 +366,99 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "=============================================="
-          echo " 🔍 LISTING ALL RELEASES"
-          echo "=============================================="
-          gh api repos/${{ github.repository }}/releases --jq '.[] | {id, tag_name, name, draft, prerelease, created_at}'
+          # Draft release to update
+          TAG_TO_USE="app-v1.12.3"
+
+          echo "================================================="
+          echo " Listing all releases"
+          echo "================================================="
+
+          ALL_RELEASES=$(gh api repos/decentraland/launcher-rust/releases)
+          echo "$ALL_RELEASES" | jq '.[] | {id, tag_name, draft, created_at}'
 
           echo ""
-          echo "=============================================="
-          echo " 🔍 IDENTIFYING LATEST DRAFT RELEASE"
-          echo "=============================================="
-          LATEST_DRAFT=$(gh api repos/${{ github.repository }}/releases --jq 'sort_by(.created_at) | reverse | map(select(.draft==true))[0]')
-          echo "Latest draft release:"
-          echo "$LATEST_DRAFT" | jq '.'
+          echo "================================================="
+          echo " Selecting draft release with tag_name: ${TAG_TO_USE}"
+          echo "================================================="
+
+          RELEASE=$(echo "$ALL_RELEASES" \
+            | jq --arg TAG "$TAG_TO_USE" '.[] | select(.draft == true and .tag_name == $TAG)')
+
+          if [[ -z "$RELEASE" ]]; then
+            echo "Draft release with tag_name $TAG_TO_USE not found."
+            exit 1
+          fi
+
+          echo "$RELEASE" | jq '.'
+
+          RELEASE_ID=$(echo "$RELEASE" | jq -r '.id')
+          UPLOAD_URL=$(echo "$RELEASE" | jq -r '.upload_url' | sed 's/{?name,label}//')
 
           echo ""
-          echo "=============================================="
-          echo " 📌 OVERRIDING FOR TESTING PURPOSES"
-          echo " Using FIXED release: untagged-1370eb5bd22a591d5faa (v1.12.3)"
-          echo "=============================================="
+          echo "Release ID:  $RELEASE_ID"
+          echo "Upload URL:  $UPLOAD_URL"
+          echo ""
 
-          # This is your known release for testing
-          TEST_TAG="untagged-1370eb5bd22a591d5faa"
+          echo "================================================="
+          echo " Selecting DMG assets (*.dmg)"
+          echo "================================================="
 
-          TEST_RELEASE=$(gh api repos/${{ github.repository }}/releases/tags/$TEST_TAG)
-          echo "Selected test release:"
-          echo "$TEST_RELEASE" | jq '.'
+          DMG_ASSET=$(echo "$RELEASE" | jq '.assets[] | select(.name | endswith(".dmg"))')
 
-          TEST_UPLOAD_URL=$(echo "$TEST_RELEASE" | jq -r '.upload_url' | sed 's/{?name,label}//')
-          TEST_RELEASE_ID=$(echo "$TEST_RELEASE" | jq -r '.id')
+          if [[ -z "$DMG_ASSET" ]]; then
+            echo "No .dmg assets found in this draft release."
+            exit 1
+          fi
+
+          echo "$DMG_ASSET" | jq '.'
+
+          ORIGINAL_DMG_NAME=$(echo "$DMG_ASSET" | jq -r '.name')
+          ORIGINAL_DMG_ID=$(echo "$DMG_ASSET" | jq -r '.id')
+          ORIGINAL_DMG_URL=$(echo "$DMG_ASSET" | jq -r '.browser_download_url')
 
           echo ""
-          echo "=============================================="
-          echo " Test Release Details"
-          echo "=============================================="
-          echo "ID:  $TEST_RELEASE_ID"
-          echo "TAG: $TEST_TAG"
-          echo "URL: $TEST_UPLOAD_URL"
-
+          echo "DMG asset selected:"
+          echo "  Name: $ORIGINAL_DMG_NAME"
+          echo "  ID:   $ORIGINAL_DMG_ID"
+          echo "  URL:  $ORIGINAL_DMG_URL"
           echo ""
-          echo "=============================================="
-          echo " Listing assets in test release"
-          echo "=============================================="
-          echo "$TEST_RELEASE" | jq '.assets[] | {id, name, size}'
+
+          echo "================================================="
+          echo " Downloading original DMG for backup"
+          echo "================================================="
+
+          BACKUP_FILE="backup-${ORIGINAL_DMG_NAME}"
+
+          curl -L \
+            -H "Authorization: token $GH_TOKEN" \
+            -o "$BACKUP_FILE" \
+            "$ORIGINAL_DMG_URL"
+
+          echo "Backup saved as: $BACKUP_FILE"
+          echo ""
+
+          echo "================================================="
+          echo " Deleting original DMG from release"
+          echo "================================================="
+
+          gh api \
+            --method DELETE \
+            "repos/decentraland/launcher-rust/releases/assets/${ORIGINAL_DMG_ID}"
+
+          echo "Deleted original: ${ORIGINAL_DMG_NAME}"
+          echo ""
+
+          echo "================================================="
+          echo " Uploading backup DMG back to the draft release"
+          echo "================================================="
+
+          gh api \
+            --method POST \
+            -H "Content-Type: application/octet-stream" \
+            --input "$BACKUP_FILE" \
+            "${UPLOAD_URL}?name=${ORIGINAL_DMG_NAME}"
+
+          echo "Upload complete: ${ORIGINAL_DMG_NAME}"
 
       - name: Verify Windows signature
         if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
