@@ -375,44 +375,36 @@ jobs:
           ALL_RELEASES=$(gh api --paginate repos/decentraland/launcher-rust/releases)
           echo "$ALL_RELEASES" \
             | jq -r '.[] | select(.draft == true) | "\(.id)  \(.tag_name)  draft=\(.draft)  created=\(.created_at)"'
-
           printf " \n=================================================\n"
           echo " Selecting draft release: ${TAG_TO_USE}"
-
           RELEASE=$(echo "$ALL_RELEASES" \
             | jq --arg TAG "$TAG_TO_USE" '.[] | select(.draft == true and .tag_name == $TAG)')
 
           if [[ -z "$RELEASE" ]]; then
-            echo "Release not found: $TAG_TO_USE"
+            echo "❌ Release not found: $TAG_TO_USE"
             exit 1
           fi
 
           RELEASE_JSON="$RELEASE"
-
           RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
           UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url' | sed 's/{?name,label}//')
-
           echo "Using release ID:  $RELEASE_ID"
           echo "Upload URL:        $UPLOAD_URL"
           printf " \n=================================================\n"
           echo " Locating DMG asset"
-
           # Ensure exactly one DMG exists
           DMG_COUNT=$(echo "$RELEASE_JSON" \
             | jq '[.assets[] | select(.name | endswith(".dmg"))] | length')
 
           if [[ "$DMG_COUNT" -ne 1 ]]; then
-            echo "Unexpected DMG count: $DMG_COUNT"
+            echo "❌ Unexpected DMG count: $DMG_COUNT"
             exit 1
           fi
 
-          DMG_ASSET=$(echo "$RELEASE_JSON" \
-            | jq '.assets[] | select(.name | endswith(".dmg"))')
-
+          DMG_ASSET=$(echo "$RELEASE_JSON" | jq '.assets[] | select(.name | endswith(".dmg"))')
           ORIGINAL_DMG_NAME=$(echo "$DMG_ASSET" | jq -r '.name')
           ORIGINAL_DMG_ID=$(echo "$DMG_ASSET" | jq -r '.id')
           ORIGINAL_DMG_URL=$(echo "$DMG_ASSET" | jq -r '.browser_download_url')
-
           echo "DMG asset:"
           echo "  Name: $ORIGINAL_DMG_NAME"
           echo "  ID:   $ORIGINAL_DMG_ID"
@@ -423,7 +415,7 @@ jobs:
             --method DELETE \
             "repos/decentraland/launcher-rust/releases/assets/${ORIGINAL_DMG_ID}"
 
-          echo "Deleted: ${ORIGINAL_DMG_NAME}"
+          echo "✅ Deleted: ${ORIGINAL_DMG_NAME}"
           printf " \n=================================================\n"
           echo " Uploading custom DMG"
 
@@ -433,8 +425,8 @@ jobs:
             --input "$FINAL_DMG" \
             "${UPLOAD_URL}?name=${ORIGINAL_DMG_NAME}"
 
-          echo ""
-          echo "Upload complete: ${ORIGINAL_DMG_NAME}"
+          printf " \n \n"
+          echo "✅ Upload complete: ${ORIGINAL_DMG_NAME}"
 
       - name: Verify Windows signature
         if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
