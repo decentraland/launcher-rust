@@ -68,8 +68,17 @@ fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
     Err(anyhow!("Token not found in Zone.Identifier: {content:?}"))
 }
 
+fn to_verbatim(p: &str) -> String {
+    if p.starts_with(r"\\?\") {
+        p.to_string()
+    } else {
+        format!(r"\\?\{}", p)
+    }
+}
+
 fn zone_identifier_content(path: &str) -> Result<String> {
     let ads_path = format!("{path}:Zone.Identifier");
+    let ads_path = to_verbatim(&ads_path);
 
     // Try to open ADS
     let mut file = match File::open(&ads_path) {
