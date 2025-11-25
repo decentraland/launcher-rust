@@ -22,7 +22,7 @@ fn main() {
         exit(1);
     }
     if let Err(e) = main_internal() {
-        log::error!("Error occurred running auto auth script: {e}");
+        log::error!("Error occurred running auto auth script: {e:?}");
     }
 }
 
@@ -77,10 +77,17 @@ fn to_verbatim(p: &str) -> String {
 }
 
 fn zone_identifier_content(path: &str) -> Result<String> {
+    let original_files_exists = !std::fs::exists(path).context("Error checking original file")?;
+
+    if !original_files_exists {
+        return Err(anyhow!("Original file does not exist"));
+    }
+
     let ads_path = format!("{path}:Zone.Identifier");
     let ads_path = to_verbatim(&ads_path);
 
     // Try to open ADS
+    log::info!("Opening ads info of: {ads_path}");
     let mut file =
         File::open(&ads_path).context("File doesn't have ADS to read the Zone.Identifier from")?;
     let mut buf = Vec::new();
