@@ -194,4 +194,17 @@ mod tests {
         println!("{token}");
         Ok(())
     }
+
+    #[test]
+    fn test_integration_read_ads() -> Result<()> {
+        let file_path = option_env!("EXE_WITH_TOKEN");
+        let Some(path) = file_path else {
+            println!("no env var provided EXE_WITH_TOKEN");
+            return Ok(());
+        };
+
+        let content = zone_identifier_content(path)?;
+        println!("{content}");
+        Ok(())
+    }
 }
