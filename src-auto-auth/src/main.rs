@@ -4,7 +4,7 @@
 use std::{fs::File, io::Read, process::exit};
 
 use dcl_launcher_core::{
-    anyhow::{Result, anyhow},
+    anyhow::{Context, Result, anyhow},
     auto_auth::auth_token_storage::AuthTokenStorage,
     log, logs,
 };
@@ -72,7 +72,7 @@ fn to_verbatim(p: &str) -> String {
     if p.starts_with(r"\\?\") {
         p.to_string()
     } else {
-        format!(r"\\?\{}", p)
+        format!(r"\\?\{p}")
     }
 }
 
@@ -81,15 +81,8 @@ fn zone_identifier_content(path: &str) -> Result<String> {
     let ads_path = to_verbatim(&ads_path);
 
     // Try to open ADS
-    let mut file = match File::open(&ads_path) {
-        Ok(f) => f,
-        Err(_) => {
-            return Err(anyhow!(
-                "File doesn't have ADS to read the Zone.Identifier from"
-            ));
-        } // No ADS
-    };
-
+    let mut file =
+        File::open(&ads_path).context("File doesn't have ADS to read the Zone.Identifier from")?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
 
