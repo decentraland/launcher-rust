@@ -52,24 +52,24 @@ fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
     let content = parsed_zone_identifier(&content);
 
     if let Some(url) = &content.host_url {
-        let token = dcl_launcher_core::auto_auth::token_from_url(&url)?;
+        let token = dcl_launcher_core::auto_auth::token_from_url(url)?;
         if let Some(token) = token {
             return Ok(token);
         }
     }
 
     if let Some(url) = &content.referrer_url {
-        let token = dcl_launcher_core::auto_auth::token_from_url(&url)?;
+        let token = dcl_launcher_core::auto_auth::token_from_url(url)?;
         if let Some(token) = token {
             return Ok(token);
         }
     }
 
-    Err(anyhow!("Token not found in Zone.Identifier: {:?}", content))
+    Err(anyhow!("Token not found in Zone.Identifier: {content:?}"))
 }
 
 fn zone_identifier_content(path: &str) -> Result<String> {
-    let ads_path = format!("{}:Zone.Identifier", path);
+    let ads_path = format!("{path}:Zone.Identifier");
 
     // Try to open ADS
     let mut file = match File::open(&ads_path) {
@@ -188,7 +188,7 @@ mod tests {
             return Ok(());
         };
 
-        let token = token_from_file(path)?;
+        let token = token_from_file_by_zone_attr(path)?;
         println!("{token}");
         Ok(())
     }
