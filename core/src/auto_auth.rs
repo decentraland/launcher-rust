@@ -1,6 +1,5 @@
 pub mod auth_token_storage;
 
-#[cfg(target_os = "macos")]
 use anyhow::{Result, anyhow};
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
