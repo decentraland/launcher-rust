@@ -78,7 +78,7 @@ fn to_verbatim(p: &str) -> String {
 }
 
 fn zone_identifier_content(path: &str) -> Result<String> {
-    let original_files_exists = !std::fs::exists(path).context("Error checking original file")?;
+    let original_files_exists = std::fs::exists(path).context("Error checking original file")?;
 
     if !original_files_exists {
         return Err(anyhow!("Original file does not exist: {path}"));
