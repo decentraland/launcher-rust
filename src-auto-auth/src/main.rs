@@ -39,6 +39,7 @@ fn main_internal() -> Result<()> {
     let installer_path = args
         .first()
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
+    log::info!("Installer path: {installer_path}");
 
     let token = token_from_file_by_zone_attr(installer_path)?;
     AuthTokenStorage::write_token(token.as_str())?;
@@ -80,7 +81,7 @@ fn zone_identifier_content(path: &str) -> Result<String> {
     let original_files_exists = !std::fs::exists(path).context("Error checking original file")?;
 
     if !original_files_exists {
-        return Err(anyhow!("Original file does not exist"));
+        return Err(anyhow!("Original file does not exist: {path}"));
     }
 
     let ads_path = format!("{path}:Zone.Identifier");
