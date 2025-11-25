@@ -153,8 +153,7 @@ fn app_bundle_from_exe_path(exe_path: &Path) -> std::io::Result<PathBuf> {
     ))
 }
 
-#[cfg(target_os = "macos")]
-fn token_from_url(url_str: &str) -> Result<Option<String>> {
+pub fn token_from_url(url_str: &str) -> Result<Option<String>> {
     let url = url::Url::parse(url_str)?;
     // Split into path segments e.g. "391a85da-a3bb-49e2-a45e-96c740c38424"
     let mut segments = url
