@@ -37,7 +37,7 @@ fn main_internal() -> Result<()> {
     log::info!("Args: {args:?}");
 
     let installer_path = args
-        .first()
+        .last()
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
     log::info!("Installer path: {installer_path}");
 
