@@ -291,8 +291,9 @@ jobs:
           [[ -f "$DMG_BACKGROUND" ]] || { echo "⚠️ Missing background: $DMG_BACKGROUND"; }
 
           # --- Ensure shell create-dmg is available ---
-          brew update
-          brew install create-dmg
+          if ! command -v create-dmg >/dev/null; then
+            brew install create-dmg
+          fi
 
           # --- Prepare unique staging folder ---
           mkdir -p "$OUTDIR"
@@ -358,6 +359,68 @@ jobs:
 
           echo "FINAL_DMG=$FINAL_DMG" | tee -a "$GITHUB_ENV"
           echo "✅ Replaced Tauri DMG with custom DMG at $FINAL_DMG (kept original filename)"
+
+      - name: Update GitHub draft release with custom DMG (macOS)
+        if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          FILE_BASE="$(basename "$FINAL_DMG")"
+          VERSION=$(echo "$FILE_BASE" | sed -E 's/^Decentraland_([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          TAG_TO_USE="app-v${VERSION}"
+          echo " Determined TAG_TO_USE = ${TAG_TO_USE} from FINAL_DMG=${FINAL_DMG}"
+
+          printf "=================================================\n"
+          echo " Listing draft releases"
+          ALL_RELEASES=$(gh api --paginate repos/decentraland/launcher-rust/releases)
+          echo "$ALL_RELEASES" \
+            | jq -r '.[] | select(.draft == true) | "\(.id)  \(.tag_name)  draft=\(.draft)  created=\(.created_at)"'
+
+          printf " \n=================================================\n"
+          echo " Selecting draft release: ${TAG_TO_USE}"
+          RELEASE=$(echo "$ALL_RELEASES" \
+            | jq --arg TAG "$TAG_TO_USE" '.[] | select(.draft == true and .tag_name == $TAG)')
+          [[ -n "$RELEASE" ]] || { echo "❌ Draft release not found: $TAG_TO_USE"; exit 1; }
+
+          RELEASE_JSON="$RELEASE"
+          RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url' | sed 's/{?name,label}//')
+          echo "Using release ID:  $RELEASE_ID"
+          echo "Upload URL:        $UPLOAD_URL"
+
+          printf " \n=================================================\n"
+          echo " Locating DMG asset"
+          # Ensure exactly one DMG exists in this draft
+          DMG_COUNT=$(echo "$RELEASE_JSON" | jq '[.assets[] | select(.name | endswith(".dmg"))] | length')
+          [[ "$DMG_COUNT" -eq 1 ]] || { echo "❌ Unexpected number of DMG assets: $DMG_COUNT"; exit 1; }
+
+          DMG_ASSET=$(echo "$RELEASE_JSON" | jq '.assets[] | select(.name | endswith(".dmg"))')
+          ORIGINAL_DMG_NAME=$(echo "$DMG_ASSET" | jq -r '.name')
+          ORIGINAL_DMG_ID=$(echo "$DMG_ASSET" | jq -r '.id')
+          echo "DMG asset:"
+          echo "  Name: $ORIGINAL_DMG_NAME"
+          echo "  ID:   $ORIGINAL_DMG_ID"
+
+          printf " \n=================================================\n"
+          echo " Deleting original DMG from release"
+
+          gh api --method DELETE \
+            "repos/decentraland/launcher-rust/releases/assets/${ORIGINAL_DMG_ID}"
+
+          echo "✅ Deleted: ${ORIGINAL_DMG_NAME}"
+
+          printf " \n=================================================\n"
+          echo " Uploading custom DMG"
+
+          gh api --method POST \
+            -H "Content-Type: application/octet-stream" \
+            --input "$FINAL_DMG" \
+            "${UPLOAD_URL}?name=${ORIGINAL_DMG_NAME}"
+
+          printf " \n \n"
+          echo "✅ Upload complete: ${ORIGINAL_DMG_NAME}"
 
       - name: Verify Windows signature
         if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
