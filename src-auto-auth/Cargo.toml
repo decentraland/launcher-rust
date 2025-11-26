@@ -15,5 +15,8 @@ opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
 panic = "abort" # Higher performance by disabling panic handlers.
 strip = "symbols" # Ensures debug symbols are removed.
 
+[dependencies]
+rstest = "0.26.1"
+
 [dependencies.dcl-launcher-core]
 path = "../core"

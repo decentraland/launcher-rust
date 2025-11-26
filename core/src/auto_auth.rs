@@ -1,6 +1,5 @@
 pub mod auth_token_storage;
 
-#[cfg(target_os = "macos")]
 use anyhow::{Result, anyhow};
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
@@ -153,17 +152,26 @@ fn app_bundle_from_exe_path(exe_path: &Path) -> std::io::Result<PathBuf> {
     ))
 }
 
-#[cfg(target_os = "macos")]
-fn token_from_url(url_str: &str) -> Result<Option<String>> {
+pub fn token_from_url(url_str: &str) -> Result<Option<String>> {
     let url = url::Url::parse(url_str)?;
-    // Split into path segments e.g. "391a85da-a3bb-49e2-a45e-96c740c38424"
-    let mut segments = url
-        .path_segments()
-        .ok_or_else(|| anyhow!("Cannot split url"))?;
+
     // Regex for token find
     let re = regex::Regex::new(
         r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
     )?;
+
+    // Search in params
+    for (_, value) in url.query_pairs() {
+        if re.is_match(&value) {
+            return Ok(Some(value.to_string()));
+        }
+    }
+
+    // Split into path segments e.g. "391a85da-a3bb-49e2-a45e-96c740c38424"
+    let mut segments = url
+        .path_segments()
+        .ok_or_else(|| anyhow!("Cannot split url"))?;
+
     Ok(segments.find(|s| re.is_match(s)).map(ToString::to_string))
 }
 
@@ -177,6 +185,10 @@ mod tests {
     #[case(
         "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
         "391a85da-a3bb-49e2-a45e-96c740c38424"
+    )]
+    #[case(
+        "https://explorer-artifacts.decentraland.zone/dry-run-launcher-rust/pr-196/run-855-19672401394/Decentraland_installer.exe?token=b5876cf1-9b6b-451e-b467-9700f754a8f7",
+        "b5876cf1-9b6b-451e-b467-9700f754a8f7"
     )]
     fn test_token_from_url(#[case] url: &str, #[case] expected_token: &str) -> Result<()> {
         let token = token_from_url(url)?.ok_or_else(|| anyhow!("Empty url"))?;

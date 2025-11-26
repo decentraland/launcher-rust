@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Decentraland-Launcher"
-version = "1.12.2"
+version = "1.12.6"
 dependencies = [
  "anyhow",
  "dcl-launcher-core",
@@ -663,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.12.2"
+version = "1.12.6"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
