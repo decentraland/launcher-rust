@@ -51,22 +51,25 @@ fn main_internal() -> Result<()> {
 fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
     let content = zone_identifier_content(path)?;
     let content = parsed_zone_identifier(&content);
+    token_from_zone_info(content)
+}
 
-    if let Some(url) = &content.host_url {
+fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
+    if let Some(url) = &zone_info.host_url {
         let token = dcl_launcher_core::auto_auth::token_from_url(url)?;
         if let Some(token) = token {
             return Ok(token);
         }
     }
 
-    if let Some(url) = &content.referrer_url {
+    if let Some(url) = &zone_info.referrer_url {
         let token = dcl_launcher_core::auto_auth::token_from_url(url)?;
         if let Some(token) = token {
             return Ok(token);
         }
     }
 
-    Err(anyhow!("Token not found in Zone.Identifier: {content:?}"))
+    Err(anyhow!("Token not found in Zone.Identifier attribute: {zone_info:?}"))
 }
 
 fn to_verbatim(p: &str) -> String {
@@ -189,6 +192,7 @@ fn parsed_zone_identifier(contents: &str) -> ZoneInfo {
 mod tests {
     use super::*;
     use dcl_launcher_core::anyhow::Result;
+    use rstest::rstest;
 
     #[test]
     fn test_integration_token_from_file() -> Result<()> {
@@ -213,6 +217,26 @@ mod tests {
 
         let content = zone_identifier_content(path)?;
         println!("{content}");
+        Ok(())
+    }
+
+    #[rstest]
+    #[case(
+        "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
+        "391a85da-a3bb-49e2-a45e-96c740c38424"
+    )]
+    #[case(
+        "https://explorer-artifacts.decentraland.zone/dry-run-launcher-rust/pr-196/run-855-19672401394/Decentraland_installer.exe?token=b5876cf1-9b6b-451e-b467-9700f754a8f7",
+        "b5876cf1-9b6b-451e-b467-9700f754a8f7"
+    )]
+    fn test_token_from_url(#[case] zone_info_url: &str, #[case] expected_token: &str) -> Result<()> {
+        let zone = ZoneInfo {
+            host_url: Some(zone_info_url.to_owned()),
+            ..Default::default()
+        };
+
+        let token = token_from_zone_info(zone)?;
+        assert_eq!(expected_token, token.as_str());
         Ok(())
     }
 }
