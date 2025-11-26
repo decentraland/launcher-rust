@@ -69,7 +69,9 @@ fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
         }
     }
 
-    Err(anyhow!("Token not found in Zone.Identifier attribute: {zone_info:?}"))
+    Err(anyhow!(
+        "Token not found in Zone.Identifier attribute: {zone_info:?}"
+    ))
 }
 
 fn to_verbatim(p: &str) -> String {
@@ -229,7 +231,10 @@ mod tests {
         "https://explorer-artifacts.decentraland.zone/dry-run-launcher-rust/pr-196/run-855-19672401394/Decentraland_installer.exe?token=b5876cf1-9b6b-451e-b467-9700f754a8f7",
         "b5876cf1-9b6b-451e-b467-9700f754a8f7"
     )]
-    fn test_token_from_url(#[case] zone_info_url: &str, #[case] expected_token: &str) -> Result<()> {
+    fn test_token_from_url(
+        #[case] zone_info_url: &str,
+        #[case] expected_token: &str,
+    ) -> Result<()> {
         let zone = ZoneInfo {
             host_url: Some(zone_info_url.to_owned()),
             ..Default::default()
