@@ -81,6 +81,61 @@ fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
 }
 
 #[cfg(windows)]
+fn log_alternate_data_streams(path: &str) -> anyhow::Result<()> {
+    use std::ffi::OsStr;
+    use std::os::windows::prelude::*;
+    use std::ptr;
+    use windows_sys::Win32::Foundation::*;
+    use windows_sys::Win32::Storage::FileSystem::*;
+
+    let w_path: Vec<u16> = OsStr::new(path).encode_wide().chain(Some(0)).collect();
+    let mut stream_data: WIN32_FIND_STREAM_DATA = unsafe { std::mem::zeroed() };
+
+    log::info!("Starting ADS enumeration for file: {path}");
+
+    #[allow(unsafe_code)]
+    unsafe {
+        let h_find_stream = FindFirstStreamW(
+            w_path.as_ptr(),
+            FindStreamInfoStandard,
+            &mut stream_data,
+            0, // dwFlags, reserved, must be 0
+        );
+
+        if h_find_stream == INVALID_HANDLE_VALUE {
+            let error = std::io::Error::last_os_error();
+            return Err(anyhow::anyhow!("FindFirstStreamW failed: {error:?}"));
+        }
+
+        loop {
+            let stream_name_wide = &stream_data.cStreamName;
+
+            let name_len = stream_name_wide.iter().take_while(|&c| *c != 0).count();
+            let name = String::from_utf16_lossy(&stream_name_wide[..name_len]);
+
+            let size = stream_data.StreamSize.QuadPart;
+
+            log::info!("Found Stream: Name='{name}', Size={size} bytes");
+
+            // Continue to the next stream
+            if FindNextStreamW(h_find_stream, &mut stream_data) == 0 {
+                // FindNextStreamW returns 0 (FALSE) when no more streams are found or an error occurs
+                let last_error = GetLastError();
+                if last_error != ERROR_NO_MORE_FILES {
+                    log::warn!("FindNextStreamW encountered an unexpected error: {last_error}");
+                }
+                break; // Exit the loop
+            }
+        }
+
+        CloseHandle(h_find_stream);
+    }
+
+    log::info!("Finished ADS enumeration for file: {path}");
+    Ok(())
+}
+
+#[cfg(windows)]
 fn ads_content(path: &str) -> Result<Vec<u8>> {
     use std::ffi::OsStr;
     use std::os::windows::prelude::*;
@@ -97,6 +152,8 @@ fn ads_content(path: &str) -> Result<Vec<u8>> {
     let ads_path = format!("{path}:Zone.Identifier");
     log::info!("Opening ads info of: {ads_path}");
     let w: Vec<u16> = OsStr::new(&ads_path).encode_wide().chain(Some(0)).collect();
+
+    log_alternate_data_streams(path);
 
     #[allow(unsafe_code)]
     unsafe {
