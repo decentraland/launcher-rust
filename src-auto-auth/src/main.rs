@@ -1,14 +1,6 @@
 // Avoid popup terminal window
 #![windows_subsystem = "windows"]
 
-#[cfg(unix)]
-use dcl_launcher_core::{
-    anyhow::{Result, anyhow},
-    auto_auth::auth_token_storage::AuthTokenStorage,
-    log, logs,
-};
-
-#[cfg(windows)]
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
     auto_auth::auth_token_storage::AuthTokenStorage,
@@ -55,7 +47,14 @@ fn main_internal() -> Result<()> {
 
 // Zone.Identifier
 fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
-    let content = zone_identifier_content(path)?;
+    let content = zone_identifier_content(path)
+        .or_else(|e| {
+            log::error!("ADS read from direct CAPI failed, fallback to PowerShell: {e:?}");
+            zone_identifier_content_powershell(path)
+        })
+        .with_context(|| {
+            anyhow!("Reading zone content from both CAPI and PowerShell failed for file '{path}'")
+        })?;
     let content = parsed_zone_identifier(&content);
     token_from_zone_info(content)
 }
@@ -198,6 +197,30 @@ fn ads_content(path: &str) -> Result<Vec<u8>> {
 #[cfg(unix)]
 fn ads_content(_path: &str) -> Result<Vec<u8>> {
     Err(anyhow!("ADS is not supported on macOS"))
+}
+
+fn zone_identifier_content_powershell(path: &str) -> Result<String> {
+    use std::process::{Command, Stdio};
+
+    let output = Command::new("powershell.exe")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg(format!(
+            "Get-Content -Path '{}' -Stream Zone.Identifier",
+            path.replace("'", "''") // escape single quotes
+        ))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "PowerShell failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 fn zone_identifier_content(path: &str) -> Result<String> {
