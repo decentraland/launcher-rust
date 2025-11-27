@@ -82,8 +82,8 @@ fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
 #[allow(unsafe_code)]
 #[cfg(windows)]
 fn log_alternate_data_streams(path: &str) -> Result<()> {
-    use std::ffi::c_void;
     use std::ffi::OsStr;
+    use std::ffi::c_void;
     use std::os::windows::prelude::*;
     use std::ptr;
     use windows_sys::Win32::Foundation::*;
@@ -154,7 +154,9 @@ fn ads_content(path: &str) -> Result<Vec<u8>> {
     log::info!("Opening ads info of: {ads_path}");
     let w: Vec<u16> = OsStr::new(&ads_path).encode_wide().chain(Some(0)).collect();
 
-    log_alternate_data_streams(path);
+    if let Err(e) = log_alternate_data_streams(path) {
+        log::error!("Cannot log ads list: {e:?}");
+    }
 
     #[allow(unsafe_code)]
     unsafe {
