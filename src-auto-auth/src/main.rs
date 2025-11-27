@@ -1,13 +1,14 @@
 // Avoid popup terminal window
 #![windows_subsystem = "windows"]
 
-use std::ffi::OsStr;
-use std::os::windows::prelude::*;
-use std::ptr;
-use std::{fs::File, io::Read, process::exit};
-use windows_sys::Win32::Foundation::*;
-use windows_sys::Win32::Storage::FileSystem::*;
+#[cfg(unix)]
+use dcl_launcher_core::{
+    anyhow::{Result, anyhow},
+    auto_auth::auth_token_storage::AuthTokenStorage,
+    log, logs,
+};
 
+#[cfg(windows)]
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
     auto_auth::auth_token_storage::AuthTokenStorage,
@@ -24,7 +25,7 @@ pub struct ZoneInfo {
 fn main() {
     if let Err(e) = logs::dispath_logs() {
         eprintln!("Cannot initialize logs: {e}");
-        exit(1);
+        std::process::exit(1);
     }
     if let Err(e) = main_internal() {
         log::error!("Error occurred running auto auth script: {e:?}");
@@ -79,7 +80,15 @@ fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
     ))
 }
 
+#[cfg(windows)]
 fn ads_content(path: &str) -> Result<Vec<u8>> {
+    use std::ffi::OsStr;
+    use std::os::windows::prelude::*;
+    use std::ptr;
+    use std::{fs::File, io::Read};
+    use windows_sys::Win32::Foundation::*;
+    use windows_sys::Win32::Storage::FileSystem::*;
+
     let original_files_exists = std::fs::exists(path).context("Error checking original file")?;
 
     if !original_files_exists {
@@ -128,6 +137,11 @@ fn ads_content(path: &str) -> Result<Vec<u8>> {
         buf.truncate(bytes_read as usize);
         Ok(buf)
     }
+}
+
+#[cfg(unix)]
+fn ads_content(_path: &str) -> Result<Vec<u8>> {
+    Err(anyhow!("ADS is not supported on macOS"))
 }
 
 fn zone_identifier_content(path: &str) -> Result<String> {
