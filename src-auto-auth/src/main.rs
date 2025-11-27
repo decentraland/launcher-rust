@@ -85,7 +85,6 @@ fn log_alternate_data_streams(path: &str) -> Result<()> {
     use std::ffi::OsStr;
     use std::ffi::c_void;
     use std::os::windows::prelude::*;
-    use std::ptr;
     use windows_sys::Win32::Foundation::*;
     use windows_sys::Win32::Storage::FileSystem::*;
 
