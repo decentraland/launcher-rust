@@ -1,7 +1,12 @@
 // Avoid popup terminal window
 #![windows_subsystem = "windows"]
 
+use std::ffi::OsStr;
+use std::os::windows::prelude::*;
+use std::ptr;
 use std::{fs::File, io::Read, process::exit};
+use windows_sys::Win32::Foundation::*;
+use windows_sys::Win32::Storage::FileSystem::*;
 
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
@@ -74,15 +79,7 @@ fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
     ))
 }
 
-fn to_verbatim(p: &str) -> String {
-    if p.starts_with(r"\\?\") {
-        p.to_string()
-    } else {
-        format!(r"\\?\{p}")
-    }
-}
-
-fn zone_identifier_content(path: &str) -> Result<String> {
+fn ads_content(path: &str) -> Result<Vec<u8>> {
     let original_files_exists = std::fs::exists(path).context("Error checking original file")?;
 
     if !original_files_exists {
@@ -90,14 +87,51 @@ fn zone_identifier_content(path: &str) -> Result<String> {
     }
 
     let ads_path = format!("{path}:Zone.Identifier");
-    let ads_path = to_verbatim(&ads_path);
-
-    // Try to open ADS
     log::info!("Opening ads info of: {ads_path}");
-    let mut file =
-        File::open(&ads_path).context("File doesn't have ADS to read the Zone.Identifier from")?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf)?;
+    let w: Vec<u16> = OsStr::new(&ads_path).encode_wide().chain(Some(0)).collect();
+
+    #[allow(unsafe_code)]
+    unsafe {
+        let handle = CreateFileW(
+            w.as_ptr(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            ptr::null_mut(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            0,
+        );
+
+        if handle == INVALID_HANDLE_VALUE {
+            let error = std::io::Error::last_os_error();
+            return Err(anyhow!("Open file failed CreateFileW: {error:?}"));
+        }
+
+        let mut buf = vec![0u8; 16384];
+        let mut bytes_read = 0u32;
+
+        let success = ReadFile(
+            handle,
+            buf.as_mut_ptr() as *mut _,
+            buf.len() as u32,
+            &mut bytes_read,
+            ptr::null_mut(),
+        );
+
+        CloseHandle(handle);
+
+        if success == 0 {
+            let error = std::io::Error::last_os_error();
+            return Err(anyhow!("Read failed ReadFile: {error:?}"));
+        }
+
+        buf.truncate(bytes_read as usize);
+        Ok(buf)
+    }
+}
+
+fn zone_identifier_content(path: &str) -> Result<String> {
+    let buf = ads_content(path)?;
 
     if buf.is_empty() {
         return Err(anyhow!("ADS is empty"));
@@ -224,11 +258,11 @@ mod tests {
 
     #[rstest]
     #[case(
-        "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
+        "https://example.com/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
         "391a85da-a3bb-49e2-a45e-96c740c38424"
     )]
     #[case(
-        "https://explorer-artifacts.decentraland.zone/dry-run-launcher-rust/pr-196/run-855-19672401394/Decentraland_installer.exe?token=b5876cf1-9b6b-451e-b467-9700f754a8f7",
+        "https://example.com/subpath/run-855-19672401394/Decentraland_installer.exe?token=b5876cf1-9b6b-451e-b467-9700f754a8f7",
         "b5876cf1-9b6b-451e-b467-9700f754a8f7"
     )]
     fn test_token_from_url(
