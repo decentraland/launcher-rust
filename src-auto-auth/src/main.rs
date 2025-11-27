@@ -79,8 +79,10 @@ fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
     ))
 }
 
+#[allow(unsafe_code)]
 #[cfg(windows)]
-fn log_alternate_data_streams(path: &str) -> anyhow::Result<()> {
+fn log_alternate_data_streams(path: &str) -> Result<()> {
+    use std::ffi::c_void;
     use std::ffi::OsStr;
     use std::os::windows::prelude::*;
     use std::ptr;
@@ -92,18 +94,18 @@ fn log_alternate_data_streams(path: &str) -> anyhow::Result<()> {
 
     log::info!("Starting ADS enumeration for file: {path}");
 
-    #[allow(unsafe_code)]
     unsafe {
+        let stream_ptr = &mut stream_data as *mut _ as *mut c_void;
         let h_find_stream = FindFirstStreamW(
             w_path.as_ptr(),
             FindStreamInfoStandard,
-            &mut stream_data,
+            stream_ptr,
             0, // dwFlags, reserved, must be 0
         );
 
         if h_find_stream == INVALID_HANDLE_VALUE {
             let error = std::io::Error::last_os_error();
-            return Err(anyhow::anyhow!("FindFirstStreamW failed: {error:?}"));
+            return Err(anyhow!("FindFirstStreamW failed: {error:?}"));
         }
 
         loop {
@@ -112,12 +114,12 @@ fn log_alternate_data_streams(path: &str) -> anyhow::Result<()> {
             let name_len = stream_name_wide.iter().take_while(|&c| *c != 0).count();
             let name = String::from_utf16_lossy(&stream_name_wide[..name_len]);
 
-            let size = stream_data.StreamSize.QuadPart;
+            let size = stream_data.StreamSize;
 
             log::info!("Found Stream: Name='{name}', Size={size} bytes");
 
             // Continue to the next stream
-            if FindNextStreamW(h_find_stream, &mut stream_data) == 0 {
+            if FindNextStreamW(h_find_stream, stream_ptr) == 0 {
                 // FindNextStreamW returns 0 (FALSE) when no more streams are found or an error occurs
                 let last_error = GetLastError();
                 if last_error != ERROR_NO_MORE_FILES {
