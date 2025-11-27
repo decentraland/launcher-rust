@@ -85,7 +85,6 @@ fn ads_content(path: &str) -> Result<Vec<u8>> {
     use std::ffi::OsStr;
     use std::os::windows::prelude::*;
     use std::ptr;
-    use std::{fs::File, io::Read};
     use windows_sys::Win32::Foundation::*;
     use windows_sys::Win32::Storage::FileSystem::*;
 
@@ -108,7 +107,7 @@ fn ads_content(path: &str) -> Result<Vec<u8>> {
             ptr::null_mut(),
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL,
-            0,
+            std::ptr::null_mut::<std::ffi::c_void>(),
         );
 
         if handle == INVALID_HANDLE_VALUE {
