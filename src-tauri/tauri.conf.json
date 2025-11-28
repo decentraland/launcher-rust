@@ -29,8 +29,7 @@
     "publisher": "Decentraland Foundation",
     "targets": [
       "app",
-      "dmg",
-      "nsis"
+      "dmg"
     ],
     "icon": [
       "icons/icon.icns",
