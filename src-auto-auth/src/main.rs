@@ -1,8 +1,6 @@
 // Avoid popup terminal window
 #![windows_subsystem = "windows"]
 
-use std::{fs::File, io::Read, process::exit};
-
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
     auto_auth::auth_token_storage::AuthTokenStorage,
@@ -19,7 +17,7 @@ pub struct ZoneInfo {
 fn main() {
     if let Err(e) = logs::dispath_logs() {
         eprintln!("Cannot initialize logs: {e}");
-        exit(1);
+        std::process::exit(1);
     }
     if let Err(e) = main_internal() {
         log::error!("Error occurred running auto auth script: {e:?}");
@@ -49,7 +47,14 @@ fn main_internal() -> Result<()> {
 
 // Zone.Identifier
 fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
-    let content = zone_identifier_content(path)?;
+    let content = zone_identifier_content(path)
+        .or_else(|e| {
+            log::error!("ADS read from direct CAPI failed, fallback to PowerShell: {e:?}");
+            zone_identifier_content_powershell(path)
+        })
+        .with_context(|| {
+            anyhow!("Reading zone content from both CAPI and PowerShell failed for file '{path}'")
+        })?;
     let content = parsed_zone_identifier(&content);
     token_from_zone_info(content)
 }
@@ -74,15 +79,70 @@ fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
     ))
 }
 
-fn to_verbatim(p: &str) -> String {
-    if p.starts_with(r"\\?\") {
-        p.to_string()
-    } else {
-        format!(r"\\?\{p}")
+#[allow(unsafe_code)]
+#[cfg(windows)]
+fn log_alternate_data_streams(path: &str) -> Result<()> {
+    use std::ffi::OsStr;
+    use std::ffi::c_void;
+    use std::os::windows::prelude::*;
+    use windows_sys::Win32::Foundation::*;
+    use windows_sys::Win32::Storage::FileSystem::*;
+
+    let w_path: Vec<u16> = OsStr::new(path).encode_wide().chain(Some(0)).collect();
+    let mut stream_data: WIN32_FIND_STREAM_DATA = unsafe { std::mem::zeroed() };
+
+    log::info!("Starting ADS enumeration for file: {path}");
+
+    unsafe {
+        let stream_ptr = &mut stream_data as *mut _ as *mut c_void;
+        let h_find_stream = FindFirstStreamW(
+            w_path.as_ptr(),
+            FindStreamInfoStandard,
+            stream_ptr,
+            0, // dwFlags, reserved, must be 0
+        );
+
+        if h_find_stream == INVALID_HANDLE_VALUE {
+            let error = std::io::Error::last_os_error();
+            return Err(anyhow!("FindFirstStreamW failed: {error:?}"));
+        }
+
+        loop {
+            let stream_name_wide = &stream_data.cStreamName;
+
+            let name_len = stream_name_wide.iter().take_while(|&c| *c != 0).count();
+            let name = String::from_utf16_lossy(&stream_name_wide[..name_len]);
+
+            let size = stream_data.StreamSize;
+
+            log::info!("Found Stream: Name='{name}', Size={size} bytes");
+
+            // Continue to the next stream
+            if FindNextStreamW(h_find_stream, stream_ptr) == 0 {
+                // FindNextStreamW returns 0 (FALSE) when no more streams are found or an error occurs
+                let last_error = GetLastError();
+                if last_error != ERROR_NO_MORE_FILES {
+                    log::warn!("FindNextStreamW encountered an unexpected error: {last_error}");
+                }
+                break; // Exit the loop
+            }
+        }
+
+        CloseHandle(h_find_stream);
     }
+
+    log::info!("Finished ADS enumeration for file: {path}");
+    Ok(())
 }
 
-fn zone_identifier_content(path: &str) -> Result<String> {
+#[cfg(windows)]
+fn ads_content(path: &str) -> Result<Vec<u8>> {
+    use std::ffi::OsStr;
+    use std::os::windows::prelude::*;
+    use std::ptr;
+    use windows_sys::Win32::Foundation::*;
+    use windows_sys::Win32::Storage::FileSystem::*;
+
     let original_files_exists = std::fs::exists(path).context("Error checking original file")?;
 
     if !original_files_exists {
@@ -90,14 +150,84 @@ fn zone_identifier_content(path: &str) -> Result<String> {
     }
 
     let ads_path = format!("{path}:Zone.Identifier");
-    let ads_path = to_verbatim(&ads_path);
-
-    // Try to open ADS
     log::info!("Opening ads info of: {ads_path}");
-    let mut file =
-        File::open(&ads_path).context("File doesn't have ADS to read the Zone.Identifier from")?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf)?;
+    let w: Vec<u16> = OsStr::new(&ads_path).encode_wide().chain(Some(0)).collect();
+
+    if let Err(e) = log_alternate_data_streams(path) {
+        log::error!("Cannot log ads list: {e:?}");
+    }
+
+    #[allow(unsafe_code)]
+    unsafe {
+        let handle = CreateFileW(
+            w.as_ptr(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            ptr::null_mut(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            std::ptr::null_mut::<std::ffi::c_void>(),
+        );
+
+        if handle == INVALID_HANDLE_VALUE {
+            let error = std::io::Error::last_os_error();
+            return Err(anyhow!("Open file failed CreateFileW: {error:?}"));
+        }
+
+        let mut buf = vec![0u8; 16384];
+        let mut bytes_read = 0u32;
+
+        let success = ReadFile(
+            handle,
+            buf.as_mut_ptr() as *mut _,
+            buf.len() as u32,
+            &mut bytes_read,
+            ptr::null_mut(),
+        );
+
+        CloseHandle(handle);
+
+        if success == 0 {
+            let error = std::io::Error::last_os_error();
+            return Err(anyhow!("Read failed ReadFile: {error:?}"));
+        }
+
+        buf.truncate(bytes_read as usize);
+        Ok(buf)
+    }
+}
+
+#[cfg(unix)]
+fn ads_content(_path: &str) -> Result<Vec<u8>> {
+    Err(anyhow!("ADS is not supported on macOS"))
+}
+
+fn zone_identifier_content_powershell(path: &str) -> Result<String> {
+    use std::process::{Command, Stdio};
+
+    let output = Command::new("powershell.exe")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg(format!(
+            "Get-Content -Path '{}' -Stream Zone.Identifier",
+            path.replace("'", "''") // escape single quotes
+        ))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "PowerShell failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn zone_identifier_content(path: &str) -> Result<String> {
+    let buf = ads_content(path)?;
 
     if buf.is_empty() {
         return Err(anyhow!("ADS is empty"));
@@ -224,11 +354,11 @@ mod tests {
 
     #[rstest]
     #[case(
-        "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
+        "https://example.com/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg",
         "391a85da-a3bb-49e2-a45e-96c740c38424"
     )]
     #[case(
-        "https://explorer-artifacts.decentraland.zone/dry-run-launcher-rust/pr-196/run-855-19672401394/Decentraland_installer.exe?token=b5876cf1-9b6b-451e-b467-9700f754a8f7",
+        "https://example.com/subpath/run-855-19672401394/Decentraland_installer.exe?token=b5876cf1-9b6b-451e-b467-9700f754a8f7",
         "b5876cf1-9b6b-451e-b467-9700f754a8f7"
     )]
     fn test_token_from_url(

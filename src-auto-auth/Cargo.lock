@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.12.6"
+version = "1.12.8"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -2116,10 +2116,11 @@ dependencies = [
 
 [[package]]
 name = "src-auto-auth"
-version = "1.12.6"
+version = "1.12.8"
 dependencies = [
  "dcl-launcher-core",
  "rstest",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
