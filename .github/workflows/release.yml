@@ -266,6 +266,19 @@ jobs:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
+      - name: Sign dcl_launcher.exe manually (Win)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        env:
+          ES_USERNAME: ${{ secrets.ES_USERNAME }}
+          ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+          ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+          CODESIGN_JAR: ${{ env.CODESIGN_JAR }}
+          CODESIGN_JAVA: ${{ env.CODESIGN_JAVA }}
+        run: |
+          & "${{ github.workspace }}\src-tauri\scripts\sign.ps1" -filePath "${{ github.workspace }}\src-tauri\target\release\dcl_launcher.exe"
+
       - name: Build & replace custom DMG (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
         env:
