@@ -82,8 +82,7 @@ impl LaunchFlow {
     pub fn new(
         installs_hub: Arc<Mutex<InstallsHub>>,
         analytics: Arc<Mutex<Analytics>>,
-        running_instances: Arc<Mutex<RunningInstances>>,
-        protocol: Protocol,
+        running_instances: Arc<Mutex<RunningInstances>>
     ) -> Self {
         Self {
             fetch_step: FetchStep {},
@@ -95,8 +94,7 @@ impl LaunchFlow {
             },
             app_launch_step: AppLaunchStep {
                 installs_hub,
-                running_instances,
-                protocol,
+                running_instances
             },
             analytics,
         }
@@ -424,8 +422,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
 
 struct AppLaunchStep {
     installs_hub: Arc<Mutex<InstallsHub>>,
-    running_instances: Arc<Mutex<RunningInstances>>,
-    protocol: Protocol,
+    running_instances: Arc<Mutex<RunningInstances>>
 }
 
 impl AppLaunchStep {
@@ -456,7 +453,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
         type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
 
-        match self.protocol.value() {
+        match Protocol::value() {
             Some(deeplink) => {
                 let args = AppEnvironment::cmd_args();
 

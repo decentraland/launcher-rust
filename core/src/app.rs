@@ -53,7 +53,6 @@ impl AppState {
             installs_hub,
             analytics.clone(),
             running_instances,
-            Protocol {},
         );
         let flow_state = LaunchFlowState::default();
         let app_state = Self {
