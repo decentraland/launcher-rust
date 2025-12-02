@@ -19,6 +19,7 @@ use dcl_launcher_core::types::LauncherUpdate;
 use dcl_launcher_core::utils;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::env;
+use std::process::Command;
 use std::sync::Arc;
 use tauri::async_runtime::Mutex;
 use tauri::Url;
@@ -112,6 +113,82 @@ async fn launch_internal(
     app.exit(0);
 
     Ok(())
+}
+
+/// Restart the application with the given arguments.
+/// This is used to preserve deeplinks across launcher updates.
+fn restart_with_args(args: &[String]) {
+    let current_exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => {
+            error!("Failed to get current executable path: {}", e);
+            std::process::exit(0);
+        }
+    };
+
+    info!(
+        "Restarting app with args: {:?}, exe: {}",
+        args,
+        current_exe.display()
+    );
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, we need to use `open` to properly restart the .app bundle
+        // Navigate from binary to .app: Contents/MacOS/binary -> Contents -> .app
+        if let Some(app_bundle) = current_exe
+            .parent() // MacOS
+            .and_then(|p| p.parent()) // Contents
+            .and_then(|p| p.parent()) // .app
+        {
+            let mut cmd = Command::new("open");
+            cmd.arg("-n"); // Open new instance
+            cmd.arg(app_bundle);
+            cmd.arg("--args");
+            for arg in args {
+                cmd.arg(arg);
+            }
+
+            match cmd.spawn() {
+                Ok(_) => {
+                    info!("Successfully spawned new instance on macOS");
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    error!("Failed to spawn new instance via open: {}", e);
+                }
+            }
+        }
+
+        // Fallback: try direct execution
+        let mut cmd = Command::new(&current_exe);
+        for arg in args {
+            cmd.arg(arg);
+        }
+        if cmd.spawn().is_ok() {
+            std::process::exit(0);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = Command::new(&current_exe);
+        for arg in args {
+            cmd.arg(arg);
+        }
+        match cmd.spawn() {
+            Ok(_) => {
+                info!("Successfully spawned new instance on Windows");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                error!("Failed to spawn new instance: {}", e);
+            }
+        }
+    }
+
+    // If we get here, spawn failed - just exit
+    std::process::exit(0);
 }
 
 fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
@@ -215,14 +292,29 @@ async fn update_if_needed_and_restart(
 
         channel.send_silent(LauncherUpdate::RestartingApp.into());
         app_state.cleanup().await;
-        app.restart();
+
+        // Preserve deeplink across restart by passing it as a command-line argument
+        if let Some(deeplink) = app_state.protocol.value() {
+            let deeplink_str: String = deeplink.into();
+            info!("Preserving deeplink across restart: {}", deeplink_str);
+            restart_with_args(&[deeplink_str]);
+        } else {
+            app.restart();
+        }
     }
 
     Ok(())
 }
 
-#[cfg_attr(windows, allow(unused_variables))]
+#[cfg_attr(target_os = "windows", allow(unused_variables))]
 fn setup_deeplink(a: &App, protocol: &Protocol) {
+    // On both platforms, check command-line args for deeplinks.
+    // This handles the case where the launcher was restarted with a deeplink argument
+    // after a launcher update.
+    let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
+    protocol.try_assign_value_from_vec(&args);
+
+    // On macOS, also set up the handler for deeplinks received while the app is running
     #[cfg(target_os = "macos")]
     {
         let protocol = protocol.clone();
@@ -237,12 +329,6 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
                 }
             }
         });
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
-        protocol.try_assign_value_from_vec(&args);
     }
 }
 
