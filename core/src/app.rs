@@ -49,11 +49,7 @@ impl AppState {
         #[cfg(target_os = "macos")]
         AutoAuth::try_install_to_app_dir_if_from_dmg();
 
-        let flow = LaunchFlow::new(
-            installs_hub,
-            analytics.clone(),
-            running_instances,
-        );
+        let flow = LaunchFlow::new(installs_hub, analytics.clone(), running_instances);
         let flow_state = LaunchFlowState::default();
         let app_state = Self {
             flow,

@@ -82,7 +82,7 @@ impl LaunchFlow {
     pub fn new(
         installs_hub: Arc<Mutex<InstallsHub>>,
         analytics: Arc<Mutex<Analytics>>,
-        running_instances: Arc<Mutex<RunningInstances>>
+        running_instances: Arc<Mutex<RunningInstances>>,
     ) -> Self {
         Self {
             fetch_step: FetchStep {},
@@ -94,7 +94,7 @@ impl LaunchFlow {
             },
             app_launch_step: AppLaunchStep {
                 installs_hub,
-                running_instances
+                running_instances,
             },
             analytics,
         }
@@ -422,7 +422,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
 
 struct AppLaunchStep {
     installs_hub: Arc<Mutex<InstallsHub>>,
-    running_instances: Arc<Mutex<RunningInstances>>
+    running_instances: Arc<Mutex<RunningInstances>>,
 }
 
 impl AppLaunchStep {

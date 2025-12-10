@@ -6,7 +6,7 @@ use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
-use anyhow::{Context, Error, Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use semver::Version;
 use serde_json::{Map, Value};
 use std::cmp::Ordering;
@@ -149,9 +149,9 @@ fn get_version_data() -> Result<Map<String, Value>> {
 }
 
 fn get_version_data_or_empty() -> Map<String, Value> {
-    get_version_data().unwrap_or_else(|_e| {
+    get_version_data().unwrap_or_else(|e| {
         log::error!(
-            "Cannot get version data, fallback to new empty: File doesn't exist: version.json"
+            "Cannot get version data, fallback to new empty: File doesn't exist: version.json: {e}"
         );
 
         Map::new()
@@ -264,13 +264,20 @@ impl Display for EntryVersion {
     }
 }
 
-fn cleanup_versions() -> Result<()> {
-    const KEEP_VERSIONS_AMOUNT: usize = 2;
+fn remove_version_if_exists(version: &EntryVersion) {
+    let folder_path = explorer_path().join(version.to_restored());
+    if folder_path.exists() {
+        match fs::remove_dir_all(&folder_path) {
+            Ok(()) => log::info!("Removed old version: {}", version),
+            Err(err) => log::error!("Failed to remove {}: {}", version, err),
+        }
+    }
+}
 
-    let entries = match fs::read_dir(explorer_path()) {
-        Ok(entries) => entries,
-        Err(err) => return Err(Error::msg(err.to_string())),
-    };
+fn cleanup_versions(current_version: &EntryVersion) -> Result<()> {
+    const KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT: usize = 2;
+
+    let entries = fs::read_dir(explorer_path()).context("Cannot read entries in the app dir")?;
 
     let mut installations: Vec<EntryVersion> = Vec::new();
 
@@ -288,10 +295,19 @@ fn cleanup_versions() -> Result<()> {
         return Ok(());
     }
 
+    installations.retain(|i| {
+        // remove versions above the current version in a case of rollback
+        let should_be_removed = i > current_version;
+        if should_be_removed {
+            remove_version_if_exists(&i);
+        }
+        !should_be_removed
+    });
+
     // Sort versions
     installations.sort();
 
-    if installations.len() <= KEEP_VERSIONS_AMOUNT {
+    if installations.len() <= KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT {
         // Don't need to uninstall anything
         return Ok(());
     }
@@ -301,15 +317,9 @@ fn cleanup_versions() -> Result<()> {
     #[allow(clippy::arithmetic_side_effects)]
     for version in installations
         .iter()
-        .take(installations.len() - KEEP_VERSIONS_AMOUNT)
+        .take(installations.len() - KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT)
     {
-        let folder_path = explorer_path().join(version.to_restored());
-        if folder_path.exists() {
-            match fs::remove_dir_all(&folder_path) {
-                Ok(()) => log::info!("Removed old version: {}", version),
-                Err(err) => log::error!("Failed to remove {}: {}", version, err),
-            }
-        }
+        remove_version_if_exists(&version);
     }
 
     Ok(())
@@ -346,9 +356,11 @@ pub fn target_download_path() -> PathBuf {
 }
 
 pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
+    let current_version: EntryVersion = EntryVersion::from_str(version)
+        .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
+
     let branch_path = explorer_path().join(version);
-    let file_path = downloaded_file_path
-        .unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
+    let file_path = downloaded_file_path.unwrap_or_else(|| target_download_path());
 
     if !file_path.exists() {
         return StepError::E1001_FILE_NOT_FOUND {
@@ -401,7 +413,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     // Remove the downloaded file
     fs::remove_file(file_path)?;
-    cleanup_versions().context("Cannot clean up the old versions")?;
+    cleanup_versions(&current_version).context("Cannot clean up the old versions")?;
 
     Ok(())
 }
