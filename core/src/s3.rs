@@ -2,7 +2,7 @@ use reqwest;
 use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::environment::AppEnvironment;
+use crate::environment::{AppEnvironment, Args};
 use crate::errors::{StepError, StepResultTyped};
 use crate::utils::get_os_name;
 
@@ -19,17 +19,25 @@ pub struct ReleaseResponse {
     pub version: String,
 }
 
-async fn fetch_explorer_latest_release() -> StepResultTyped<LatestRelease> {
+fn latest_json_url() -> String {
+    let args: Args = AppEnvironment::cmd_args();
+    if let Some(url) = args.use_latest_json_url {
+        return url;
+    }
+
     let bucket_url = AppEnvironment::bucket_url();
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let url = format!(
+    format!(
         "{}/{}/latest.json?_t={}",
         bucket_url, RELEASE_PREFIX, timestamp
-    );
+    )
+}
 
+async fn fetch_explorer_latest_release() -> StepResultTyped<LatestRelease> {
+    let url = latest_json_url();
     log::info!(
         "[fetch_explorer_latest_release] Fetching latest release from: {}",
         url

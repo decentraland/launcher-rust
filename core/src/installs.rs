@@ -299,7 +299,7 @@ fn cleanup_versions(current_version: &EntryVersion) -> Result<()> {
         // remove versions above the current version in a case of rollback
         let should_be_removed = i > current_version;
         if should_be_removed {
-            remove_version_if_exists(&i);
+            remove_version_if_exists(i);
         }
         !should_be_removed
     });
@@ -319,7 +319,7 @@ fn cleanup_versions(current_version: &EntryVersion) -> Result<()> {
         .iter()
         .take(installations.len() - KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT)
     {
-        remove_version_if_exists(&version);
+        remove_version_if_exists(version);
     }
 
     Ok(())
@@ -360,7 +360,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
 
     let branch_path = explorer_path().join(version);
-    let file_path = downloaded_file_path.unwrap_or_else(|| target_download_path());
+    let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
 
     if !file_path.exists() {
         return StepError::E1001_FILE_NOT_FOUND {
