@@ -1,6 +1,6 @@
 [package]
 name = "src-auto-auth"
-version = "1.12.11"
+version = "1.12.12"
 edition = "2024"
 
 [profile.dev]
