@@ -93,6 +93,49 @@ Windows
 C:\Users\<YourUsername>\AppData\Local\DecentralandLauncherLight\
 ```
 
+### Command Line Arguments (CLI)
+
+The application supports command-line arguments.
+The complete and up-to-date list is defined here:
+https://github.com/decentraland/launcher-rust/blob/main/core/src/environment.rs
+
+### Configuration File
+
+The configuration file is located at `{APP_DIR}/config.json` and uses JSON format.
+
+Example:
+
+```json
+{
+  "analytics-user-id": "f31c8100-xxxx-xxxx-xxxx-46fc9b13ed0e",
+  "client-additional-arguments": "--example-client-arg",
+  "cmd-arguments": "--example-launcher-arg"
+}
+```
+
+#### Fields
+
+- **analytics-user-id**
+  UUID used as a stable analytics user identifier.
+
+- **client-additional-arguments**
+  A string of arguments passed directly to the client on launch.
+  Parsed using the same rules as terminal argument strings.
+
+- **cmd-arguments**
+  A string of arguments applied by the launcher in addition to the CLI arguments
+  for the current execution.
+  Parsed using the same rules as terminal argument strings.
+
+#### Usage Examples
+
+- Test a specific build version and suppress the version-check popup using:
+  `--skip-version-check`
+
+- Control the updater behavior:
+  - Disable updates: `--never-trigger-updater`
+  - Force updates: `--always-trigger-updater`
+
 ### Customisation of the .dmg installer
 
 Customisation for .dmg on macOS is performed by the CI step: Build & replace custom DMG (macOS). Be aware that building locally won't trigger .dmg customisation and you will get partly customized output from the tauri build command.
