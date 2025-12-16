@@ -1,6 +1,6 @@
 [package]
 name = "dcl-launcher-core"
-version = "1.12.12"
+version = "1.12.13"
 edition = "2024"
 
 [lib]
