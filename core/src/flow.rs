@@ -73,6 +73,7 @@ pub struct LaunchFlow {
     fetch_step: FetchStep,
     download_step: DownloadStep,
     install_step: InstallStep,
+    rename_step: RenameStep,
     app_launch_step: AppLaunchStep,
 
     analytics: Arc<Mutex<Analytics>>,
@@ -92,6 +93,7 @@ impl LaunchFlow {
             install_step: InstallStep {
                 analytics: analytics.clone(),
             },
+            rename_step: RenameStep {},
             app_launch_step: AppLaunchStep {
                 installs_hub,
                 running_instances,
@@ -158,6 +160,9 @@ impl LaunchFlow {
             .await?;
         self.install_step
             .execute_if_needed(channel, state.clone(), "install")
+            .await?;
+        self.rename_step
+            .execute_if_needed(channel, state.clone(), "rename")
             .await?;
         self.app_launch_step
             .execute_if_needed(channel, state.clone(), "launch")
@@ -417,6 +422,26 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                 StepResult::Err(anyhow!(ERROR_MESSAGE).into())
             }
         }
+    }
+}
+
+struct RenameStep {}
+
+impl WorkflowStep<LaunchFlowState, ()> for RenameStep {
+    async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
+        Ok(installs::explorer_latest_version_path().exists())
+    }
+
+    fn start_label(&self) -> Result<Status> {
+        Ok(Status::State { step: Step::Renaming })
+    }
+
+    async fn execute<T: EventChannel>(
+            &self,
+            _channel: &T,
+            _state: Arc<Mutex<LaunchFlowState>>,
+        ) -> StepResult {
+        installs::rename_explorer_to_latest()
     }
 }
 

@@ -23,6 +23,8 @@ pub enum Step {
     #[serde(rename_all = "camelCase")]
     Installing { build_type: BuildType },
     #[serde(rename_all = "camelCase")]
+    Renaming,
+    #[serde(rename_all = "camelCase")]
     Launching,
 }
 
