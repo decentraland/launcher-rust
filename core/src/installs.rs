@@ -151,17 +151,20 @@ fn get_version_data_or_empty() -> Map<String, Value> {
     })
 }
 
-fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
-    let version_data = get_version_data_or_empty();
-
-    let latest = version_data
+fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
+    version_data
         .get("version")
         .and_then(|v| v.as_str())
-        .unwrap_or("");
+        .ok_or_else(|| anyhow::anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
+}
+
+fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
+    let version_data = get_version_data()?;
+    let latest_version = get_latest_version(&version_data)?;
 
     let base_path = match version {
         Some("dev") => explorer_dev_version_path(),
-        Some(v) if v != latest => explorer_path().join(v),
+        Some(v) if v != latest_version => explorer_path().join(v),
         _ => explorer_latest_version_path()
     };
 
@@ -436,11 +439,8 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 }
 
 pub fn rename_explorer_to_latest() -> StepResult {
-    // Version data is written by InstallStep, so we can assume it exists.
-    let version_data = get_version_data().unwrap();
-
-    let latest_version = version_data.get("version").unwrap().as_str()
-        .unwrap();
+    let version_data = get_version_data()?;
+    let latest_version = get_latest_version(&version_data)?;
 
     fs::rename(explorer_path().join(latest_version),
         explorer_latest_version_path())?;
