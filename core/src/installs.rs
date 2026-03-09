@@ -155,7 +155,7 @@ fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
     version_data
         .get("version")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
+        .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
 }
 
 fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
@@ -403,16 +403,12 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     );
     version_data.insert(version.to_owned(), install_time);
 
-    let latest_version = version_data
-        .get("version")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-
+    let latest_version = get_latest_version(&version_data).map(String::from);
     let latest_path = explorer_latest_version_path();
 
     // Rename latest back to its version so that cleanup_versions can do its
     // job. RenameStep will then rename the new newest build to "latest".
-    if let Some(v) = latest_version && latest_path.exists() {
+    if let Ok(v) = latest_version && latest_path.exists() {
         fs::rename(latest_path, explorer_path.join(v))?;
     }
 
