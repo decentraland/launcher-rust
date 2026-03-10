@@ -4,7 +4,7 @@ path = "src/main.rs"
 
 [package]
 name = "Decentraland-Launcher"
-version = "1.12.14"
+version = "1.12.15"
 description = "Decentraland Launcher App"
 authors = [ "Decentraland",]
 edition = "2021"
