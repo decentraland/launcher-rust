@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useState } from "react";
-import { Box, Typography } from "decentraland-ui2";
+import { Box, Typography, IconButton } from "decentraland-ui2";
 import { Status, BuildType } from "./types";
 import {
   Landscape,
@@ -13,6 +13,9 @@ import { versionLabel } from "./VersionLabel";
 import LANDSCAPE_IMG from "../../assets/background.jpg";
 import LOGO_SVG from "../../assets/logo.svg";
 import ERROR_SVG from "../../assets/error.svg";
+import DISCORD_IMG from "../../assets/discord.png"
+import INSTAGRAM_IMG from "../../assets/instagram.png"
+import TWITTER_IMG from "../../assets/twitter.png"
 
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
@@ -28,8 +31,8 @@ function asLogicalSize(size: WindowSize) {
 }
 
 const stateWindowSize = {
-  width: 600,
-  height: 156,
+  width: 800,
+  height: 530,
 };
 
 const errorWindowSize = {
@@ -161,7 +164,7 @@ export const Home: React.FC = memo(() => {
         flexDirection="column"
         alignItems="center"
         gap={2}
-        sx={{ maxWidth: "400px" }}
+        sx={{ maxWidth: "400px" }}        
       >
         <ErrorIcon src={ERROR_SVG} />
         <Typography
@@ -206,66 +209,98 @@ export const Home: React.FC = memo(() => {
   ) => {
     resizeWindow(stateWindowSize);
     return (
-      <>
+      <Box
+        marginTop="50px"
+        alignSelf="center"
+        display="flex"
+        gap="14px"
+      >
         <Logo src={LOGO_SVG} />
         <Box
           display="flex"
           flexDirection="column"
           justifyContent="space-between"
-          height="61px"
+          border="1px solid cyan"
         >
           <Typography
-            variant="h6"
-            align="left"
-            sx={{
-              fontFamily: "Inter, sans-serif",
-              fontWeight: 700,
-              fontSize: "20px",
-              lineHeight: "160%",
-              letterSpacing: "0px",
-              verticalAlign: "middle",
-            }}
+            fontSize="20px"
+            fontWeight="600"
           >
-            {message}
+            Checking for Update...
           </Typography>
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
             <LoadingBar
               variant={downloadingProgress ? "determinate" : undefined}
               value={downloadingProgress ?? undefined}
               sx={{ mr: 1 }}
             />
-            {
+            <Box display="flex">
               <Typography
-                variant="body1"
-                width="45px"
-                visibility={downloadingProgress ? "visible" : "hidden"}
-              >{`${Math.round(downloadingProgress ?? 0)}%`}</Typography>
-            }
-          </Box>
+                flexGrow="1"
+                fontSize="12px"
+                fontWeight="600"
+              >
+                Downloading
+              </Typography>
+              <Typography
+                fontSize="12px"
+                fontWeight="600"
+              >
+                50%
+              </Typography>
+            </Box>
+            <Box display="flex">
+              <Typography
+                flexGrow="1"
+                fontSize="12px"
+              >
+                10 MB/s
+              </Typography>
+              <Typography
+                fontSize="12px"
+              >
+                45 minutes
+              </Typography>
+            </Box>
         </Box>
-      </>
+        <IconButton>
+          <img src={ERROR_SVG}/>
+        </IconButton>
+      </Box>
     );
   };
 
   return (
     <Box
       display="flex"
-      alignItems={"center"}
-      justifyContent={"center"}
-      width={"100%"}
-      gap={4}
+      flexDirection="column"
+      flexGrow="1"
     >
-      <Landscape>
-        <img src={LANDSCAPE_IMG} />
-      </Landscape>
-      {renderStatusMessage()}
-      {versionLabel()}
+      <Box
+        display="flex"
+        flexDirection="column"
+        flexGrow="1"
+        sx={{ backgroundImage: `url(${LANDSCAPE_IMG})` }}
+      >
+        {renderStatusMessage()}
+      </Box>
+      <Box
+        display="flex"
+        height="26px"
+        overflow="hidden"
+      >
+        <Typography flexGrow="1">
+          {versionLabel()}
+        </Typography>
+        <IconButton>
+          <img src={DISCORD_IMG}/>
+        </IconButton>
+        <IconButton>
+          <img src={TWITTER_IMG}/>
+        </IconButton>
+        <IconButton>
+          <img src={INSTAGRAM_IMG}/>
+        </IconButton>
+      </Box>
     </Box>
   );
 });
