@@ -159,13 +159,18 @@ fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
 }
 
 fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
-    let version_data = get_version_data()?;
-    let latest_version = get_latest_version(&version_data)?;
-
     let base_path = match version {
+        None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
-        Some(v) if v != latest_version => explorer_path().join(v),
-        _ => explorer_latest_version_path()
+        Some(v) => {
+            let version_data = get_version_data()?;
+            let latest_version = get_latest_version(&version_data)?;
+            if v == latest_version {
+                explorer_latest_version_path()
+            } else {
+                explorer_path().join(v)
+            }
+        }
     };
 
     #[cfg(target_os = "macos")]

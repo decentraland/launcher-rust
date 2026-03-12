@@ -73,7 +73,6 @@ pub struct LaunchFlow {
     fetch_step: FetchStep,
     download_step: DownloadStep,
     install_step: InstallStep,
-    rename_step: RenameStep,
     app_launch_step: AppLaunchStep,
 
     analytics: Arc<Mutex<Analytics>>,
@@ -93,7 +92,6 @@ impl LaunchFlow {
             install_step: InstallStep {
                 analytics: analytics.clone(),
             },
-            rename_step: RenameStep {},
             app_launch_step: AppLaunchStep {
                 installs_hub,
                 running_instances,
@@ -160,9 +158,6 @@ impl LaunchFlow {
             .await?;
         self.install_step
             .execute_if_needed(channel, state.clone(), "install")
-            .await?;
-        self.rename_step
-            .execute_if_needed(channel, state.clone(), "rename")
             .await?;
         self.app_launch_step
             .execute_if_needed(channel, state.clone(), "launch")
@@ -363,7 +358,9 @@ impl InstallStep {
 impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
-        Ok(guard.recent_download.is_none())
+
+        Ok(guard.recent_download.is_none()
+            && installs::explorer_latest_version_path().exists())
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -380,67 +377,35 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
-        match recent_download {
-            Some(download) => {
-                let version = download.version.clone();
-                self.analytics
-                    .lock()
-                    .await
-                    .track_and_flush_silent(Event::INSTALL_VERSION_START {
-                        version: version.clone(),
-                    })
-                    .await;
-                let result = Self::execute_internal(download);
-                if let Err(e) = &result {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                            version: Some(version),
-                            error: e.to_string(),
-                        })
-                        .await;
-                } else {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
-                        .await;
-                }
-                result
-            }
-            None => {
-                const ERROR_MESSAGE: &str = "Downloaded archive not found";
+
+        if let Some(download) = recent_download {
+            let version = download.version.clone();
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::INSTALL_VERSION_START {
+                    version: version.clone(),
+                })
+                .await;
+            let result = Self::execute_internal(download);
+            if let Err(e) = &result {
                 self.analytics
                     .lock()
                     .await
                     .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                        version: None,
-                        error: ERROR_MESSAGE.to_owned(),
+                        version: Some(version),
+                        error: e.to_string(),
                     })
                     .await;
-                StepResult::Err(anyhow!(ERROR_MESSAGE).into())
+            } else {
+                self.analytics
+                    .lock()
+                    .await
+                    .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
+                    .await;
             }
         }
-    }
-}
 
-struct RenameStep {}
-
-impl WorkflowStep<LaunchFlowState, ()> for RenameStep {
-    async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
-        Ok(installs::explorer_latest_version_path().exists())
-    }
-
-    fn start_label(&self) -> Result<Status> {
-        Ok(Status::State { step: Step::Renaming })
-    }
-
-    async fn execute<T: EventChannel>(
-            &self,
-            _channel: &T,
-            _state: Arc<Mutex<LaunchFlowState>>,
-        ) -> StepResult {
         installs::rename_explorer_to_latest()
     }
 }
