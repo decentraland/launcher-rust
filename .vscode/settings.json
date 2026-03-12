@@ -1,0 +1,10 @@
+{
+  "rust-analyzer.cargo.extraEnv": {
+    "VITE_AWS_S3_BUCKET_PUBLIC_URL": "https://explorer-artifacts.decentraland.org"
+  },
+  "rust-analyzer.linkedProjects": [
+    "core/Cargo.toml",
+    "src-auto-auth/Cargo.toml",
+    "src-tauri/Cargo.toml"
+  ]
+}
