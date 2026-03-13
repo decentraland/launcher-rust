@@ -29,14 +29,14 @@ export const Landscape = styled("div")((_props) => ({
 
 export const Logo = styled("img")((props) => ({
   ...props,
-  height: "61px",
-  width: "61px",
+  height: "50px",
+  width: "50px",
 }));
 
 export const ErrorIcon = styled("img")((props) => ({
   ...props,
-  height: "62px",
-  width: "62px",
+  height: "50px",
+  width: "50px",
 }));
 
 export const ErrorDialogButton = styled(Button)((props) => ({

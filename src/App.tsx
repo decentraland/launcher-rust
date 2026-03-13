@@ -8,7 +8,10 @@ export const App: React.FC = () => {
   return (
     //<React.StrictMode>
       <ThemeProvider theme={Theme}>
-        <Box display="flex" height="100vh">
+        <Box
+          display="flex"
+          height="100vh"
+        >
           <Home />
         </Box>
       </ThemeProvider>

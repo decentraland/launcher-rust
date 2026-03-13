@@ -16,6 +16,8 @@ import ERROR_SVG from "../../assets/error.svg";
 import DISCORD_IMG from "../../assets/discord.png"
 import INSTAGRAM_IMG from "../../assets/instagram.png"
 import TWITTER_IMG from "../../assets/twitter.png"
+import PAUSE_IMG from "../../assets/pause.png"
+import RESUME_IMG from "../../assets/resume.png"
 
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
@@ -210,39 +212,44 @@ export const Home: React.FC = memo(() => {
     resizeWindow(stateWindowSize);
     return (
       <Box
-        marginTop="50px"
+        marginTop="20px"
         alignSelf="center"
         display="flex"
         gap="14px"
       >
-        <Logo src={LOGO_SVG} />
+        <Logo
+          src={LOGO_SVG}
+        />
         <Box
           display="flex"
           flexDirection="column"
-          justifyContent="space-between"
-          border="1px solid cyan"
+          gap="2px"
         >
           <Typography
-            fontSize="20px"
-            fontWeight="600"
+            variant="h4"
+            marginTop="4px"
+            marginBottom="4px"
           >
             Checking for Update...
           </Typography>
-            <LoadingBar
-              variant={downloadingProgress ? "determinate" : undefined}
-              value={downloadingProgress ?? undefined}
-              sx={{ mr: 1 }}
-            />
-            <Box display="flex">
+          <LoadingBar
+            variant={downloadingProgress ? "determinate" : undefined}
+            value={downloadingProgress ?? undefined}
+          />
+          <Box
+            paddingTop="4px"
+            paddingBottom="4px"
+          >
+            <Box
+              display="flex"
+            >
               <Typography
                 flexGrow="1"
-                fontSize="12px"
                 fontWeight="600"
               >
                 Downloading
               </Typography>
               <Typography
-                fontSize="12px"
                 fontWeight="600"
               >
                 50%
@@ -255,15 +262,14 @@ export const Home: React.FC = memo(() => {
               >
                 10 MB/s
               </Typography>
-              <Typography
-                fontSize="12px"
-              >
+              <Typography>
                 45 minutes
               </Typography>
             </Box>
+          </Box>
         </Box>
         <IconButton>
-          <img src={ERROR_SVG}/>
+          <img src={PAUSE_IMG}/>
         </IconButton>
       </Box>
     );
@@ -288,7 +294,11 @@ export const Home: React.FC = memo(() => {
         height="26px"
         overflow="hidden"
       >
-        <Typography flexGrow="1">
+        <Typography
+          alignSelf="center"
+          flexGrow="1"
+          marginLeft="10px"
+        >
           {versionLabel()}
         </Typography>
         <IconButton>
