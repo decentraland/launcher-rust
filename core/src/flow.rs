@@ -243,7 +243,11 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         match &guard.latest_release {
             Some(release) => {
                 let version = release.version.as_str();
-                let updated = crate::installs::is_explorer_updated(version);
+
+                // Temporary change for UI preview.
+                let updated = crate::installs::is_explorer_updated(version)
+                    && std::hint::black_box(false);
+
                 Ok(updated)
             }
             None => Err(anyhow!("Latest release is not found in the state")),

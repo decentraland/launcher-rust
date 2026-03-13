@@ -122,6 +122,25 @@ pub async fn download_file<T: EventChannel>(
             })?;
         let mut stream = res.bytes_stream();
 
+        // Temporary change for UI preview.
+        let mut fake_progress: u8 = 0;
+
+        while std::hint::black_box(true) {
+            let event: Status = Status::State {
+                step: Step::Downloading {
+                    progress: fake_progress,
+                    build_type: build_type.clone(),
+                },
+            };
+
+            channel
+                .send(event)
+                .context("Cannot send event to channel")?;
+
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            fake_progress = fake_progress.saturating_add(1) % 100;
+        }
+
         loop {
             match timeout(Duration::from_secs(15), stream.next()).await {
                 Ok(Some(item)) => {
