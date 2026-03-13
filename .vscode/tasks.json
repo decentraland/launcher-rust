@@ -22,8 +22,8 @@
         },
         "background": {
             "activeOnStart": true,
-            "beginsPattern": ".",
-            "endsPattern": "."
+            "beginsPattern": "VITE",
+            "endsPattern": "Local:"
         }
       }
     }
