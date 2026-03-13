@@ -38,8 +38,8 @@ const stateWindowSize = {
 };
 
 const errorWindowSize = {
-  width: 600,
-  height: 358,
+  width: 800,
+  height: 530,
 };
 
 const resizeWindow = async (size: WindowSize) => {
@@ -104,17 +104,17 @@ export const Home: React.FC = memo(() => {
             const data = currentStatus.data.step.data;
             switch (data.event) {
               case "checkingForUpdate":
-                return renderStep("Checking for update...");
+                return renderStep("Checking for update...", "Checking");
               case "downloading": {
                 const progress = data.data.progress ?? undefined;
-                return renderStep("Downloading update...", progress);
+                return renderStep("Downloading update...", "Downloading", progress);
               }
               case "downloadFinished":
-                return renderStep("Update downloaded...");
+                return renderStep("Update downloaded...", "Downloading");
               case "installingUpdate":
-                return renderStep("Installing update...");
+                return renderStep("Installing update...", "Installing");
               case "restartingApp":
-                return renderStep("Restarting app...");
+                return renderStep("Restarting app...", "Restarting");
             }
           }
           case "deeplinkOpening":
@@ -141,22 +141,22 @@ export const Home: React.FC = memo(() => {
     }
   };
 
-  const renderDeeplinkOpeningStep = () => renderStep("Opening Deeplink...");
+  const renderDeeplinkOpeningStep = () => renderStep("Opening Deeplink...", "Opening");
 
-  const renderFetchStep = () => renderStep("Fetching Latest...");
+  const renderFetchStep = () => renderStep("Fetching Latest...", "Fetching");
 
   const renderDownloadStep = (isUpdate: boolean, downloadingProgress: number) =>
     renderStep(
-      isUpdate ? "Downloading Update..." : "Downloading Decentraland...",
+      isUpdate ? "Downloading Update..." : "Downloading Decentraland...", "Downloading",
       downloadingProgress,
     );
 
   const renderInstallStep = (isUpdate: boolean) =>
     renderStep(
-      isUpdate ? "Installing Update..." : "Installation in Progress...",
+      isUpdate ? "Installing Update..." : "Installation in Progress...", "Installing",
     );
 
-  const renderLaunchStep = () => renderStep("Launching Decentraland...");
+  const renderLaunchStep = () => renderStep("Launching Decentraland...", "Launching");
 
   const renderError = (message: string) => {
     resizeWindow(errorWindowSize);
@@ -166,7 +166,7 @@ export const Home: React.FC = memo(() => {
         flexDirection="column"
         alignItems="center"
         gap={2}
-        sx={{ maxWidth: "400px" }}        
+        sx={{ maxWidth: "400px" }}
       >
         <ErrorIcon src={ERROR_SVG} />
         <Typography
@@ -207,6 +207,7 @@ export const Home: React.FC = memo(() => {
 
   const renderStep = (
     message: string,
+    message2: string,
     downloadingProgress: number | undefined = undefined,
   ) => {
     resizeWindow(stateWindowSize);
@@ -230,7 +231,7 @@ export const Home: React.FC = memo(() => {
             marginTop="4px"
             marginBottom="4px"
           >
-            Checking for Update...
+            {message}
           </Typography>
           <LoadingBar
             variant={downloadingProgress ? "determinate" : undefined}
@@ -247,12 +248,12 @@ export const Home: React.FC = memo(() => {
                 flexGrow="1"
                 fontWeight="600"
               >
-                Downloading
+                {message2}
               </Typography>
               <Typography
                 fontWeight="600"
               >
-                50%
+                {downloadingProgress}%
               </Typography>
             </Box>
             <Box display="flex">
@@ -280,12 +281,15 @@ export const Home: React.FC = memo(() => {
       display="flex"
       flexDirection="column"
       flexGrow="1"
+      sx={{
+        backgroundImage: `url(${LANDSCAPE_IMG})`,
+        backgroundPosition: "bottom"
+      }}
     >
       <Box
         display="flex"
         flexDirection="column"
         flexGrow="1"
-        sx={{ backgroundImage: `url(${LANDSCAPE_IMG})` }}
       >
         {renderStatusMessage()}
       </Box>

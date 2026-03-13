@@ -12,6 +12,7 @@
     "analyze": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings; cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings; cargo clippy --manifest-path src-auto-auth/Cargo.toml --all-targets --all-features -- -D warnings"
   },
   "dependencies": {
+    "@fontsource/inter": "*",
     "@sentry/react": "^8.29.0",
     "@sentry/vite-plugin": "^2.22.4",
     "@tauri-apps/api": "^2",
