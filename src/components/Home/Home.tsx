@@ -1,12 +1,7 @@
 import React, { memo, useEffect, useState } from "react";
 import { Box, Typography, IconButton } from "decentraland-ui2";
 import { Status, BuildType, Progress } from "./types";
-import {
-  LoadingBar,
-  Logo,
-  ErrorIcon,
-  ErrorDialogButton,
-} from "./Home.styles";
+import { LoadingBar, Logo, ErrorIcon, ErrorDialogButton } from "./Home.styles";
 import { versionLabel } from "./VersionLabel";
 
 import LANDSCAPE_IMG from "../../assets/background.jpg";
