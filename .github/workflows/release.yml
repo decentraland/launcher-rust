@@ -134,7 +134,7 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-      - run: npm run build
+      - run: npm run build-ui
         env:
           MODE: production
           DRY_RUN: ${{ inputs.dry-run }}
