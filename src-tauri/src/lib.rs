@@ -13,6 +13,7 @@
 use dcl_launcher_core::analytics::event::Event;
 use dcl_launcher_core::environment::{AppEnvironment, Args};
 use dcl_launcher_core::errors::FlowError;
+use dcl_launcher_core::installs::download_speed_estimator::DownloadSpeedEstimator;
 use dcl_launcher_core::log::{error, info};
 use dcl_launcher_core::protocols::Protocol;
 use dcl_launcher_core::types::LauncherUpdate;
@@ -27,7 +28,6 @@ use tauri::{ipc::Channel, App, AppHandle, Manager, State};
 #[cfg(unix)]
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::UpdaterExt;
-use dcl_launcher_core::installs::download_speed_estimator::DownloadSpeedEstimator;
 type MutState = Arc<Mutex<AppState>>;
 
 pub struct StatusChannel(Channel<types::Status>);
@@ -168,7 +168,7 @@ async fn update_if_needed_and_restart(
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
         let mut downloaded: usize = 0;
-        let mut estimator = DownloadSpeedEstimator::new(0.3);
+        let mut estimator = DownloadSpeedEstimator::new(0.1);
         let mut chunk_time = Instant::now();
 
         let content = update
@@ -178,12 +178,16 @@ async fn update_if_needed_and_restart(
                     info!("downloaded {downloaded} from {content_length:?}");
 
                     estimator.update(chunk_length, chunk_time.elapsed());
+                    let bytes_per_second = estimator.bytes_per_second();
                     chunk_time = Instant::now();
 
                     match content_length {
                         Some(length) => {
                             let current = (downloaded as u64).saturating_mul(100);
                             let percentage = current.checked_div(length);
+
+                            let time_remaining =
+                                estimator.time_remaining(length.saturating_sub(downloaded as u64));
 
                             match percentage {
                                 Some(p) => {
@@ -192,8 +196,8 @@ async fn update_if_needed_and_restart(
                                     channel.send_silent(
                                         LauncherUpdate::Downloading {
                                             progress: Some(progress),
-                                            bytes_per_second: estimator.bytes_per_second(),
-                                            time_remaining: Some(estimator.estimate_remaining_secs(length.saturating_sub(downloaded as u64)) * 1000.0)
+                                            bytes_per_second,
+                                            time_remaining: Some(time_remaining),
                                         }
                                         .into(),
                                     );
@@ -202,8 +206,8 @@ async fn update_if_needed_and_restart(
                                     channel.send_silent(
                                         LauncherUpdate::Downloading {
                                             progress: None,
-                                            bytes_per_second: estimator.bytes_per_second(),
-                                            time_remaining: Some(estimator.estimate_remaining_secs(length.saturating_sub(downloaded as u64)) * 1000.0)
+                                            bytes_per_second,
+                                            time_remaining: Some(time_remaining),
                                         }
                                         .into(),
                                     );
@@ -211,12 +215,13 @@ async fn update_if_needed_and_restart(
                             }
                         }
                         None => {
-                            channel.send_silent(LauncherUpdate::Downloading {
+                            channel.send_silent(
+                                LauncherUpdate::Downloading {
                                     progress: None,
-                                    bytes_per_second: estimator.bytes_per_second(),
-                                    time_remaining: None
+                                    bytes_per_second,
+                                    time_remaining: None,
                                 }
-                                .into()
+                                .into(),
                             );
                         }
                     }

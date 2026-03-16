@@ -36,8 +36,9 @@ impl DownloadSpeedEstimator {
             // First sample — seed the estimate directly.
             self.bytes_per_second = sample_bps;
         } else {
-            self.bytes_per_second =
-                self.alpha.mul_add(sample_bps, (1.0 - self.alpha) * self.bytes_per_second);
+            self.bytes_per_second = self
+                .alpha
+                .mul_add(sample_bps, (1.0 - self.alpha) * self.bytes_per_second);
         }
     }
 
@@ -46,14 +47,15 @@ impl DownloadSpeedEstimator {
         self.bytes_per_second
     }
 
-    /// Estimated seconds remaining to download `bytes_remaining`.
+    /// Estimated milliseconds remaining to download `bytes_remaining`.ß
     /// Returns `f64::INFINITY` if no speed data is available yet.
-    pub fn estimate_remaining_secs(&self, bytes_remaining: u64) -> f64 {
+    pub fn time_remaining(&self, bytes_remaining: u64) -> f64 {
         if self.bytes_per_second <= 0.0 {
             return f64::INFINITY;
         }
 
         #[allow(clippy::cast_precision_loss)]
-        return bytes_remaining as f64 / self.bytes_per_second;
+        let seconds_remaining = bytes_remaining as f64 / self.bytes_per_second;
+        seconds_remaining * 1000.0
     }
 }

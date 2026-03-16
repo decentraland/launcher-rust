@@ -22,6 +22,7 @@ pub enum Step {
     Downloading {
         progress: u8,
         bytes_per_second: f64,
+        /// In milliseconds because that's what JavaScript's `Date` uses.
         time_remaining: f64,
         build_type: BuildType
     },
@@ -38,6 +39,7 @@ pub enum LauncherUpdate {
     Downloading {
         progress: Option<u8>,
         bytes_per_second: f64,
+        /// In milliseconds because that's what JavaScript's `Date` uses.
         time_remaining: Option<f64>
     },
     DownloadFinished,

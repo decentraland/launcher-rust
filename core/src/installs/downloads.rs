@@ -123,9 +123,9 @@ pub async fn download_file<T: EventChannel>(
             })?;
         let mut stream = res.bytes_stream();
 
-        let mut estimator = DownloadSpeedEstimator::new(0.3);
+        let mut estimator = DownloadSpeedEstimator::new(0.1);
 
-        download_file_mock(channel, build_type, &mut estimator).await?;
+        mock_download_file(channel, build_type, &mut estimator).await?;
 
         loop {
             let chunk_time = std::time::Instant::now();
@@ -168,7 +168,8 @@ pub async fn download_file<T: EventChannel>(
                         step: Step::Downloading {
                             progress,
                             bytes_per_second: estimator.bytes_per_second(),
-                            time_remaining: estimator.estimate_remaining_secs(total_size.saturating_sub(downloaded)) * 1000.0,
+                            time_remaining: estimator
+                                .time_remaining(total_size.saturating_sub(downloaded)),
                             build_type: build_type.clone(),
                         },
                     };
@@ -207,10 +208,10 @@ pub async fn download_file<T: EventChannel>(
     Ok(())
 }
 
-async fn download_file_mock<T: EventChannel>(
+async fn mock_download_file<T: EventChannel>(
     channel: &T,
     build_type: &BuildType,
-    estimator: &mut DownloadSpeedEstimator
+    estimator: &mut DownloadSpeedEstimator,
 ) -> DownloadFileResult {
     let mut fake_progress: u8 = 0;
 
@@ -219,7 +220,7 @@ async fn download_file_mock<T: EventChannel>(
             step: Step::Downloading {
                 progress: fake_progress,
                 bytes_per_second: estimator.bytes_per_second(),
-                time_remaining: estimator.estimate_remaining_secs(1_000_000_000) * 1000.0,
+                time_remaining: estimator.time_remaining(1_000_000_000),
                 build_type: build_type.clone(),
             },
         };
@@ -228,9 +229,10 @@ async fn download_file_mock<T: EventChannel>(
             .send(event)
             .context("Cannot send event to channel")?;
 
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let duration = Duration::from_millis(100);
+        tokio::time::sleep(duration).await;
         fake_progress = fake_progress.saturating_add(1) % 100;
-        estimator.update(1_000_000, Duration::from_millis(100));
+        estimator.update(1_000_000, duration);
     }
 
     Ok(())
