@@ -65,6 +65,83 @@ npm run tauri dev
 - Keep frontend TypeScript enum in sync with Rust `enum` for proper communication.
 
 
+### Environment Variables
+
+Environment variables are typically defined in the shell configuration.
+
+Example:
+
+```
+~/.zshrc
+```
+
+This allows tools such as `cargo`, `vite`, and `tauri` to access configuration without project-specific IDE settings.
+
+
+### Debugging
+
+Debugging is performed directly on the compiled binary using `lldb`.
+
+`lldb` is independent from Neovim or any editor plugins.
+This approach keeps debugging reproducible outside the editor.
+
+
+### Workflow
+
+The project is intentionally structured so that **core logic is developed independently from the UI layer**.
+
+Typical workflow:
+
+1. Develop and test the **core Rust logic** separately.
+
+2. Build the Rust components
+
+3. Run the frontend development server
+
+4. Launch or debug the binary using `lldb`.
+
+
+### Frontend / Core Separation
+
+The architecture separates application logic from rendering.
+
+* **Core**
+  Portable Rust logic with no frontend dependency.
+
+* **Frontend**
+  UI layer using Vite and Tauri.
+
+Because of this separation:
+
+* Core logic can be reused with other frontends.
+* The UI can be mocked during development.
+
+
+### Mocking UI Interaction
+
+Frontend rendering commands can be mocked by overriding the application state.
+
+Example location:
+
+```
+Home.tsx:77
+```
+
+The UI exposes a **single entry point for state updates**.
+
+This approach is inspired by the Elm architecture.
+
+Key idea:
+
+* a **single update loop**
+* explicit state transitions
+* avoidance of fragmented state typical in MVC/MVVM architectures.
+
+Reference:
+
+[https://guide.elm-lang.org/architecture/](https://guide.elm-lang.org/architecture/)
+
+
 ### Logs
 
 You can find the logs in this location
