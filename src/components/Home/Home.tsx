@@ -2,7 +2,6 @@ import React, { memo, useEffect, useState } from "react";
 import { Box, Typography, IconButton } from "decentraland-ui2";
 import { Status, BuildType, Progress } from "./types";
 import {
-  Landscape,
   LoadingBar,
   Logo,
   ErrorIcon,
@@ -17,7 +16,7 @@ import DISCORD_IMG from "../../assets/discord.png";
 import INSTAGRAM_IMG from "../../assets/instagram.png";
 import TWITTER_IMG from "../../assets/twitter.png";
 import PAUSE_IMG from "../../assets/pause.png";
-import RESUME_IMG from "../../assets/resume.png";
+//import RESUME_IMG from "../../assets/resume.png";
 
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
