@@ -10,9 +10,5 @@ export function versionLabel() {
       .catch(() => setVersion("v?.?.?"));
   }, []);
 
-  return (
-    <>
-      {version}
-    </>
-  );
+  return <>{version}</>;
 }

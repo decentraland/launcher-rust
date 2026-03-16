@@ -1,5 +1,5 @@
 import { dark } from "decentraland-ui2/dist/theme";
-import "@fontsource/inter"
+import "@fontsource/inter";
 
 dark.typography.fontFamily = "Inter";
 dark.typography.body1.fontSize = "12px";

@@ -12,13 +12,14 @@ export type Progress = {
 
 export type LauncherUpdate =
   | { event: "checkingForUpdate"; data: {} }
-  | { event: "downloading";
-    data: {
-      progress: number | null;
-      bytesPerSecond: number;
-      timeRemaining: number | null;
+  | {
+      event: "downloading";
+      data: {
+        progress: number | null;
+        bytesPerSecond: number;
+        timeRemaining: number | null;
+      };
     }
-  }
   | { event: "downloadFinished"; data: {} }
   | { event: "installingUpdate"; data: {} }
   | { event: "restartingApp"; data: {} };
@@ -27,14 +28,15 @@ export type Step =
   | { event: "launcherUpdate"; data: LauncherUpdate }
   | { event: "fetching"; data: {} }
   | { event: "deeplinkOpening"; data: {} }
-  | { event: "downloading";
-    data: {
-      progress: number;
-      bytesPerSecond: number;
-      timeRemaining: number;
-      buildType: BuildType;
+  | {
+      event: "downloading";
+      data: {
+        progress: number;
+        bytesPerSecond: number;
+        timeRemaining: number;
+        buildType: BuildType;
+      };
     }
-  }
   | { event: "installing"; data: { buildType: BuildType } }
   | { event: "launching"; data: {} };
 
