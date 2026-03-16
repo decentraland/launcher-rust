@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build-ui": "tsc && vite build",
+    "build-core": "tauri build",
+    "build": "npm run build-ui && npm run build-core",
     "preview": "vite preview",
     "tauri": "tauri",
     "format": "npx prettier --write '**/*.{js,mjs,cjs,jsx,ts,ODmts,cts,tsx}'; cargo fmt --manifest-path src-tauri/Cargo.toml -- --check --verbose; cargo fmt --manifest-path core/Cargo.toml -- --check --verbose; cargo fmt --manifest-path src-auto-auth/Cargo.toml -- --check --verbose",

@@ -7,6 +7,11 @@ trap {
   exit 1 
 }
 
+if (-not $env:ES_USERNAME) {
+  Write-Host "Signing skipped (credentials not present)"
+  exit 0
+}
+
 $jarPath = $env:CODESIGN_JAR
 $javaExe = $env:CODESIGN_JAVA
 
