@@ -20,13 +20,14 @@ use dcl_launcher_core::utils;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::env;
 use std::sync::Arc;
+use std::time::Instant;
 use tauri::async_runtime::Mutex;
 use tauri::Url;
 use tauri::{ipc::Channel, App, AppHandle, Manager, State};
 #[cfg(unix)]
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::UpdaterExt;
-
+use dcl_launcher_core::installs::download_speed_estimator::DownloadSpeedEstimator;
 type MutState = Arc<Mutex<AppState>>;
 
 pub struct StatusChannel(Channel<types::Status>);
@@ -167,12 +168,18 @@ async fn update_if_needed_and_restart(
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
         let mut downloaded: usize = 0;
+        let mut estimator = DownloadSpeedEstimator::new(0.3);
+        let mut chunk_time = Instant::now();
 
         let content = update
             .download(
                 |chunk_length, content_length| {
                     downloaded = downloaded.saturating_add(chunk_length);
                     info!("downloaded {downloaded} from {content_length:?}");
+
+                    estimator.update(chunk_length, chunk_time.elapsed());
+                    chunk_time = Instant::now();
+
                     match content_length {
                         Some(length) => {
                             let current = (downloaded as u64).saturating_mul(100);
@@ -185,20 +192,32 @@ async fn update_if_needed_and_restart(
                                     channel.send_silent(
                                         LauncherUpdate::Downloading {
                                             progress: Some(progress),
+                                            bytes_per_second: estimator.bytes_per_second(),
+                                            time_remaining: Some(estimator.estimate_remaining_secs(length.saturating_sub(downloaded as u64)) * 1000.0)
                                         }
                                         .into(),
                                     );
                                 }
                                 None => {
                                     channel.send_silent(
-                                        LauncherUpdate::Downloading { progress: None }.into(),
+                                        LauncherUpdate::Downloading {
+                                            progress: None,
+                                            bytes_per_second: estimator.bytes_per_second(),
+                                            time_remaining: Some(estimator.estimate_remaining_secs(length.saturating_sub(downloaded as u64)) * 1000.0)
+                                        }
+                                        .into(),
                                     );
                                 }
                             }
                         }
                         None => {
-                            channel
-                                .send_silent(LauncherUpdate::Downloading { progress: None }.into());
+                            channel.send_silent(LauncherUpdate::Downloading {
+                                    progress: None,
+                                    bytes_per_second: estimator.bytes_per_second(),
+                                    time_remaining: None
+                                }
+                                .into()
+                            );
                         }
                     }
                 },

@@ -33,6 +33,7 @@ use std::time::Duration;
 
 pub mod compression;
 pub mod downloads;
+pub mod download_speed_estimator;
 
 const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";

@@ -259,7 +259,9 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         let status = Status::State {
             step: Step::Downloading {
                 progress: 0,
-                build_type: mode,
+                bytes_per_second: 0.0,
+                time_remaining: 0.0,
+                build_type: mode
             },
         };
         Ok(status)
