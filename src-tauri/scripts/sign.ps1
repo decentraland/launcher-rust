@@ -12,6 +12,17 @@ $javaExe = $env:CODESIGN_JAVA
 
 Push-Location "C:\CodeSignTool"
 
+if (-not (Test-Path $filePath)) {
+  Write-Error "File not found: $filePath"
+  exit 1
+}
+Write-Host "File size: $((Get-Item $filePath).Length) bytes"
+
+& "$javaExe" -jar "$jarPath" credential_info `
+  "-username=$env:ES_USERNAME" `
+  "-password=$env:ES_PASSWORD" `
+  "-totp_secret=$env:ES_TOTP_SECRET" 2>&1 | Write-Host
+
 & "$javaExe" -jar "$jarPath" sign `
   "-username=$env:ES_USERNAME" `
   "-password=$env:ES_PASSWORD" `
@@ -19,7 +30,7 @@ Push-Location "C:\CodeSignTool"
   "-totp_secret=$env:ES_TOTP_SECRET" `
   "-input_file_path=$filePath" `
   "-override=true" `
-  "-malware_block=false"
+  "-malware_block=false" 2>&1 | Write-Host
 
 Pop-Location
 

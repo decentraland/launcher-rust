@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - main
+      - fix/windows-sign-failures
   pull_request:
 
 concurrency:
