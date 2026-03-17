@@ -21,7 +21,16 @@ Write-Host "File size: $((Get-Item $filePath).Length) bytes"
 & "$javaExe" -jar "$jarPath" credential_info `
   "-username=$env:ES_USERNAME" `
   "-password=$env:ES_PASSWORD" `
+  "-credential_id=$env:WINDOWS_CREDENTIAL_ID_SIGNER" `
   "-totp_secret=$env:ES_TOTP_SECRET" 2>&1 | Write-Host
+
+# Debug: verify secrets are actually populated
+Write-Host "ES_USERNAME length: $($env:ES_USERNAME.Length)"
+Write-Host "ES_PASSWORD length: $($env:ES_PASSWORD.Length)"
+Write-Host "CREDENTIAL_ID length: $($env:WINDOWS_CREDENTIAL_ID_SIGNER.Length)"
+Write-Host "TOTP_SECRET length: $($env:ES_TOTP_SECRET.Length)"
+Write-Host "Java path exists: $(Test-Path $javaExe)"
+Write-Host "JAR path exists: $(Test-Path $jarPath)"
 
 & "$javaExe" -jar "$jarPath" sign `
   "-username=$env:ES_USERNAME" `
