@@ -22,22 +22,8 @@ if ($missing.Count -gt 0) {
   exit 0
 }
 
-# Test: does the secret generate valid 6-digit codes?
-# Base32 (standard TOTP) uses only A-Z, 2-7, and = padding
-# The + character is NOT valid base32
-$hasInvalidBase32 = $env:ES_TOTP_SECRET -match '[^A-Za-z2-7=]'
-Write-Host "Contains non-base32 chars: $hasInvalidBase32"
-
-# Check for special chars that PowerShell might mangle
-Write-Host "TOTP first 4 chars: $($env:ES_TOTP_SECRET.Substring(0,4))"
-Write-Host "TOTP last 4 chars: $($env:ES_TOTP_SECRET.Substring($env:ES_TOTP_SECRET.Length - 4))"
-Write-Host "TOTP contains +: $($env:ES_TOTP_SECRET.Contains('+'))"
-Write-Host "TOTP contains =: $($env:ES_TOTP_SECRET.Contains('='))"
-
 $jarPath = $env:CODESIGN_JAR
 $javaExe = $env:CODESIGN_JAVA
-
-Push-Location "C:\CodeSignTool"
 
 if (-not (Test-Path $filePath)) {
   Write-Error "File not found: $filePath"
@@ -45,37 +31,57 @@ if (-not (Test-Path $filePath)) {
 }
 Write-Host "File size: $((Get-Item $filePath).Length) bytes"
 
-Write-Host "ES_USERNAME length: $($env:ES_USERNAME.Length)"
-Write-Host "ES_PASSWORD length: $($env:ES_PASSWORD.Length)"
-Write-Host "CREDENTIAL_ID length: $($env:WINDOWS_CREDENTIAL_ID_SIGNER.Length)"
-Write-Host "TOTP_SECRET length: $($env:ES_TOTP_SECRET.Length)"
+# ---- Test the TOTP secret directly against SSL.com's API ----
+Write-Host "--- Testing TOTP auth against SSL.com API ---"
+try {
+  # Step 1: Get OAuth token
+  $tokenBody = "client_id=kaXTRACNijSWsFdRKg_KAfD3fqrBlzMbWs6TwWHwAn8&grant_type=password&username=$([uri]::EscapeDataString($env:ES_USERNAME))&password=$([uri]::EscapeDataString($env:ES_PASSWORD))"
+  $tokenResp = Invoke-RestMethod -Uri "https://login.ssl.com/oauth2/token" `
+    -Method POST -Body $tokenBody -ContentType "application/x-www-form-urlencoded"
+  Write-Host "OAuth token obtained: True"
 
-# Check for log directory
+  # Step 2: Try credentials/authorize with the TOTP secret directly
+  # This is what CodeSignTool does internally
+  $authBody = @{
+    credentialID  = $env:WINDOWS_CREDENTIAL_ID_SIGNER
+    numSignatures = 1
+    hash          = "test"
+    OTP           = $env:ES_TOTP_SECRET
+  } | ConvertTo-Json
+
+  $authResp = Invoke-RestMethod -Uri "https://cs.ssl.com/csc/v0/credentials/authorize" `
+    -Method POST -Body $authBody -ContentType "application/json" `
+    -Headers @{ Authorization = "Bearer $($tokenResp.access_token)" }
+  Write-Host "Credential authorize response: $($authResp | ConvertTo-Json -Compress)"
+} catch {
+  Write-Host "API error: $($_.Exception.Message)"
+  if ($_.ErrorDetails.Message) {
+    Write-Host "API response body: $($_.ErrorDetails.Message)"
+  }
+}
+
+# ---- Now run CodeSignTool for comparison ----
+Write-Host "--- Starting CodeSignTool sign ---"
+
 $logDir = "C:\CodeSignTool\logs"
 if (Test-Path $logDir) {
-  Write-Host "Log dir exists, clearing old logs..."
   Remove-Item "$logDir\*" -Force -ErrorAction SilentlyContinue
 }
 
-$signArgs = @(
-  "-jar", $jarPath,
-  "sign",
-  "-username=$($env:ES_USERNAME)",
-  "-password=$($env:ES_PASSWORD)",
-  "-credential_id=$($env:WINDOWS_CREDENTIAL_ID_SIGNER)",
-  "`"-totp_secret=$($env:ES_TOTP_SECRET)`"",
-  "-input_file_path=$filePath",
-  "-override=true",
-  "-malware_block=false"
-)
+Push-Location "C:\CodeSignTool"
 
-Write-Host "--- Starting sign command ---"
-$signOutput = & "$javaExe" @signArgs 2>&1
+$signOutput = & "$javaExe" -jar "$jarPath" sign `
+  "-username=$($env:ES_USERNAME)" `
+  "-password=$($env:ES_PASSWORD)" `
+  "-credential_id=$($env:WINDOWS_CREDENTIAL_ID_SIGNER)" `
+  "-totp_secret=$($env:ES_TOTP_SECRET)" `
+  "-input_file_path=$filePath" `
+  "-override=true" `
+  "-malware_block=false" 2>&1
 
 $signOutputStr = $signOutput | Out-String
 Write-Host $signOutputStr
 
-# Check logs if they exist
 if (Test-Path $logDir) {
   Write-Host "--- CodeSignTool logs ---"
   Get-ChildItem $logDir -Recurse | ForEach-Object {
@@ -84,21 +90,15 @@ if (Test-Path $logDir) {
   }
 }
 
-# Exit code is unreliable in v1.3.2 — check output for errors
-if ($signOutputStr -match "Error") {
-  Write-Error "Signing failed. Output: $signOutputStr"
-  exit 1
-}
+Pop-Location
 
-# Verify the signature was actually applied
+# Check result
 $sig = Get-AuthenticodeSignature $filePath
 Write-Host "Signature status: $($sig.Status)"
-Write-Host "Signer: $($sig.SignerCertificate.Subject)"
 
 if ($sig.Status -ne "Valid") {
   Write-Error "Signature verification failed: $($sig.Status)"
   exit 1
 }
 
-Pop-Location
 Write-Host "Signing succeeded and verified"
