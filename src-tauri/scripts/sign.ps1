@@ -4,6 +4,24 @@ param (
 
 $ErrorActionPreference = "Continue"
 
+# Skip signing if any required env var is missing
+$requiredVars = @(
+  @{ Name = "ES_USERNAME";                    Value = $env:ES_USERNAME },
+  @{ Name = "ES_PASSWORD";                    Value = $env:ES_PASSWORD },
+  @{ Name = "WINDOWS_CREDENTIAL_ID_SIGNER";   Value = $env:WINDOWS_CREDENTIAL_ID_SIGNER },
+  @{ Name = "ES_TOTP_SECRET";                 Value = $env:ES_TOTP_SECRET },
+  @{ Name = "CODESIGN_JAR";                   Value = $env:CODESIGN_JAR },
+  @{ Name = "CODESIGN_JAVA";                  Value = $env:CODESIGN_JAVA }
+)
+
+$missing = $requiredVars | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) }
+
+if ($missing.Count -gt 0) {
+  $names = ($missing | ForEach-Object { $_.Name }) -join ", "
+  Write-Host "Skipping code signing — missing env vars: $names"
+  exit 0
+}
+
 $jarPath = $env:CODESIGN_JAR
 $javaExe = $env:CODESIGN_JAVA
 
