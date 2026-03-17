@@ -43,17 +43,6 @@
       }
     },
     "windows": {
-      "signCommand": {
-        "cmd": "pwsh",
-        "args": [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-File",
-          "sign.ps1",
-          "%1"
-        ]
-      },
       "nsis": {
         "installerIcon": "./icons/icon.ico",
         "installerHooks": "./windows/hooks.nsh"
