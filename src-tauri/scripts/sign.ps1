@@ -14,12 +14,6 @@ $requiredVars = @(
   @{ Name = "CODESIGN_JAVA";                  Value = $env:CODESIGN_JAVA }
 )
 
-# Check for special chars that PowerShell might mangle
-Write-Host "TOTP first 4 chars: $($env:ES_TOTP_SECRET.Substring(0,4))"
-Write-Host "TOTP last 4 chars: $($env:ES_TOTP_SECRET.Substring($env:ES_TOTP_SECRET.Length - 4))"
-Write-Host "TOTP contains +: $($env:ES_TOTP_SECRET.Contains('+'))"
-Write-Host "TOTP contains =: $($env:ES_TOTP_SECRET.Contains('='))"
-
 $missing = $requiredVars | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) }
 
 if ($missing.Count -gt 0) {
@@ -27,6 +21,18 @@ if ($missing.Count -gt 0) {
   Write-Host "Skipping code signing — missing env vars: $names"
   exit 0
 }
+
+# Test: does the secret generate valid 6-digit codes?
+# Base32 (standard TOTP) uses only A-Z, 2-7, and = padding
+# The + character is NOT valid base32
+$hasInvalidBase32 = $env:ES_TOTP_SECRET -match '[^A-Za-z2-7=]'
+Write-Host "Contains non-base32 chars: $hasInvalidBase32"
+
+# Check for special chars that PowerShell might mangle
+Write-Host "TOTP first 4 chars: $($env:ES_TOTP_SECRET.Substring(0,4))"
+Write-Host "TOTP last 4 chars: $($env:ES_TOTP_SECRET.Substring($env:ES_TOTP_SECRET.Length - 4))"
+Write-Host "TOTP contains +: $($env:ES_TOTP_SECRET.Contains('+'))"
+Write-Host "TOTP contains =: $($env:ES_TOTP_SECRET.Contains('='))"
 
 $jarPath = $env:CODESIGN_JAR
 $javaExe = $env:CODESIGN_JAVA
