@@ -278,12 +278,6 @@ jobs:
           CODESIGN_JAVA: ${{ env.CODESIGN_JAVA }}
         run: |
           & "${{ github.workspace }}\src-tauri\scripts\sign.ps1" -filePath "${{ github.workspace }}\src-tauri\target\release\dcl_launcher.exe"
-          SIGNED_EXE=$(find src-tauri/target/release/ -name '*.exe' | head -n1)
-          echo "Built artifact: $SIGNED_EXE"
-          echo "Checking signature..."
-          powershell.exe -Command "Get-AuthenticodeSignature '$SIGNED_EXE'"
-          SIGNATURE_STATUS=$(powershell.exe -Command "(Get-AuthenticodeSignature '$SIGNED_EXE').Status")
-          echo "Signature status: $SIGNATURE_STATUS"
 
       - name: Build & replace custom DMG (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
