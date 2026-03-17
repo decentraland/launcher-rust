@@ -22,6 +22,10 @@ if ($missing.Count -gt 0) {
   exit 0
 }
 
+# Check for special chars that PowerShell might mangle
+Write-Host "TOTP first 4 chars: $($env:ES_TOTP_SECRET.Substring(0,4))"
+Write-Host "TOTP last 4 chars: $($env:ES_TOTP_SECRET.Substring($env:ES_TOTP_SECRET.Length - 4))"
+
 $jarPath = $env:CODESIGN_JAR
 $javaExe = $env:CODESIGN_JAVA
 
