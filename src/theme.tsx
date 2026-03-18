@@ -1,10 +1,24 @@
-import { dark } from "decentraland-ui2/dist/theme";
 import "@fontsource/inter";
+import { deepmerge } from "@mui/utils";
+import { dark } from "decentraland-ui2/dist/theme";
 
-dark.typography.fontFamily = "Inter";
-dark.typography.body1.fontSize = "12px";
-dark.typography.h4.fontSize = "20px";
-dark.typography.h4.fontWeight = "600";
-dark.typography.h6.fontSize = "16px";
-
-export const Theme = dark;
+export const Theme = deepmerge(dark, {
+  palette: {
+    text: {
+      primary: "#c93ed8",
+    },
+  },
+  typography: {
+    fontFamily: "Inter",
+    body1: {
+      fontSize: "12px",
+    },
+    h4: {
+      fontSize: "20px",
+      fontWeight: "600",
+    },
+    h6: {
+      fontSize: "16px",
+    },
+  },
+});

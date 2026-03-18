@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useState } from "react";
-import { Box, Typography, IconButton } from "decentraland-ui2";
+import { Box, Typography, Button } from "decentraland-ui2";
 import { Status, BuildType, Progress } from "./types";
 import { LoadingBar, Logo, ErrorIcon, ErrorDialogButton } from "./Home.styles";
 import { versionLabel } from "./VersionLabel";
@@ -72,8 +72,23 @@ const useChannelUpdates = (channel: ChannelProxy) => {
 
 const channel = newChannelProxy();
 
+if (false as boolean) useChannelUpdates(channel);
+
 export const Home: React.FC = memo(() => {
-  const currentStatus = useChannelUpdates(channel);
+  const currentStatus = {
+    event: "state",
+    data: {
+      step: {
+        event: "downloading",
+        data: {
+          progress: 50,
+          bytesPerSecond: 1000000,
+          timeRemaining: 1000000,
+          buildType: BuildType.Update,
+        },
+      },
+    },
+  } as Status | null;
 
   const rustCall = async (functionName: string) => {
     const newChannel = new Channel<Status>();
@@ -179,6 +194,7 @@ export const Home: React.FC = memo(() => {
           sx={{
             fontFamily: "Inter, sans-serif",
             fontWeight: 700,
+            color: "#cfcdd4",
           }}
         >
           Error
@@ -188,6 +204,7 @@ export const Home: React.FC = memo(() => {
           sx={{
             fontFamily: "Inter, sans-serif",
             textAlign: "center",
+            color: "#cfcdd4",
           }}
         >
           {message}
@@ -226,14 +243,14 @@ export const Home: React.FC = memo(() => {
     const totalSeconds = Math.floor(timeRemaining / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
+    const seconds = Math.ceil(totalSeconds % 60);
 
     const parts: string[] = [];
-    if (hours > 0) parts.push(`${hours} hr${hours !== 1 ? "s" : ""}`);
-    if (minutes > 0) parts.push(`${minutes} min${minutes !== 1 ? "s" : ""}`);
-    if (seconds > 0) parts.push(`${seconds} sec${seconds !== 1 ? "s" : ""}`);
+    if (hours > 0) parts.push(`${hours} hr`);
+    if (minutes > 0) parts.push(`${minutes} min`);
+    if (totalSeconds < 60) parts.push(`${seconds} sec`);
 
-    return parts.slice(0, 2).join(", ") || "0 sec";
+    return `${parts.join(", ")} left`;
   };
 
   const renderStep = (
@@ -242,10 +259,21 @@ export const Home: React.FC = memo(() => {
   ) => {
     resizeWindow(stateWindowSize);
     return (
-      <Box marginTop="20px" alignSelf="center" display="flex" gap="14px">
+      <Box
+        marginTop="20px"
+        alignSelf="center"
+        display="flex"
+        gap="14px"
+        alignItems="center"
+      >
         <Logo src={LOGO_SVG} />
         <Box display="flex" flexDirection="column" gap="2px">
-          <Typography variant="h4" marginTop="4px" marginBottom="4px">
+          <Typography
+            variant="h4"
+            marginTop="4px"
+            marginBottom="4px"
+            sx={{ color: "#cfcdd4" }}
+          >
             {message}
           </Typography>
           <LoadingBar
@@ -255,17 +283,27 @@ export const Home: React.FC = memo(() => {
           {progress && (
             <Box paddingTop="4px" paddingBottom="4px">
               <Box display="flex">
-                <Typography flexGrow="1" fontWeight="600">
+                <Typography
+                  flexGrow="1"
+                  fontWeight="600"
+                  sx={{ color: "#cfcdd4" }}
+                >
                   {progress.message}
                 </Typography>
-                <Typography fontWeight="600">{progress.progress}%</Typography>
+                <Typography fontWeight="600" sx={{ color: "#cfcdd4" }}>
+                  {progress.progress}%
+                </Typography>
               </Box>
               <Box display="flex">
-                <Typography flexGrow="1" fontSize="12px">
+                <Typography
+                  flexGrow="1"
+                  fontSize="12px"
+                  sx={{ color: "#cfcdd4" }}
+                >
                   {humanReadableDownloadSpeed(progress.bytesPerSecond)}
                 </Typography>
                 {progress.timeRemaining && (
-                  <Typography>
+                  <Typography sx={{ color: "#cfcdd4" }}>
                     {humanReadableTimeRemaining(progress.timeRemaining)}
                   </Typography>
                 )}
@@ -273,9 +311,20 @@ export const Home: React.FC = memo(() => {
             </Box>
           )}
         </Box>
-        <IconButton>
-          <img src={PAUSE_IMG} />
-        </IconButton>
+        <Button
+          variant="text"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "24px",
+            height: "24px",
+            padding: "0",
+            minWidth: "0",
+          }}
+        >
+          <img src={PAUSE_IMG} width="14px" height="14px" />
+        </Button>
       </Box>
     );
   };
@@ -293,19 +342,52 @@ export const Home: React.FC = memo(() => {
       <Box display="flex" flexDirection="column" flexGrow="1">
         {renderStatusMessage()}
       </Box>
-      <Box display="flex" height="26px" overflow="hidden">
-        <Typography alignSelf="center" flexGrow="1" marginLeft="10px">
+      <Box display="flex" height="26px" gap="7.5px">
+        <Typography
+          alignSelf="center"
+          flexGrow="1"
+          marginLeft="10px"
+          sx={{ color: "#a09ba8" }}
+        >
           {versionLabel()}
         </Typography>
-        <IconButton>
-          <img src={DISCORD_IMG} />
-        </IconButton>
-        <IconButton>
-          <img src={TWITTER_IMG} />
-        </IconButton>
-        <IconButton>
-          <img src={INSTAGRAM_IMG} />
-        </IconButton>
+        <div
+          role="button"
+          style={{
+            width: "22px",
+            height: "22px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <img src={DISCORD_IMG} width="18px" height="18px" />
+        </div>
+        <div
+          role="button"
+          style={{
+            width: "22px",
+            height: "22px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <img src={TWITTER_IMG} width="18px" height="18px" />
+        </div>
+        <div
+          role="button"
+          style={{
+            width: "22px",
+            height: "22px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginRight: "13px",
+          }}
+        >
+          <img src={INSTAGRAM_IMG} width="18px" height="18px" />
+        </div>
       </Box>
     </Box>
   );
