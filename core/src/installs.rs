@@ -114,15 +114,8 @@ fn explorer_version_path() -> PathBuf {
     explorer_path().join("version.json")
 }
 
-fn explorer_latest_version_path() -> Result<PathBuf> {
-    let data = get_version_data()?;
-    let path = data
-        .get("path")
-        .context("missing \"path\" property in version data")?;
-    let value = path
-        .as_str()
-        .context("cannot get string value from path property")?;
-    Ok(PathBuf::from(value))
+pub fn explorer_latest_version_path() -> PathBuf {
+    explorer_path().join("latest")
 }
 
 fn explorer_dev_version_path() -> PathBuf {
@@ -158,11 +151,26 @@ fn get_version_data_or_empty() -> Map<String, Value> {
     })
 }
 
+fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
+    version_data
+        .get("version")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
+}
+
 fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
+        None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
-        Some(v) => explorer_path().join(v),
-        None => explorer_latest_version_path()?,
+        Some(v) => {
+            let version_data = get_version_data()?;
+            let latest_version = get_latest_version(&version_data)?;
+            if v == latest_version {
+                explorer_latest_version_path()
+            } else {
+                explorer_path().join(v)
+            }
+        }
     };
 
     #[cfg(target_os = "macos")]
@@ -359,7 +367,8 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     let current_version: EntryVersion = EntryVersion::from_str(version)
         .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
 
-    let branch_path = explorer_path().join(version);
+    let explorer_path = explorer_path();
+    let branch_path = explorer_path.join(version);
     let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
 
     if !file_path.exists() {
@@ -399,11 +408,23 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     );
     version_data.insert(version.to_owned(), install_time);
 
+    let latest_version = get_latest_version(&version_data).map(String::from);
+    let latest_path = explorer_latest_version_path();
+
+    // Rename latest back to its version so that cleanup_versions can do its
+    // job. InstallStep will rename the new newest build to "latest".
+    if let Ok(v) = latest_version && latest_path.exists() {
+        fs::rename(latest_path, explorer_path.join(v))?;
+    }
+
     if version != "dev" {
         version_data.insert("version".to_owned(), Value::String(version.to_owned()));
     }
 
-    version_data.insert("path".to_owned(), branch_path.to_string_lossy().into());
+    // The path to the latest explorer build will be just "latest" from now on.
+    // Remove the path value from version data to not confuse people. You can
+    // remove this line in like 2027.
+    version_data.remove("path");
 
     // Write version data to file
     let version_data_str =
@@ -414,6 +435,16 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     // Remove the downloaded file
     fs::remove_file(file_path)?;
     cleanup_versions(&current_version).context("Cannot clean up the old versions")?;
+
+    Ok(())
+}
+
+pub fn rename_explorer_to_latest() -> StepResult {
+    let version_data = get_version_data()?;
+    let latest_version = get_latest_version(&version_data)?;
+
+    fs::rename(explorer_path().join(latest_version),
+        explorer_latest_version_path())?;
 
     Ok(())
 }

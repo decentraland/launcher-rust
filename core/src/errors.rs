@@ -107,6 +107,7 @@ pub enum StepError {
     E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
     E3001_OPEN_DEEPLINK_TIMEOUT,
     E3002_PLACE_DEEPLINK_ERROR(#[from] PlaceDeeplinkError),
+    E3003_CANT_GET_VERSION
 }
 
 impl StepError {
@@ -187,6 +188,9 @@ impl StepError {
             }
             Self::E3002_PLACE_DEEPLINK_ERROR { .. } => {
                 "There was an error while passing the deeplink. Please restart client and try again."
+            }
+            Self::E3003_CANT_GET_VERSION => {
+                "Version data could not be read. Please delete launcher's data folder."
             }
         }
     }
