@@ -364,7 +364,9 @@ impl InstallStep {
 impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
-        Ok(guard.recent_download.is_none())
+
+        Ok(guard.recent_download.is_none()
+            && installs::explorer_latest_version_path().exists())
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -408,21 +410,29 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                         .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
                         .await;
                 }
-                result
+                return result;
             }
             None => {
-                const ERROR_MESSAGE: &str = "Downloaded archive not found";
-                self.analytics
-                    .lock()
-                    .await
-                    .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                        version: None,
-                        error: ERROR_MESSAGE.to_owned(),
-                    })
-                    .await;
-                StepResult::Err(anyhow!(ERROR_MESSAGE).into())
+                // `InstallStep` will also run when there is nothing to
+                // install, but when the newest version of the game needs to be
+                // renamed to "latest". In that case, it is not an error for
+                // the download archive to be missing.
+                if installs::explorer_latest_version_path().exists() {
+                    const ERROR_MESSAGE: &str = "Downloaded archive not found";
+                    self.analytics
+                        .lock()
+                        .await
+                        .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
+                            version: None,
+                            error: ERROR_MESSAGE.to_owned(),
+                        })
+                        .await;
+                    return StepResult::Err(anyhow!(ERROR_MESSAGE).into());
+                }
             }
         }
+
+        installs::rename_explorer_to_latest()
     }
 }
 

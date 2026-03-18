@@ -2,12 +2,12 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Decentraland",
   "mainBinaryName": "dcl_launcher",
-  "version": "1.12.15",
+  "version": "1.12.18",
   "identifier": "com.decentraland.launcherlite",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build-ui",
     "frontendDist": "../dist"
   },
   "app": {
@@ -43,17 +43,6 @@
       }
     },
     "windows": {
-      "signCommand": {
-        "cmd": "pwsh",
-        "args": [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-File",
-          "sign.ps1",
-          "%1"
-        ]
-      },
       "nsis": {
         "installerIcon": "./icons/icon.ico",
         "installerHooks": "./windows/hooks.nsh"
