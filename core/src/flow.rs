@@ -405,7 +405,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                     .await;
             }
         }
-        
+
         installs::rename_explorer_to_latest()
     }
 }
