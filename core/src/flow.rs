@@ -404,7 +404,6 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                         .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
                         .await;
                 }
-                return result;
             }
             None => {
                 // `InstallStep` will also run when there is nothing to
