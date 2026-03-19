@@ -3,11 +3,6 @@ import { deepmerge } from "@mui/utils";
 import { dark } from "decentraland-ui2/dist/theme";
 
 export const Theme = deepmerge(dark, {
-  palette: {
-    text: {
-      primary: "#c93ed8",
-    },
-  },
   typography: {
     fontFamily: "Inter",
     body1: {

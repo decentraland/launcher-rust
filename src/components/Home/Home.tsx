@@ -1,7 +1,16 @@
 import React, { memo, useEffect, useState } from "react";
-import { Box, Typography, Button } from "decentraland-ui2";
+import {
+  Box,
+  Typography,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+} from "decentraland-ui2";
 import { Status, BuildType, Progress } from "./types";
-import { LoadingBar, Logo, ErrorIcon, ErrorDialogButton } from "./Home.styles";
+import { LoadingBar, Logo } from "./Home.styles";
 import { versionLabel } from "./VersionLabel";
 
 import LANDSCAPE_IMG from "../../assets/background.jpg";
@@ -11,7 +20,6 @@ import DISCORD_IMG from "../../assets/discord.png";
 import INSTAGRAM_IMG from "../../assets/instagram.png";
 import TWITTER_IMG from "../../assets/twitter.png";
 import PAUSE_IMG from "../../assets/pause.png";
-//import RESUME_IMG from "../../assets/resume.png";
 
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
@@ -75,20 +83,7 @@ const channel = newChannelProxy();
 if (false as boolean) useChannelUpdates(channel);
 
 export const Home: React.FC = memo(() => {
-  const currentStatus = {
-    event: "state",
-    data: {
-      step: {
-        event: "downloading",
-        data: {
-          progress: 50,
-          bytesPerSecond: 1000000,
-          timeRemaining: 1000000,
-          buildType: BuildType.Update,
-        },
-      },
-    },
-  } as Status | null;
+  const currentStatus = useChannelUpdates(channel);
 
   const rustCall = async (functionName: string) => {
     const newChannel = new Channel<Status>();
@@ -155,7 +150,7 @@ export const Home: React.FC = memo(() => {
             return renderLaunchStep();
         }
       case "error":
-        return renderError(currentStatus.data.message);
+        return renderError("Connection Error", currentStatus.data.message);
       default:
         return null;
     }
@@ -178,52 +173,59 @@ export const Home: React.FC = memo(() => {
 
   const renderLaunchStep = () => renderStep("Launching Decentraland...");
 
-  const renderError = (message: string) => {
+  const renderError = (title: string, message: string) => {
     resizeWindow(errorWindowSize);
     return (
-      <Box
-        display="flex"
-        flexDirection="column"
-        alignItems="center"
-        gap={2}
-        sx={{ maxWidth: "400px" }}
-      >
-        <ErrorIcon src={ERROR_SVG} />
-        <Typography
-          variant="h5"
+      <Dialog open={true} PaperProps={{ sx: { borderRadius: "20px" } }}>
+        <DialogTitle
+          textAlign="center"
           sx={{
-            fontFamily: "Inter, sans-serif",
-            fontWeight: 700,
-            color: "#cfcdd4",
+            background: "#4c147c",
+            paddingTop: "58.5px",
           }}
         >
-          Error
-        </Typography>
-        <Typography
-          variant="h6"
+          <img src={ERROR_SVG} width="50px" height="50px" />
+          <Typography variant="h6" color="white" fontWeight="bold">
+            {title}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ background: "#4c147c" }}>
+          <DialogContentText
+            fontFamily="Inter"
+            fontWeight="400"
+            fontSize="14px"
+            padding="27px 50px"
+            color="white"
+            width="452px"
+            textAlign="center"
+          >
+            {message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions
           sx={{
-            fontFamily: "Inter, sans-serif",
-            textAlign: "center",
-            color: "#cfcdd4",
+            background: "#4c147c",
+            justifyContent: "center",
+            paddingBottom: "58.5px",
+            gap: "16px",
           }}
         >
-          {message}
-        </Typography>
-        <Box display="flex" gap={2} sx={{ pt: 2 }}>
-          <ErrorDialogButton
-            variant="contained"
-            style={{
-              backgroundColor: "rgba(0, 0, 0, 0.4)",
-            }}
+          <Button
+            variant="outlined"
+            sx={{ width: "167px", height: "40px", padding: "0" }}
             onClick={() => exit()}
           >
-            EXIT
-          </ErrorDialogButton>
-          <ErrorDialogButton variant="contained" onClick={retryFlow}>
-            RETRY
-          </ErrorDialogButton>
-        </Box>
-      </Box>
+            Exit application
+          </Button>
+          <Button
+            variant="contained"
+            sx={{ width: "167px", height: "40px", padding: "0" }}
+            onClick={retryFlow}
+          >
+            Retry
+          </Button>
+        </DialogActions>
+      </Dialog>
     );
   };
 
