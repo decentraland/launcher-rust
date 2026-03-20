@@ -36,9 +36,8 @@ impl DownloadSpeedEstimator {
             // First sample — seed the estimate directly.
             self.bytes_per_second = sample_bps;
         } else {
-            self.bytes_per_second = self
-                .alpha
-                .mul_add(sample_bps, (1.0 - self.alpha) * self.bytes_per_second);
+            self.bytes_per_second =
+                sample_bps.mul_add(self.alpha, self.bytes_per_second * (1.0 - self.alpha));
         }
     }
 

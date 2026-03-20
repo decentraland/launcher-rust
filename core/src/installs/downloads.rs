@@ -114,6 +114,7 @@ pub async fn download_file<T: EventChannel>(
     let duration = std::time::Duration::from_millis(500);
     let mut tasks = Vec::new();
 
+    let mut bytes_per_interval: usize = 0;
     let mut downloaded: u64 = 0;
     {
         let mut file =
@@ -125,16 +126,13 @@ pub async fn download_file<T: EventChannel>(
 
         let mut estimator = DownloadSpeedEstimator::new(0.1);
 
-        mock_download_file(channel, build_type, &mut estimator).await?;
-
         loop {
-            let chunk_time = std::time::Instant::now();
-
             match timeout(Duration::from_secs(15), stream.next()).await {
                 Ok(Some(item)) => {
                     let chunk = item?;
                     file.write_all(&chunk)?;
 
+                    bytes_per_interval = bytes_per_interval.saturating_add(chunk.len());
                     let new = min(downloaded.saturating_add(chunk.len() as u64), total_size);
                     downloaded = new;
 
@@ -152,6 +150,8 @@ pub async fn download_file<T: EventChannel>(
                             total_size,
                         ));
                         tasks.push(task);
+                        estimator.update(bytes_per_interval, duration);
+                        bytes_per_interval = 0;
                     }
 
                     #[allow(
@@ -161,8 +161,6 @@ pub async fn download_file<T: EventChannel>(
                         clippy::cast_sign_loss
                     )]
                     let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
-
-                    estimator.update(chunk.len(), chunk_time.elapsed());
 
                     let event: Status = Status::State {
                         step: Step::Downloading {
@@ -204,36 +202,6 @@ pub async fn download_file<T: EventChannel>(
     }
 
     track_download_progress(analytics, url.to_owned(), downloaded, total_size).await;
-
-    Ok(())
-}
-
-async fn mock_download_file<T: EventChannel>(
-    channel: &T,
-    build_type: &BuildType,
-    estimator: &mut DownloadSpeedEstimator,
-) -> DownloadFileResult {
-    let mut fake_progress: u8 = 0;
-
-    while std::hint::black_box(true) {
-        let event: Status = Status::State {
-            step: Step::Downloading {
-                progress: fake_progress,
-                bytes_per_second: estimator.bytes_per_second(),
-                time_remaining: estimator.time_remaining(1_000_000_000),
-                build_type: build_type.clone(),
-            },
-        };
-
-        channel
-            .send(event)
-            .context("Cannot send event to channel")?;
-
-        let duration = Duration::from_millis(100);
-        tokio::time::sleep(duration).await;
-        fake_progress = fake_progress.saturating_add(1) % 100;
-        estimator.update(1_000_000, duration);
-    }
 
     Ok(())
 }
