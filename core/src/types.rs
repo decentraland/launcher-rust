@@ -6,7 +6,7 @@ pub enum Status {
     #[serde(rename_all = "camelCase")]
     State { step: Step },
     #[serde(rename_all = "camelCase")]
-    Error { message: String },
+    Error { title: String, message: String },
 }
 
 #[derive(Clone, Serialize)]

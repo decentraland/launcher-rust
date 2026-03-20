@@ -136,8 +136,10 @@ impl LaunchFlow {
         }
 
         if let Some(e) = last_error {
+            let user_message = e.error.user_message();
             let error = FlowError {
-                user_message: e.error.user_message().to_owned(),
+                user_title: user_message.0.to_owned(),
+                user_message: user_message.1.to_owned(),
             };
             std::result::Result::Err(error)
         } else {

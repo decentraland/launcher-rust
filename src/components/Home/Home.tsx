@@ -80,8 +80,6 @@ const useChannelUpdates = (channel: ChannelProxy) => {
 
 const channel = newChannelProxy();
 
-if (false as boolean) useChannelUpdates(channel);
-
 export const Home: React.FC = memo(() => {
   const currentStatus = useChannelUpdates(channel);
 

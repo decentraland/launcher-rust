@@ -42,4 +42,4 @@ export type Step =
 
 export type Status =
   | { event: "state"; data: { step: Step } }
-  | { event: "error"; data: { message: string } };
+  | { event: "error"; data: { title: string; message: string } };
