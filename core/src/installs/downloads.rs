@@ -9,6 +9,7 @@ use std::time::Duration;
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::channel::EventChannel;
+use crate::installs::download_speed_estimator::DownloadSpeedEstimator;
 use crate::types::{BuildType, Status, Step};
 use anyhow::Context;
 use std::sync::Arc;
@@ -113,6 +114,7 @@ pub async fn download_file<T: EventChannel>(
     let duration = std::time::Duration::from_millis(500);
     let mut tasks = Vec::new();
 
+    let mut bytes_per_interval: usize = 0;
     let mut downloaded: u64 = 0;
     {
         let mut file =
@@ -122,12 +124,17 @@ pub async fn download_file<T: EventChannel>(
             })?;
         let mut stream = res.bytes_stream();
 
+        let mut estimator = DownloadSpeedEstimator::new(0.1);
+
+        //fake_progress(channel, build_type, download_paused).await?;
+
         loop {
             match timeout(Duration::from_secs(15), stream.next()).await {
                 Ok(Some(item)) => {
                     let chunk = item?;
                     file.write_all(&chunk)?;
 
+                    bytes_per_interval = bytes_per_interval.saturating_add(chunk.len());
                     let new = min(downloaded.saturating_add(chunk.len() as u64), total_size);
                     downloaded = new;
 
@@ -145,6 +152,8 @@ pub async fn download_file<T: EventChannel>(
                             total_size,
                         ));
                         tasks.push(task);
+                        estimator.update(bytes_per_interval, duration);
+                        bytes_per_interval = 0;
                     }
 
                     #[allow(
@@ -158,6 +167,9 @@ pub async fn download_file<T: EventChannel>(
                     let event: Status = Status::State {
                         step: Step::Downloading {
                             progress,
+                            bytes_per_second: estimator.bytes_per_second(),
+                            time_remaining: estimator
+                                .time_remaining(total_size.saturating_sub(downloaded)),
                             build_type: build_type.clone(),
                         },
                     };
@@ -195,3 +207,37 @@ pub async fn download_file<T: EventChannel>(
 
     Ok(())
 }
+
+/*async fn fake_progress<T: EventChannel>(
+    channel: &T,
+    build_type: &BuildType,
+    download_paused: &AtomicBool,
+) -> DownloadFileResult {
+    let mut fake_progress: u8 = 0;
+
+    while std::hint::black_box(true) {
+        let download_paused = download_paused.load(Ordering::SeqCst);
+
+        let event: Status = Status::State {
+            step: Step::Downloading {
+                progress: fake_progress,
+                build_type: build_type.clone(),
+                bytes_per_second: 1_000_000.0,
+                time_remaining: 1_000_000_000.0,
+                paused: download_paused,
+            },
+        };
+
+        channel
+            .send(event)
+            .context("Cannot send event to channel")?;
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        if !download_paused {
+            fake_progress = fake_progress.saturating_add(1) % 100;
+        }
+    }
+
+    Ok(())
+}*/

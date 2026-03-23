@@ -32,6 +32,7 @@ use std::thread;
 use std::time::Duration;
 
 pub mod compression;
+pub mod download_speed_estimator;
 pub mod downloads;
 
 const APP_NAME: &str = "DecentralandLauncherLight";
@@ -413,7 +414,9 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     // Rename latest back to its version so that cleanup_versions can do its
     // job. InstallStep will rename the new newest build to "latest".
-    if let Ok(v) = latest_version && latest_path.exists() {
+    if let Ok(v) = latest_version
+        && latest_path.exists()
+    {
         fs::rename(latest_path, explorer_path.join(v))?;
     }
 
@@ -443,8 +446,10 @@ pub fn rename_explorer_to_latest() -> StepResult {
     let version_data = get_version_data()?;
     let latest_version = get_latest_version(&version_data)?;
 
-    fs::rename(explorer_path().join(latest_version),
-        explorer_latest_version_path())?;
+    fs::rename(
+        explorer_path().join(latest_version),
+        explorer_latest_version_path(),
+    )?;
 
     Ok(())
 }
