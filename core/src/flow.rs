@@ -472,7 +472,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                 let any_is_running = self.is_any_instance_running().await?;
                 let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
 
-                if !open_new_instance && any_is_running && !is_local_scene {
+                let result = if !open_new_instance && any_is_running && !is_local_scene {
                     channel.send(Status::State {
                         step: Step::DeeplinkOpening,
                     })?;
@@ -505,7 +505,12 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                         .launch_explorer(Some(deeplink), None)
                         .await?;
                     StepResult::Ok(())
-                }
+                };
+
+                // Clear persisted deep link file after consumption
+                Protocol::clear_file();
+
+                result
             }
             None => {
                 //TODO passed version if specified manually from upper flow

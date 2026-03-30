@@ -90,6 +90,10 @@ pub fn deeplink_bridge_path() -> PathBuf {
     explorer_path().join("deeplink-bridge.json")
 }
 
+pub fn deeplink_state_path() -> PathBuf {
+    explorer_path().join("deeplink-state.txt")
+}
+
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {

@@ -3,7 +3,7 @@ use std::result::Result;
 use std::sync::Mutex;
 use url::form_urlencoded;
 
-use log::{error, warn};
+use log::{error, info, warn};
 
 static PROTOCOL_STATE: Mutex<Option<DeepLink>> = Mutex::new(None);
 const PROTOCOL_PREFIX: &str = "decentraland://";
@@ -119,6 +119,37 @@ impl Protocol {
                     );
                 }
             },
+        }
+    }
+
+    pub fn save_to_file(deeplink: &DeepLink) {
+        let path = crate::installs::deeplink_state_path();
+        if let Err(e) = std::fs::write(&path, deeplink.original()) {
+            error!("Failed to persist deep link to file: {}", e);
+        } else {
+            info!("Persisted deep link to {}", path.display());
+        }
+    }
+
+    pub fn load_from_file() -> Option<String> {
+        let path = crate::installs::deeplink_state_path();
+        match std::fs::read_to_string(&path) {
+            Ok(content) if !content.is_empty() => {
+                info!("Loaded persisted deep link from {}", path.display());
+                Some(content)
+            }
+            Ok(_) | Err(_) => None,
+        }
+    }
+
+    pub fn clear_file() {
+        let path = crate::installs::deeplink_state_path();
+        if path.exists() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                error!("Failed to remove persisted deep link file: {}", e);
+            } else {
+                info!("Cleared persisted deep link file");
+            }
         }
     }
 

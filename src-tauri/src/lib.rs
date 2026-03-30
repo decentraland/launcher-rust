@@ -210,6 +210,12 @@ async fn update_if_needed_and_restart(
             .await?;
 
         channel.send_silent(LauncherUpdate::InstallingUpdate.into());
+
+        // Persist deeplink to file BEFORE install (install may call exit(0) on Windows)
+        if let Some(deeplink) = Protocol::value() {
+            Protocol::save_to_file(&deeplink);
+        }
+
         update.install(content)?;
         info!("update installed");
 
@@ -236,6 +242,13 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
     // Support reading from cmd args on both macOS and Windows
     let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
     protocol.try_assign_value_from_vec(&args);
+
+    // Fallback: load from persisted file (survives Windows NSIS restart)
+    if Protocol::value().is_none() {
+        if let Some(saved) = Protocol::load_from_file() {
+            protocol.try_assign_value(saved);
+        }
+    }
 
     #[cfg(target_os = "macos")]
     {
