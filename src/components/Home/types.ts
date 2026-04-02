@@ -35,7 +35,7 @@ export type Step =
       data: {
         progress: number;
         bytesPerSecond: number;
-        timeRemaining: number;
+        timeRemaining: number | null;
         buildType: BuildType;
         paused: boolean;
       };
