@@ -1,7 +1,13 @@
 import React, { memo, useEffect, useState } from "react";
 import { Box, Typography } from "decentraland-ui2";
 import { Status, BuildType, Progress } from "./types";
-import { LoadingBar, Logo, ErrorIcon, ErrorDialogButton } from "./Home.styles";
+import {
+  LoadingBar,
+  Logo,
+  ErrorIcon,
+  ErrorDialogButton,
+  SocialButton,
+} from "./Home.styles";
 import { versionLabel } from "./VersionLabel";
 
 import LANDSCAPE_IMG from "../../assets/background.jpg";
@@ -320,43 +326,20 @@ export const Home: React.FC = memo(() => {
         >
           {versionLabel()}
         </Typography>
-        <div
-          role="button"
-          style={{
-            width: "22px",
-            height: "22px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
+        <SocialButton role="button">
           <img src={DISCORD_IMG} width="18px" height="18px" />
-        </div>
-        <div
-          role="button"
-          style={{
-            width: "22px",
-            height: "22px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
+        </SocialButton>
+        <SocialButton role="button">
           <img src={TWITTER_IMG} width="18px" height="18px" />
-        </div>
-        <div
+        </SocialButton>
+        <SocialButton
           role="button"
           style={{
-            width: "22px",
-            height: "22px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
             marginRight: "13px",
           }}
         >
           <img src={INSTAGRAM_IMG} width="18px" height="18px" />
-        </div>
+        </SocialButton>
       </Box>
     </Box>
   );

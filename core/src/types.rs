@@ -23,7 +23,7 @@ pub enum Step {
         progress: u8,
         bytes_per_second: f64,
         /// In milliseconds because that's what JavaScript's `Date` uses.
-        time_remaining: f64,
+        time_remaining: Option<f64>,
         build_type: BuildType,
     },
     #[serde(rename_all = "camelCase")]

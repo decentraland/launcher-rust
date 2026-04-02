@@ -23,13 +23,16 @@ impl DownloadSpeedEstimator {
 
     /// Feed a sample of (`bytes_downloaded`, `time_passed`) for the most recent interval.
     /// `time_passed` is in seconds.
-    pub fn update(&mut self, bytes_downloaded: usize, time_passed: Duration) {
+    pub fn update(&mut self, bytes_downloaded: usize, time_passed: Duration) -> Result<(), Error> {
         if time_passed <= Duration::ZERO {
-            return;
+            return Err(Error::TimeIsNotPositive);
         }
 
-        #[allow(clippy::cast_precision_loss)]
-        let bytes_downloaded = bytes_downloaded as f64;
+        let Ok(bytes_downloaded) = u32::try_from(bytes_downloaded) else {
+            return Err(Error::ChunkIsTooBig);
+        };
+
+        let bytes_downloaded = f64::from(bytes_downloaded);
 
         let sample_bps = bytes_downloaded / time_passed.as_secs_f64();
         if self.bytes_per_second == 0.0 {
@@ -39,6 +42,8 @@ impl DownloadSpeedEstimator {
             self.bytes_per_second =
                 sample_bps.mul_add(self.alpha, self.bytes_per_second * (1.0 - self.alpha));
         }
+
+        Ok(())
     }
 
     /// Current smoothed bytes-per-second estimate.
@@ -46,15 +51,35 @@ impl DownloadSpeedEstimator {
         self.bytes_per_second
     }
 
-    /// Estimated milliseconds remaining to download `bytes_remaining`.ß
-    /// Returns `f64::INFINITY` if no speed data is available yet.
-    pub fn time_remaining(&self, bytes_remaining: u64) -> f64 {
-        if self.bytes_per_second <= 0.0 {
-            return f64::INFINITY;
+    /// Estimated milliseconds remaining to download `bytes_remaining`.
+    pub fn time_remaining(&self, bytes_remaining: u64) -> Result<Option<f64>, Error> {
+        if bytes_remaining > 0xf_ffff_ffff_ffff {
+            return Err(Error::FileIsTooBig);
         }
 
-        #[allow(clippy::cast_precision_loss)]
-        let seconds_remaining = bytes_remaining as f64 / self.bytes_per_second;
-        seconds_remaining * 1000.0
+        if self.bytes_per_second <= 0.0 {
+            return Ok(None);
+        }
+
+        let Ok(bytes_remaining_low) = u32::try_from(bytes_remaining & 0xffff_ffff) else {
+            return Err(Error::Impossible);
+        };
+
+        let Ok(bytes_remining_high) = u32::try_from(bytes_remaining >> 32) else {
+            return Err(Error::Impossible);
+        };
+
+        let bytes_remaining =
+            f64::from(bytes_remining_high).mul_add(4_294_967_296.0, f64::from(bytes_remaining_low));
+
+        let seconds_remaining = bytes_remaining / self.bytes_per_second;
+        Ok(Some(seconds_remaining * 1000.0))
     }
+}
+
+pub enum Error {
+    ChunkIsTooBig,
+    FileIsTooBig,
+    Impossible,
+    TimeIsNotPositive,
 }

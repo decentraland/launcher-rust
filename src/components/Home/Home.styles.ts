@@ -30,3 +30,11 @@ export const LoadingBar = styled(LinearProgress)((props) => ({
     borderRadius: "3.5px",
   },
 }));
+
+export const SocialButton = styled("div")({
+  width: "22px",
+  height: "22px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+});

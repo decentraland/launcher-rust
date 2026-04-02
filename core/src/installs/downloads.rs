@@ -9,9 +9,10 @@ use std::time::Duration;
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::channel::EventChannel;
-use crate::installs::download_speed_estimator::DownloadSpeedEstimator;
+use crate::installs::download_speed_estimator::{self, DownloadSpeedEstimator};
 use crate::types::{BuildType, Status, Step};
 use anyhow::Context;
+use log::error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
@@ -126,8 +127,6 @@ pub async fn download_file<T: EventChannel>(
 
         let mut estimator = DownloadSpeedEstimator::new(0.1);
 
-        //fake_progress(channel, build_type, download_paused).await?;
-
         loop {
             match timeout(Duration::from_secs(15), stream.next()).await {
                 Ok(Some(item)) => {
@@ -152,7 +151,14 @@ pub async fn download_file<T: EventChannel>(
                             total_size,
                         ));
                         tasks.push(task);
-                        estimator.update(bytes_per_interval, duration);
+
+                        if matches!(
+                            estimator.update(bytes_per_interval, duration),
+                            Err(download_speed_estimator::Error::TimeIsNotPositive)
+                        ) {
+                            error!("duration is not positive");
+                        }
+
                         bytes_per_interval = 0;
                     }
 
@@ -164,12 +170,17 @@ pub async fn download_file<T: EventChannel>(
                     )]
                     let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
 
+                    let time_remaining =
+                        match estimator.time_remaining(total_size.saturating_sub(downloaded)) {
+                            Ok(Some(t)) => Some(t),
+                            Ok(None) | Err(_) => None,
+                        };
+
                     let event: Status = Status::State {
                         step: Step::Downloading {
                             progress,
                             bytes_per_second: estimator.bytes_per_second(),
-                            time_remaining: estimator
-                                .time_remaining(total_size.saturating_sub(downloaded)),
+                            time_remaining,
                             build_type: build_type.clone(),
                         },
                     };
@@ -207,37 +218,3 @@ pub async fn download_file<T: EventChannel>(
 
     Ok(())
 }
-
-/*async fn fake_progress<T: EventChannel>(
-    channel: &T,
-    build_type: &BuildType,
-    download_paused: &AtomicBool,
-) -> DownloadFileResult {
-    let mut fake_progress: u8 = 0;
-
-    while std::hint::black_box(true) {
-        let download_paused = download_paused.load(Ordering::SeqCst);
-
-        let event: Status = Status::State {
-            step: Step::Downloading {
-                progress: fake_progress,
-                build_type: build_type.clone(),
-                bytes_per_second: 1_000_000.0,
-                time_remaining: 1_000_000_000.0,
-                paused: download_paused,
-            },
-        };
-
-        channel
-            .send(event)
-            .context("Cannot send event to channel")?;
-
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        if !download_paused {
-            fake_progress = fake_progress.saturating_add(1) % 100;
-        }
-    }
-
-    Ok(())
-}*/

@@ -256,7 +256,7 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
             step: Step::Downloading {
                 progress: 0,
                 bytes_per_second: 0.0,
-                time_remaining: 0.0,
+                time_remaining: None,
                 build_type: mode,
             },
         };

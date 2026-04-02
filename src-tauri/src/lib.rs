@@ -168,23 +168,18 @@ async fn update_if_needed_and_restart(
 
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
-        let mut bytes_per_interval: usize = 0;
-        let mut downloaded: usize = 0;
-        let mut estimator = DownloadSpeedEstimator::new(0.1);
-        let mut last_update_time: Option<Instant> = None;
+        let mut download_state = DownloadState {
+            bytes_per_interval: 0,
+            downloaded: 0,
+            last_update_time: None,
+            estimator: DownloadSpeedEstimator::new(0.1),
+            channel: StatusChannel(channel.0.clone()),
+        };
 
         let content = update
             .download(
                 |chunk_length, content_length| {
-                    update_on_chunk(UpdateOnChunkArgs {
-                        chunk_length,
-                        content_length,
-                        bytes_per_interval: &mut bytes_per_interval,
-                        downloaded: &mut downloaded,
-                        last_update_time: &mut last_update_time,
-                        estimator: &mut estimator,
-                        channel,
-                    });
+                    download_state.on_chunk(chunk_length, content_length);
                 },
                 || {
                     info!("download finished");
@@ -215,81 +210,92 @@ async fn update_if_needed_and_restart(
     Ok(())
 }
 
-struct UpdateOnChunkArgs<'a> {
-    chunk_length: usize,
-    content_length: Option<u64>,
-    bytes_per_interval: &'a mut usize,
-    downloaded: &'a mut usize,
-    last_update_time: &'a mut Option<Instant>,
-    estimator: &'a mut DownloadSpeedEstimator,
-    channel: &'a StatusChannel,
+struct DownloadState {
+    bytes_per_interval: usize,
+    downloaded: usize,
+    last_update_time: Option<Instant>,
+    estimator: DownloadSpeedEstimator,
+    channel: StatusChannel,
 }
 
-fn update_on_chunk(args: UpdateOnChunkArgs) {
-    let chunk_length = args.chunk_length;
-    let content_length = args.content_length;
-    let bytes_per_interval = args.bytes_per_interval;
-    let downloaded = args.downloaded;
-    let last_update_time = args.last_update_time;
-    let estimator = args.estimator;
-    let channel = args.channel;
+impl DownloadState {
+    fn on_chunk(&mut self, chunk_length: usize, content_length: Option<u64>) {
+        let update_interval = Duration::from_millis(500);
 
-    let update_interval = Duration::from_millis(500);
+        self.bytes_per_interval = self.bytes_per_interval.saturating_add(chunk_length);
+        let downloaded = self.downloaded;
+        self.downloaded = downloaded.saturating_add(chunk_length);
+        info!("downloaded {downloaded} from {content_length:?}");
 
-    *bytes_per_interval = bytes_per_interval.saturating_add(chunk_length);
-    *downloaded = downloaded.saturating_add(chunk_length);
-    info!("downloaded {downloaded} from {content_length:?}");
+        if self
+            .last_update_time
+            .is_none_or(|v| v.elapsed() >= update_interval)
+        {
+            self.last_update_time = Some(Instant::now());
 
-    if last_update_time.is_none_or(|v| v.elapsed() >= update_interval) {
-        *last_update_time = Some(Instant::now());
-        estimator.update(*bytes_per_interval, update_interval);
-        *bytes_per_interval = 0;
-    }
+            if matches!(
+                self.estimator
+                    .update(self.bytes_per_interval, update_interval),
+                Err(
+                    dcl_launcher_core::installs::download_speed_estimator::Error::TimeIsNotPositive
+                )
+            ) {
+                error!("update_interval is not positive");
+            }
 
-    let bytes_per_second = estimator.bytes_per_second();
+            self.bytes_per_interval = 0;
+        }
 
-    match content_length {
-        Some(length) => {
-            let current = (*downloaded as u64).saturating_mul(100);
-            let percentage = current.checked_div(length);
+        let bytes_per_second = self.estimator.bytes_per_second();
 
-            let time_remaining =
-                estimator.time_remaining(length.saturating_sub(*downloaded as u64));
+        match content_length {
+            Some(length) => {
+                let current = (self.downloaded as u64).saturating_mul(100);
+                let percentage = current.checked_div(length);
 
-            match percentage {
-                Some(p) => {
-                    let progress: u8 = p.min(100) as u8;
+                let time_remaining = match self
+                    .estimator
+                    .time_remaining(length.saturating_sub(self.downloaded as u64))
+                {
+                    Ok(Some(t)) => Some(t),
+                    Ok(None) | Err(_) => None,
+                };
 
-                    channel.send_silent(
-                        LauncherUpdate::Downloading {
-                            progress: Some(progress),
-                            bytes_per_second,
-                            time_remaining: Some(time_remaining),
-                        }
-                        .into(),
-                    );
-                }
-                None => {
-                    channel.send_silent(
-                        LauncherUpdate::Downloading {
-                            progress: None,
-                            bytes_per_second,
-                            time_remaining: Some(time_remaining),
-                        }
-                        .into(),
-                    );
+                match percentage {
+                    Some(p) => {
+                        let progress: u8 = p.min(100) as u8;
+
+                        self.channel.send_silent(
+                            LauncherUpdate::Downloading {
+                                progress: Some(progress),
+                                bytes_per_second,
+                                time_remaining,
+                            }
+                            .into(),
+                        );
+                    }
+                    None => {
+                        self.channel.send_silent(
+                            LauncherUpdate::Downloading {
+                                progress: None,
+                                bytes_per_second,
+                                time_remaining,
+                            }
+                            .into(),
+                        );
+                    }
                 }
             }
-        }
-        None => {
-            channel.send_silent(
-                LauncherUpdate::Downloading {
-                    progress: None,
-                    bytes_per_second,
-                    time_remaining: None,
-                }
-                .into(),
-            );
+            None => {
+                self.channel.send_silent(
+                    LauncherUpdate::Downloading {
+                        progress: None,
+                        bytes_per_second,
+                        time_remaining: None,
+                    }
+                    .into(),
+                );
+            }
         }
     }
 }
