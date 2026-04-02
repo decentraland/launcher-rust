@@ -413,7 +413,9 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     // Rename latest back to its version so that cleanup_versions can do its
     // job. InstallStep will rename the new newest build to "latest".
-    if let Ok(v) = latest_version && latest_path.exists() {
+    if let Ok(v) = latest_version
+        && latest_path.exists()
+    {
         fs::rename(latest_path, explorer_path.join(v))?;
     }
 
@@ -440,11 +442,20 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 }
 
 pub fn rename_explorer_to_latest() -> StepResult {
-    let version_data = get_version_data()?;
-    let latest_version = get_latest_version(&version_data)?;
+    let Ok(version_data) = get_version_data() else {
+        return Err(StepError::E3003_CANT_GET_VERSION);
+    };
 
-    fs::rename(explorer_path().join(latest_version),
-        explorer_latest_version_path())?;
+    let Ok(latest_version) = get_latest_version(&version_data) else {
+        return Err(StepError::E3003_CANT_GET_VERSION);
+    };
+
+    let Ok(()) = fs::rename(
+        explorer_path().join(latest_version),
+        explorer_latest_version_path(),
+    ) else {
+        return Err(StepError::E3004_CANT_RENAME_LATEST);
+    };
 
     Ok(())
 }
