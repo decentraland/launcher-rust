@@ -107,7 +107,8 @@ pub enum StepError {
     E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
     E3001_OPEN_DEEPLINK_TIMEOUT,
     E3002_PLACE_DEEPLINK_ERROR(#[from] PlaceDeeplinkError),
-    E3003_CANT_GET_VERSION
+    E3003_CANT_GET_VERSION,
+    E3004_CANT_RENAME_LATEST,
 }
 
 impl StepError {
@@ -191,6 +192,9 @@ impl StepError {
             }
             Self::E3003_CANT_GET_VERSION => {
                 "Version data could not be read. Please delete launcher's data folder."
+            }
+            Self::E3004_CANT_RENAME_LATEST => {
+                "Could not rename \"latest\" folder. Delete everything and start over."
             }
         }
     }

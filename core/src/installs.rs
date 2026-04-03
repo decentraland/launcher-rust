@@ -443,13 +443,20 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 }
 
 pub fn rename_explorer_to_latest() -> StepResult {
-    let version_data = get_version_data()?;
-    let latest_version = get_latest_version(&version_data)?;
+    let Ok(version_data) = get_version_data() else {
+        return Err(StepError::E3003_CANT_GET_VERSION);
+    };
 
-    fs::rename(
+    let Ok(latest_version) = get_latest_version(&version_data) else {
+        return Err(StepError::E3003_CANT_GET_VERSION);
+    };
+
+    let Ok(()) = fs::rename(
         explorer_path().join(latest_version),
         explorer_latest_version_path(),
-    )?;
+    ) else {
+        return Err(StepError::E3004_CANT_RENAME_LATEST);
+    };
 
     Ok(())
 }
