@@ -27,6 +27,15 @@ src/
 └── frontend/    # Web-based UI (React/Vue/Svelte/etc.)
 ```
 
+## Progress Reporting and Error Handling
+
+Users receive concise, user-friendly error messages. Detailed stack traces are logged, and critical errors are captured in Sentry.
+
+Dedicated `StepError` type standardizes error handling. Errors are explicitly mapped and categorized to ensure consistent behavior and improved UX.
+
+More details: [https://github.com/decentraland/launcher-rust/issues/57](https://github.com/decentraland/launcher-rust/issues/57)
+
+
 ## Installation
 
 ```bash
