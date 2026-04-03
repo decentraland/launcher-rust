@@ -4,7 +4,7 @@ export enum BuildType {
 }
 
 export type Progress = {
-  message: string;
+  statusMessage: string;
   progress: number;
   bytesPerSecond: number;
   timeRemaining: number | null;

@@ -104,16 +104,16 @@ export const Home: React.FC = memo(() => {
               case "checkingForUpdate":
                 return renderStep("Checking for update...");
               case "downloading": {
-                const message = "Downloading update...";
+                const titleMessage = "Downloading update...";
                 if (data.data.progress)
-                  return renderStep(message, {
-                    message: "Downloading",
+                  return renderStep(titleMessage, {
+                    statusMessage: "Downloading",
                     progress: data.data.progress,
                     bytesPerSecond: data.data.bytesPerSecond,
                     timeRemaining: data.data.timeRemaining,
                     paused: data.data.paused,
                   });
-                else return renderStep(message);
+                else return renderStep(titleMessage);
               }
               case "downloadFinished":
                 return renderStep("Update downloaded...");
@@ -131,7 +131,7 @@ export const Home: React.FC = memo(() => {
             let data = currentStatus.data.step.data;
             let isUpdate = data.buildType === BuildType.Update;
             return renderDownloadStep(isUpdate, {
-              message: "Downloading",
+              statusMessage: "Downloading",
               progress: data.progress,
               bytesPerSecond: data.bytesPerSecond,
               timeRemaining: data.timeRemaining,
@@ -243,7 +243,7 @@ export const Home: React.FC = memo(() => {
   };
 
   const renderStep = (
-    message: string,
+    titleMessage: string,
     progress: Progress | undefined = undefined,
   ) => {
     resizeWindow(stateWindowSize);
@@ -263,7 +263,7 @@ export const Home: React.FC = memo(() => {
             marginBottom="4px"
             sx={{ color: "#cfcdd4" }}
           >
-            {message}
+            {titleMessage}
           </Typography>
           <LoadingBar
             variant={progress ? "determinate" : undefined}
@@ -277,7 +277,7 @@ export const Home: React.FC = memo(() => {
                   fontWeight="600"
                   sx={{ color: "#cfcdd4" }}
                 >
-                  {progress.message}
+                  {progress.statusMessage}
                 </Typography>
                 <Typography fontWeight="600" sx={{ color: "#cfcdd4" }}>
                   {progress.progress}%
