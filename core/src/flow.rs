@@ -377,52 +377,32 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
-        match recent_download {
-            Some(download) => {
-                let version = download.version.clone();
+        
+        if let Some(download) = recent_download {
+            let version = download.version.clone();
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::INSTALL_VERSION_START {
+                    version: version.clone(),
+                })
+                .await;
+            let result = Self::execute_internal(download);
+            if let Err(e) = &result {
                 self.analytics
                     .lock()
                     .await
-                    .track_and_flush_silent(Event::INSTALL_VERSION_START {
-                        version: version.clone(),
+                    .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
+                        version: Some(version),
+                        error: e.to_string(),
                     })
                     .await;
-                let result = Self::execute_internal(download);
-                if let Err(e) = &result {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                            version: Some(version),
-                            error: e.to_string(),
-                        })
-                        .await;
-                } else {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
-                        .await;
-                }
-                return result;
-            }
-            None => {
-                // `InstallStep` will also run when there is nothing to
-                // install, but when the newest version of the game needs to be
-                // renamed to "latest". In that case, it is not an error for
-                // the download archive to be missing.
-                if installs::explorer_latest_version_path().exists() {
-                    const ERROR_MESSAGE: &str = "Downloaded archive not found";
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                            version: None,
-                            error: ERROR_MESSAGE.to_owned(),
-                        })
-                        .await;
-                    return StepResult::Err(anyhow!(ERROR_MESSAGE).into());
-                }
+            } else {
+                self.analytics
+                    .lock()
+                    .await
+                    .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
+                    .await;
             }
         }
 
