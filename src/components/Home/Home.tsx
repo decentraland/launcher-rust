@@ -6,16 +6,18 @@ import {
   Logo,
   ErrorIcon,
   ErrorDialogButton,
-  SocialButton,
+  //SocialButton, TODO
 } from "./Home.styles";
 import { versionLabel } from "./VersionLabel";
 
 import LANDSCAPE_IMG from "../../assets/background.jpg";
 import LOGO_SVG from "../../assets/logo.svg";
 import ERROR_SVG from "../../assets/error.svg";
-import DISCORD_IMG from "../../assets/discord.png";
+
+// TODO: Make the social buttons functional.
+/*import DISCORD_IMG from "../../assets/discord.png";
 import INSTAGRAM_IMG from "../../assets/instagram.png";
-import TWITTER_IMG from "../../assets/twitter.png";
+import TWITTER_IMG from "../../assets/twitter.png";*/
 
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
@@ -326,6 +328,9 @@ export const Home: React.FC = memo(() => {
         >
           {versionLabel()}
         </Typography>
+
+        {/* TODO: Comment out the buttons for now because I can't make them
+        functional easily.
         <SocialButton role="button">
           <img src={DISCORD_IMG} width="18px" height="18px" />
         </SocialButton>
@@ -339,7 +344,7 @@ export const Home: React.FC = memo(() => {
           }}
         >
           <img src={INSTAGRAM_IMG} width="18px" height="18px" />
-        </SocialButton>
+        </SocialButton> */}
       </Box>
     </Box>
   );
