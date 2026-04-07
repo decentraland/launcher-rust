@@ -23,18 +23,14 @@ impl DownloadSpeedEstimator {
 
     /// Feed a sample of (`bytes_downloaded`, `time_passed`) for the most recent interval.
     /// `time_passed` is in seconds.
-    fn update(&mut self, bytes_downloaded: usize, time_passed: Duration) -> Result<(), Error> {
+    fn update(&mut self, bytes_downloaded: u64, time_passed: Duration) -> Result<(), Error> {
         if time_passed <= Duration::ZERO {
             return Err(Error::TimeIsNotPositive);
         }
 
-        let Ok(bytes_downloaded) = u32::try_from(bytes_downloaded) else {
-            return Err(Error::ChunkIsTooBig);
-        };
-
-        let bytes_downloaded = f64::from(bytes_downloaded);
-
+        let bytes_downloaded = u64_to_f64_lossy(bytes_downloaded);
         let sample_bps = bytes_downloaded / time_passed.as_secs_f64();
+
         if self.bytes_per_second == 0.0 {
             // First sample — seed the estimate directly.
             self.bytes_per_second = sample_bps;
@@ -46,7 +42,7 @@ impl DownloadSpeedEstimator {
         Ok(())
     }
 
-    pub fn try_update(&mut self, bytes_downloaded: usize, time_passed: Duration) {
+    pub fn try_update(&mut self, bytes_downloaded: u64, time_passed: Duration) {
         if let Err(e) = self.update(bytes_downloaded, time_passed) {
             log::error!("Cannot update estimator: {:?}", e);
         }
@@ -58,35 +54,27 @@ impl DownloadSpeedEstimator {
     }
 
     /// Estimated milliseconds remaining to download `bytes_remaining`.
-    pub fn time_remaining(&self, bytes_remaining: u64) -> Result<Option<f64>, Error> {
-        if bytes_remaining > 0xf_ffff_ffff_ffff {
-            return Err(Error::FileIsTooBig);
-        }
-
+    pub fn time_remaining(&self, bytes_remaining: u64) -> Option<f64> {
         if self.bytes_per_second <= 0.0 {
-            return Ok(None);
+            return None;
         }
 
-        let Ok(bytes_remaining_low) = u32::try_from(bytes_remaining & 0xffff_ffff) else {
-            return Err(Error::Impossible);
-        };
-
-        let Ok(bytes_remining_high) = u32::try_from(bytes_remaining >> 32) else {
-            return Err(Error::Impossible);
-        };
-
-        let bytes_remaining =
-            f64::from(bytes_remining_high).mul_add(4_294_967_296.0, f64::from(bytes_remaining_low));
-
+        let bytes_remaining = u64_to_f64_lossy(bytes_remaining);
         let seconds_remaining = bytes_remaining / self.bytes_per_second;
-        Ok(Some(seconds_remaining * 1000.0))
+        Some(seconds_remaining * 1000.0)
     }
+}
+
+// It's okay here, because we don't need exact estimation
+#[allow(clippy::cast_precision_loss)]
+#[inline]
+const fn u64_to_f64_lossy(x: u64) -> f64 {
+    x as f64
 }
 
 #[derive(Debug)]
 pub enum Error {
     ChunkIsTooBig,
-    FileIsTooBig,
     Impossible,
     TimeIsNotPositive,
 }

@@ -31,6 +31,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::UpdaterExt;
 type MutState = Arc<Mutex<AppState>>;
 
+#[derive(Clone)]
 pub struct StatusChannel(Channel<types::Status>);
 
 impl EventChannel for StatusChannel {
@@ -168,13 +169,7 @@ async fn update_if_needed_and_restart(
 
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
-        let mut download_state = DownloadState {
-            bytes_per_interval: 0,
-            downloaded: 0,
-            last_update_time: None,
-            estimator: DownloadSpeedEstimator::new(0.1),
-            channel: StatusChannel(channel.0.clone()),
-        };
+        let mut download_state = DownloadStatus::new(channel.clone());
 
         let content = update
             .download(
@@ -210,16 +205,27 @@ async fn update_if_needed_and_restart(
     Ok(())
 }
 
-struct DownloadState {
-    bytes_per_interval: usize,
-    downloaded: usize,
+struct DownloadStatus {
+    bytes_per_interval: u64,
+    downloaded: u64,
     last_update_time: Option<Instant>,
     estimator: DownloadSpeedEstimator,
     channel: StatusChannel,
 }
 
-impl DownloadState {
+impl DownloadStatus {
+    pub const fn new(channel: StatusChannel) -> Self {
+        Self {
+            bytes_per_interval: 0,
+            downloaded: 0,
+            last_update_time: None,
+            estimator: DownloadSpeedEstimator::new(0.1),
+            channel,
+        }
+    }
+
     fn on_chunk(&mut self, chunk_length: usize, content_length: Option<u64>) {
+        let chunk_length: u64 = chunk_length as u64;
         let update_interval = Duration::from_millis(500);
 
         self.bytes_per_interval = self.bytes_per_interval.saturating_add(chunk_length);
@@ -233,7 +239,8 @@ impl DownloadState {
         {
             self.last_update_time = Some(Instant::now());
 
-            self.estimator.try_update(self.bytes_per_interval, update_interval);
+            self.estimator
+                .try_update(self.bytes_per_interval, update_interval);
 
             self.bytes_per_interval = 0;
         }
@@ -242,16 +249,12 @@ impl DownloadState {
 
         match content_length {
             Some(length) => {
-                let current = (self.downloaded as u64).saturating_mul(100);
+                let current = (self.downloaded).saturating_mul(100);
                 let percentage = current.checked_div(length);
 
-                let time_remaining = match self
+                let time_remaining = self
                     .estimator
-                    .time_remaining(length.saturating_sub(self.downloaded as u64))
-                {
-                    Ok(Some(t)) => Some(t),
-                    Ok(None) | Err(_) => None,
-                };
+                    .time_remaining(length.saturating_sub(self.downloaded));
 
                 match percentage {
                     Some(p) => {

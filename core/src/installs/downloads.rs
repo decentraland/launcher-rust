@@ -103,7 +103,7 @@ pub async fn download_file<T: EventChannel>(
     let client = Client::new();
 
     let res = client.get(url).send().await?;
-    let total_size =
+    let total_size: u64 =
         res.content_length()
             .ok_or_else(|| DownloadFileError::ContentLengthNotFound {
                 url: url.to_owned(),
@@ -114,7 +114,7 @@ pub async fn download_file<T: EventChannel>(
     let duration = std::time::Duration::from_millis(500);
     let mut tasks = Vec::new();
 
-    let mut bytes_per_interval: usize = 0;
+    let mut bytes_per_interval: u64 = 0;
     let mut downloaded: u64 = 0;
     {
         let mut file =
@@ -130,10 +130,15 @@ pub async fn download_file<T: EventChannel>(
             match timeout(Duration::from_secs(15), stream.next()).await {
                 Ok(Some(item)) => {
                     let chunk = item?;
+
+                    // practially it's safe to convert to u64 on 32 and 64 bits platforms
+                    let chunk_len: u64 =
+                        u64::try_from(chunk.len()).context("cannot convert usize to u64")?;
+
                     file.write_all(&chunk)?;
 
-                    bytes_per_interval = bytes_per_interval.saturating_add(chunk.len());
-                    let new = min(downloaded.saturating_add(chunk.len() as u64), total_size);
+                    bytes_per_interval = bytes_per_interval.saturating_add(chunk_len);
+                    let new = min(downloaded.saturating_add(chunk_len), total_size);
                     downloaded = new;
 
                     let should_send = match last_analytics_time {
@@ -164,10 +169,7 @@ pub async fn download_file<T: EventChannel>(
                     let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
 
                     let time_remaining =
-                        match estimator.time_remaining(total_size.saturating_sub(downloaded)) {
-                            Ok(Some(t)) => Some(t),
-                            Ok(None) | Err(_) => None,
-                        };
+                        estimator.time_remaining(total_size.saturating_sub(downloaded));
 
                     let event: Status = Status::State {
                         step: Step::Downloading {
