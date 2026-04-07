@@ -1,6 +1,6 @@
 import { styled, LinearProgress, Button } from "decentraland-ui2";
 
-const iconSideSize = "50px"
+const iconSideSize = "50px";
 
 export const Logo = styled("img")((props) => ({
   ...props,
