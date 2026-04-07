@@ -57,8 +57,6 @@ impl DownloadSpeedEstimator {
         self.bytes_per_second
     }
 
-
-
     /// Estimated milliseconds remaining to download `bytes_remaining`.
     pub fn time_remaining(&self, bytes_remaining: u64) -> Result<Option<f64>, Error> {
         if bytes_remaining > 0xf_ffff_ffff_ffff {
