@@ -233,15 +233,7 @@ impl DownloadState {
         {
             self.last_update_time = Some(Instant::now());
 
-            if matches!(
-                self.estimator
-                    .update(self.bytes_per_interval, update_interval),
-                Err(
-                    dcl_launcher_core::installs::download_speed_estimator::Error::TimeIsNotPositive
-                )
-            ) {
-                error!("update_interval is not positive");
-            }
+            self.estimator.try_update(self.bytes_per_interval, update_interval);
 
             self.bytes_per_interval = 0;
         }

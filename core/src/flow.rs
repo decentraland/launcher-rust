@@ -378,7 +378,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
-        
+
         if let Some(download) = recent_download {
             let version = download.version.clone();
             self.analytics

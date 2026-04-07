@@ -23,7 +23,7 @@ impl DownloadSpeedEstimator {
 
     /// Feed a sample of (`bytes_downloaded`, `time_passed`) for the most recent interval.
     /// `time_passed` is in seconds.
-    pub fn update(&mut self, bytes_downloaded: usize, time_passed: Duration) -> Result<(), Error> {
+    fn update(&mut self, bytes_downloaded: usize, time_passed: Duration) -> Result<(), Error> {
         if time_passed <= Duration::ZERO {
             return Err(Error::TimeIsNotPositive);
         }
@@ -46,10 +46,18 @@ impl DownloadSpeedEstimator {
         Ok(())
     }
 
+    pub fn try_update(&mut self, bytes_downloaded: usize, time_passed: Duration) {
+        if let Err(e) = self.update(bytes_downloaded, time_passed) {
+            log::error!("Cannot update estimator: {:?}", e);
+        }
+    }
+
     /// Current smoothed bytes-per-second estimate.
     pub const fn bytes_per_second(&self) -> f64 {
         self.bytes_per_second
     }
+
+
 
     /// Estimated milliseconds remaining to download `bytes_remaining`.
     pub fn time_remaining(&self, bytes_remaining: u64) -> Result<Option<f64>, Error> {
@@ -77,6 +85,7 @@ impl DownloadSpeedEstimator {
     }
 }
 
+#[derive(Debug)]
 pub enum Error {
     ChunkIsTooBig,
     FileIsTooBig,

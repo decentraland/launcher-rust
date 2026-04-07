@@ -9,10 +9,9 @@ use std::time::Duration;
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::channel::EventChannel;
-use crate::installs::download_speed_estimator::{self, DownloadSpeedEstimator};
+use crate::installs::download_speed_estimator::DownloadSpeedEstimator;
 use crate::types::{BuildType, Status, Step};
 use anyhow::Context;
-use log::error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
@@ -152,13 +151,7 @@ pub async fn download_file<T: EventChannel>(
                         ));
                         tasks.push(task);
 
-                        if matches!(
-                            estimator.update(bytes_per_interval, duration),
-                            Err(download_speed_estimator::Error::TimeIsNotPositive)
-                        ) {
-                            error!("duration is not positive");
-                        }
-
+                        estimator.try_update(bytes_per_interval, duration);
                         bytes_per_interval = 0;
                     }
 
