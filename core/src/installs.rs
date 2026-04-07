@@ -6,7 +6,7 @@ use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
-use anyhow::{Context, Error, Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use semver::Version;
 use serde_json::{Map, Value};
 use std::cmp::Ordering;
@@ -114,15 +114,8 @@ fn explorer_version_path() -> PathBuf {
     explorer_path().join("version.json")
 }
 
-fn explorer_latest_version_path() -> Result<PathBuf> {
-    let data = get_version_data()?;
-    let path = data
-        .get("path")
-        .context("missing \"path\" property in version data")?;
-    let value = path
-        .as_str()
-        .context("cannot get string value from path property")?;
-    Ok(PathBuf::from(value))
+pub fn explorer_latest_version_path() -> PathBuf {
+    explorer_path().join("latest")
 }
 
 fn explorer_dev_version_path() -> PathBuf {
@@ -149,20 +142,35 @@ fn get_version_data() -> Result<Map<String, Value>> {
 }
 
 fn get_version_data_or_empty() -> Map<String, Value> {
-    get_version_data().unwrap_or_else(|_e| {
+    get_version_data().unwrap_or_else(|e| {
         log::error!(
-            "Cannot get version data, fallback to new empty: File doesn't exist: version.json"
+            "Cannot get version data, fallback to new empty: File doesn't exist: version.json: {e}"
         );
 
         Map::new()
     })
 }
 
+fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
+    version_data
+        .get("version")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
+}
+
 fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
+        None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
-        Some(v) => explorer_path().join(v),
-        None => explorer_latest_version_path()?,
+        Some(v) => {
+            let version_data = get_version_data()?;
+            let latest_version = get_latest_version(&version_data)?;
+            if v == latest_version {
+                explorer_latest_version_path()
+            } else {
+                explorer_path().join(v)
+            }
+        }
     };
 
     #[cfg(target_os = "macos")]
@@ -264,13 +272,20 @@ impl Display for EntryVersion {
     }
 }
 
-fn cleanup_versions() -> Result<()> {
-    const KEEP_VERSIONS_AMOUNT: usize = 2;
+fn remove_version_if_exists(version: &EntryVersion) {
+    let folder_path = explorer_path().join(version.to_restored());
+    if folder_path.exists() {
+        match fs::remove_dir_all(&folder_path) {
+            Ok(()) => log::info!("Removed old version: {}", version),
+            Err(err) => log::error!("Failed to remove {}: {}", version, err),
+        }
+    }
+}
 
-    let entries = match fs::read_dir(explorer_path()) {
-        Ok(entries) => entries,
-        Err(err) => return Err(Error::msg(err.to_string())),
-    };
+fn cleanup_versions(current_version: &EntryVersion) -> Result<()> {
+    const KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT: usize = 2;
+
+    let entries = fs::read_dir(explorer_path()).context("Cannot read entries in the app dir")?;
 
     let mut installations: Vec<EntryVersion> = Vec::new();
 
@@ -288,10 +303,19 @@ fn cleanup_versions() -> Result<()> {
         return Ok(());
     }
 
+    installations.retain(|i| {
+        // remove versions above the current version in a case of rollback
+        let should_be_removed = i > current_version;
+        if should_be_removed {
+            remove_version_if_exists(i);
+        }
+        !should_be_removed
+    });
+
     // Sort versions
     installations.sort();
 
-    if installations.len() <= KEEP_VERSIONS_AMOUNT {
+    if installations.len() <= KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT {
         // Don't need to uninstall anything
         return Ok(());
     }
@@ -301,15 +325,9 @@ fn cleanup_versions() -> Result<()> {
     #[allow(clippy::arithmetic_side_effects)]
     for version in installations
         .iter()
-        .take(installations.len() - KEEP_VERSIONS_AMOUNT)
+        .take(installations.len() - KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT)
     {
-        let folder_path = explorer_path().join(version.to_restored());
-        if folder_path.exists() {
-            match fs::remove_dir_all(&folder_path) {
-                Ok(()) => log::info!("Removed old version: {}", version),
-                Err(err) => log::error!("Failed to remove {}: {}", version, err),
-            }
-        }
+        remove_version_if_exists(version);
     }
 
     Ok(())
@@ -346,9 +364,12 @@ pub fn target_download_path() -> PathBuf {
 }
 
 pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
-    let branch_path = explorer_path().join(version);
-    let file_path = downloaded_file_path
-        .unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
+    let current_version: EntryVersion = EntryVersion::from_str(version)
+        .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
+
+    let explorer_path = explorer_path();
+    let branch_path = explorer_path.join(version);
+    let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
 
     if !file_path.exists() {
         return StepError::E1001_FILE_NOT_FOUND {
@@ -387,11 +408,25 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     );
     version_data.insert(version.to_owned(), install_time);
 
+    let latest_version = get_latest_version(&version_data).map(String::from);
+    let latest_path = explorer_latest_version_path();
+
+    // Rename latest back to its version so that cleanup_versions can do its
+    // job. InstallStep will rename the new newest build to "latest".
+    if let Ok(v) = latest_version
+        && latest_path.exists()
+    {
+        fs::rename(latest_path, explorer_path.join(v))?;
+    }
+
     if version != "dev" {
         version_data.insert("version".to_owned(), Value::String(version.to_owned()));
     }
 
-    version_data.insert("path".to_owned(), branch_path.to_string_lossy().into());
+    // The path to the latest explorer build will be just "latest" from now on.
+    // Remove the path value from version data to not confuse people. You can
+    // remove this line in like 2027.
+    version_data.remove("path");
 
     // Write version data to file
     let version_data_str =
@@ -401,7 +436,26 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     // Remove the downloaded file
     fs::remove_file(file_path)?;
-    cleanup_versions().context("Cannot clean up the old versions")?;
+    cleanup_versions(&current_version).context("Cannot clean up the old versions")?;
+
+    Ok(())
+}
+
+pub fn rename_explorer_to_latest() -> StepResult {
+    let Ok(version_data) = get_version_data() else {
+        return Err(StepError::E3003_CANT_GET_VERSION);
+    };
+
+    let Ok(latest_version) = get_latest_version(&version_data) else {
+        return Err(StepError::E3003_CANT_GET_VERSION);
+    };
+
+    let Ok(()) = fs::rename(
+        explorer_path().join(latest_version),
+        explorer_latest_version_path(),
+    ) else {
+        return Err(StepError::E3004_CANT_RENAME_LATEST);
+    };
 
     Ok(())
 }

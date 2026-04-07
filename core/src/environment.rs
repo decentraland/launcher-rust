@@ -16,6 +16,8 @@ const ARG_ALWAYS_TRIGGER_UPDATER: &str = "always-trigger-updater";
 const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
 const ARG_USE_UPDATER_URL: &str = "use-updater-url";
 
+const ARG_USE_LATEST_JSON_URL: &str = "use-latest-json-url";
+
 pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
 pub const ARG_LOCAL_SCENE: &str = "local-scene";
 
@@ -39,6 +41,8 @@ pub struct Args {
     pub never_trigger_updater: bool,
     pub use_updater_url: Option<String>,
 
+    pub use_latest_json_url: Option<String>,
+
     // used by the client
     pub local_scene: bool,
 }
@@ -58,6 +62,10 @@ impl Args {
                 .use_updater_url
                 .clone()
                 .or_else(|| other.use_updater_url.clone()),
+            use_latest_json_url: self
+                .use_latest_json_url
+                .clone()
+                .or_else(|| other.use_latest_json_url.clone()),
             local_scene: self.local_scene || other.local_scene,
         }
     }
@@ -78,6 +86,7 @@ impl Args {
             always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
+            use_latest_json_url: Self::value_by_flag(ARG_USE_LATEST_JSON_URL, &vector),
             local_scene: Self::has_flag(ARG_LOCAL_SCENE, &vector),
         }
     }
@@ -224,6 +233,7 @@ mod tests {
             always_trigger_updater: true,
             never_trigger_updater: false,
             use_updater_url: Some("https://one.com".into()),
+            use_latest_json_url: None,
             local_scene: false,
         };
 
@@ -234,6 +244,7 @@ mod tests {
             always_trigger_updater: false,
             never_trigger_updater: true,
             use_updater_url: Some("https://two.com".into()),
+            use_latest_json_url: Some("https://one.com".into()),
             local_scene: false,
         };
 
@@ -246,5 +257,9 @@ mod tests {
         assert!(!merged.local_scene);
         // Should keep first if present
         assert_eq!(merged.use_updater_url.as_deref(), Some("https://one.com"));
+        assert_eq!(
+            merged.use_latest_json_url.as_deref(),
+            Some("https://one.com")
+        );
     }
 }

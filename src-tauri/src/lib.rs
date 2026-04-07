@@ -214,8 +214,18 @@ async fn update_if_needed_and_restart(
         info!("update installed");
 
         channel.send_silent(LauncherUpdate::RestartingApp.into());
+
+        let mut env = app.env();
+
         app_state.cleanup().await;
-        app.restart();
+        app.cleanup_before_exit();
+
+        // Preserve deeplink
+        if let Some(deeplink) = Protocol::value() {
+            env.args_os.push(deeplink.original().into());
+        }
+
+        tauri::process::restart(&env);
     }
 
     Ok(())
@@ -223,6 +233,10 @@ async fn update_if_needed_and_restart(
 
 #[cfg_attr(windows, allow(unused_variables))]
 fn setup_deeplink(a: &App, protocol: &Protocol) {
+    // Support reading from cmd args on both macOS and Windows
+    let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
+    protocol.try_assign_value_from_vec(&args);
+
     #[cfg(target_os = "macos")]
     {
         let protocol = protocol.clone();
@@ -237,12 +251,6 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
                 }
             }
         });
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
-        protocol.try_assign_value_from_vec(&args);
     }
 }
 

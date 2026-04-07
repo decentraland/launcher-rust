@@ -134,7 +134,7 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-      - run: npm run build
+      - run: npm run build-ui
         env:
           MODE: production
           DRY_RUN: ${{ inputs.dry-run }}
@@ -194,6 +194,14 @@ jobs:
           Write-Host "Set CODESIGN_JAR to $($jarPath.FullName)"
           Write-Host "Set CODESIGN_JAVA to $($javaExe.FullName)"
           
+      - name: Patch sign command in tauri.conf.json
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          cd src-tauri\scripts
+          .\patch-config-sign-command.ps1
+          cd -
+
       - name: Patch sign.ps1 path in tauri.conf.json
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
@@ -265,6 +273,19 @@ jobs:
         with:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
+
+      - name: Sign dcl_launcher.exe manually (Win)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        env:
+          ES_USERNAME: ${{ secrets.ES_USERNAME }}
+          ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+          ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+          CODESIGN_JAR: ${{ env.CODESIGN_JAR }}
+          CODESIGN_JAVA: ${{ env.CODESIGN_JAVA }}
+        run: |
+          & "${{ github.workspace }}\src-tauri\scripts\sign.ps1" -filePath "${{ github.workspace }}\src-tauri\target\release\dcl_launcher.exe"
 
       - name: Build & replace custom DMG (macOS)
         if: ${{ matrix.os == 'macos-latest' }}

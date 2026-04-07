@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Core CLI Debug",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": [
+          "build",
+          "--manifest-path=core/Cargo.toml",
+          "--no-default-features"
+        ],
+        "env": {
+          "VITE_AWS_S3_BUCKET_PUBLIC_URL": "https://explorer-artifacts.decentraland.org"
+        }
+      }
+    },
+    {
+      "name": "Tauri Development Debug",
+      "type": "lldb",
+      "request": "launch",
+      "args": [
+        "--never-trigger-updater"
+      ],
+      "cargo": {
+        "args": [
+          "build",
+          "--manifest-path=src-tauri/Cargo.toml",
+          "--no-default-features"
+        ],
+        "env": {
+          "VITE_AWS_S3_BUCKET_PUBLIC_URL": "https://explorer-artifacts.decentraland.org"
+        }
+      },
+      "preLaunchTask": "ui:dev"
+    }
+  ]
+}

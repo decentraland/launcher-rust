@@ -83,7 +83,6 @@ impl LaunchFlow {
         installs_hub: Arc<Mutex<InstallsHub>>,
         analytics: Arc<Mutex<Analytics>>,
         running_instances: Arc<Mutex<RunningInstances>>,
-        protocol: Protocol,
     ) -> Self {
         Self {
             fetch_step: FetchStep {},
@@ -96,7 +95,6 @@ impl LaunchFlow {
             app_launch_step: AppLaunchStep {
                 installs_hub,
                 running_instances,
-                protocol,
             },
             analytics,
         }
@@ -360,7 +358,9 @@ impl InstallStep {
 impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
-        Ok(guard.recent_download.is_none())
+
+        Ok(guard.recent_download.is_none()
+            && installs::explorer_latest_version_path().exists())
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -377,55 +377,42 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
-        match recent_download {
-            Some(download) => {
-                let version = download.version.clone();
-                self.analytics
-                    .lock()
-                    .await
-                    .track_and_flush_silent(Event::INSTALL_VERSION_START {
-                        version: version.clone(),
-                    })
-                    .await;
-                let result = Self::execute_internal(download);
-                if let Err(e) = &result {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                            version: Some(version),
-                            error: e.to_string(),
-                        })
-                        .await;
-                } else {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
-                        .await;
-                }
-                result
-            }
-            None => {
-                const ERROR_MESSAGE: &str = "Downloaded archive not found";
+        
+        if let Some(download) = recent_download {
+            let version = download.version.clone();
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::INSTALL_VERSION_START {
+                    version: version.clone(),
+                })
+                .await;
+            let result = Self::execute_internal(download);
+            if let Err(e) = &result {
                 self.analytics
                     .lock()
                     .await
                     .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                        version: None,
-                        error: ERROR_MESSAGE.to_owned(),
+                        version: Some(version),
+                        error: e.to_string(),
                     })
                     .await;
-                StepResult::Err(anyhow!(ERROR_MESSAGE).into())
+            } else {
+                self.analytics
+                    .lock()
+                    .await
+                    .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
+                    .await;
             }
         }
+
+        installs::rename_explorer_to_latest()
     }
 }
 
 struct AppLaunchStep {
     installs_hub: Arc<Mutex<InstallsHub>>,
     running_instances: Arc<Mutex<RunningInstances>>,
-    protocol: Protocol,
 }
 
 impl AppLaunchStep {
@@ -456,7 +443,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
         type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
 
-        match self.protocol.value() {
+        match Protocol::value() {
             Some(deeplink) => {
                 let args = AppEnvironment::cmd_args();
 

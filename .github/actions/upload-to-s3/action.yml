@@ -73,6 +73,10 @@ runs:
               cp -f "$mac_src" "$ARTIFACT_DIR/Decentraland_installer.dmg"
             fi
 
+            # Upload dcl_launcher.exe directly from source dir
+            upload_file "$PROJECT_PATH/target/release/dcl_launcher.exe" "s3://${{ inputs.s3-bucket }}/${{ inputs.target-dir }}/dcl_launcher.exe"
+
+            # Upload the rest of the artifacts from the bundle dir
             cd "$ARTIFACT_DIR"
             echo "Uploading artifacts from $ARTIFACT_DIR"
             for file in Decentraland_installer.exe Decentraland_installer.dmg Decentraland.app.tar.gz; do

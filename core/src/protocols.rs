@@ -68,6 +68,10 @@ impl DeepLink {
             false
         }
     }
+
+    pub fn original(&self) -> &str {
+        &self.original
+    }
 }
 
 impl From<DeepLink> for String {
@@ -82,7 +86,7 @@ impl Protocol {
         Self {}
     }
 
-    pub fn value(&self) -> Option<DeepLink> {
+    pub fn value() -> Option<DeepLink> {
         let result = PROTOCOL_STATE.lock();
         match result {
             Ok(guard) => guard.clone(),

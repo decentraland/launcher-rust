@@ -87,6 +87,7 @@ jobs:
           fi
 
           if [[ "$CONCLUSION" == "success" ]]; then
+            WIN_PLAIN_URL="${DOMAIN}/${PATH}/dcl_launcher.exe"
             WIN_URL="${DOMAIN}/${PATH}/Decentraland_installer.exe"
             MAC_URL="${DOMAIN}/${PATH}/Decentraland_installer.dmg"
 
@@ -97,12 +98,13 @@ jobs:
               echo ""
               echo "Windows and Mac build successful in **Launcher Rust**!! You can find a link to the downloadable artifact below."
               echo ""
-              echo "| Name                | Link                      |"
-              echo "| ------------------- | ------------------------- |"
-              echo "| Commit              | ${SHA}                    |"
-              echo "| Download Windows S3 | [Decentraland_installer.exe](${WIN_URL}) |"
-              echo "| Download Mac S3     | [Decentraland_installer.dmg](${MAC_URL})   |"
-              echo "| Built on            | ${BUILD_TIMESTAMP}        |"
+              echo "| Name                      | Link                      |"
+              echo "| ------------------------- | ------------------------- |"
+              echo "| Commit                    | ${SHA}                    |"
+              echo "| Download Plain Windows S3 | [dcl_launcher.exe](${WIN_PLAIN_URL}) |"
+              echo "| Download Windows S3       | [Decentraland_installer.exe](${WIN_URL}) |"
+              echo "| Download Mac S3           | [Decentraland_installer.dmg](${MAC_URL}) |"
+              echo "| Built on                  | ${BUILD_TIMESTAMP}        |"
               echo ""
               echo "[badge]: https://img.shields.io/badge/Build-Success!-3fb950?logo=github&style=for-the-badge"
               echo "EOF"
