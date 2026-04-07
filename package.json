@@ -1,15 +1,24 @@
 {
   "name": "Decentraland",
   "private": true,
-  "version": "1.12.16",
+  "version": "1.12.20",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build-ui": "tsc && vite build",
+    "build-core": "tauri build",
+    "build": "npm run build-ui && npm run build-core",
     "preview": "vite preview",
     "tauri": "tauri",
-    "format": "npx prettier --write '**/*.{js,mjs,cjs,jsx,ts,ODmts,cts,tsx}'; cargo fmt --manifest-path src-tauri/Cargo.toml -- --check --verbose; cargo fmt --manifest-path core/Cargo.toml -- --check --verbose; cargo fmt --manifest-path src-auto-auth/Cargo.toml -- --check --verbose",
-    "analyze": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings; cargo clippy --manifest-path core/Cargo.toml --all-targets --all-features -- -D warnings; cargo clippy --manifest-path src-auto-auth/Cargo.toml --all-targets --all-features -- -D warnings"
+    "format-ui": "npx prettier --write '**/*.{js,mjs,cjs,jsx,ts,ODmts,cts,tsx}'",
+    "format-tauri": "cd src-tauri && cargo fmt -- --check --verbose",
+    "format-core": "cd core && cargo fmt -- --check --verbose",
+    "format-src-auto-auth": "cd src-auto-auth && cargo fmt -- --check --verbose",
+    "format": "npm run format-ui && npm run format-tauri && npm run format-core && npm run format-src-auto-auth",
+    "analyze-tauri": "cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings",
+    "analyze-core": "cd core && cargo clippy --all-targets --all-features -- -D warnings",
+    "analyze-src-auto-auth": "cd src-auto-auth && cargo clippy --all-targets --all-features -- -D warnings",
+    "analyze": "npm run analyze-tauri && npm run analyze-core && npm run analyze-src-auto-auth"
   },
   "dependencies": {
     "@sentry/react": "^8.29.0",
