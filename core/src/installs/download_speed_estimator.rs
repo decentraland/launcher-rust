@@ -74,7 +74,5 @@ const fn u64_to_f64_lossy(x: u64) -> f64 {
 
 #[derive(Debug)]
 pub enum Error {
-    ChunkIsTooBig,
-    Impossible,
     TimeIsNotPositive,
 }
