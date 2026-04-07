@@ -1,15 +1,17 @@
 import { styled, LinearProgress, Button } from "decentraland-ui2";
 
+const iconSideSize = "50px"
+
 export const Logo = styled("img")((props) => ({
   ...props,
-  height: "50px",
-  width: "50px",
+  height: iconSideSize,
+  width: iconSideSize,
 }));
 
 export const ErrorIcon = styled("img")((props) => ({
   ...props,
-  height: "50px",
-  width: "50px",
+  height: iconSideSize,
+  width: iconSideSize,
 }));
 
 export const ErrorDialogButton = styled(Button)((props) => ({
