@@ -10,11 +10,17 @@ pub struct DownloadSpeedEstimator {
     alpha: f64,
 }
 
+impl Default for DownloadSpeedEstimator {
+    fn default() -> Self {
+        Self::new(0.1)
+    }
+}
+
 impl DownloadSpeedEstimator {
     /// Create a new estimator.
     /// `alpha` controls how quickly the estimate reacts to new samples.
     /// A value around 0.2–0.3 works well for download progress bars.
-    pub const fn new(alpha: f64) -> Self {
+    const fn new(alpha: f64) -> Self {
         Self {
             bytes_per_second: 0.0,
             alpha: alpha.clamp(0.0, 1.0),

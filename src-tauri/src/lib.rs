@@ -214,12 +214,12 @@ struct DownloadStatus {
 }
 
 impl DownloadStatus {
-    pub const fn new(channel: StatusChannel) -> Self {
+    fn new(channel: StatusChannel) -> Self {
         Self {
             bytes_per_interval: 0,
             downloaded: 0,
             last_update_time: None,
-            estimator: DownloadSpeedEstimator::new(0.1),
+            estimator: DownloadSpeedEstimator::default(),
             channel,
         }
     }

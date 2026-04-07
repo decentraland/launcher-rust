@@ -124,7 +124,7 @@ pub async fn download_file<T: EventChannel>(
             })?;
         let mut stream = res.bytes_stream();
 
-        let mut estimator = DownloadSpeedEstimator::new(0.1);
+        let mut estimator = DownloadSpeedEstimator::default();
 
         loop {
             match timeout(Duration::from_secs(15), stream.next()).await {
