@@ -603,6 +603,9 @@ impl InstallsHub {
 
             macos_params.append(&mut explorer_params);
             Self::launch_command("open", explorer_launch_dir, &macos_params)?;
+
+            // Wait for open command to launch the app, there is no better way to check it on macOS due the indirect launch via the open command
+            std::timeout(30_000: ms);
         }
 
         #[cfg(target_os = "windows")]
@@ -621,7 +624,8 @@ impl InstallsHub {
             {
                 // Default name of the Explorer client, won't conflict on macOS like it could on
                 // Windows with the default explorer.exe
-                const NAME: &str = "Explorer";
+                //const NAME: &str = "Explorer";
+                const NAME: &str = explorer_launch_dir;
                 guard.register_new_opened_instance_by_name(NAME);
             }
         }
