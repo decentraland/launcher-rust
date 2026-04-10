@@ -53,23 +53,21 @@ impl RunningInstances {
                 if !exe_path.starts_with(app_path) {
                     continue;
                 }
-            } else {
-                continue;
-            }
 
-            let raw_pid = candidate.pid().as_u32();
+                let raw_pid = candidate.pid().as_u32();
 
-            if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
-                let name = candidate
-                    .name()
-                    .to_str()
-                    .unwrap_or("cannot parse os string");
-                e.insert(name.to_owned());
-                log::info!(
-                    "Registered process run with id: {} and name {}",
-                    raw_pid,
-                    name
-                );
+                if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
+                    let name = candidate
+                        .name()
+                        .to_str()
+                        .unwrap_or("cannot parse os string");
+                    e.insert(name.to_owned());
+                    log::info!(
+                        "Registered process run with id: {} and name {}",
+                        raw_pid,
+                        name
+                    );
+                }
             }
         }
 
