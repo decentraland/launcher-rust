@@ -605,7 +605,7 @@ impl InstallsHub {
             Self::launch_command("open", explorer_launch_dir, &macos_params)?;
 
             // Wait for open command to launch the app, there is no better way to check it on macOS due the indirect launch via the open command
-            std::timeout(30_000: ms);
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         }
 
         #[cfg(target_os = "windows")]
