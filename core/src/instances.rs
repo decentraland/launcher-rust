@@ -47,14 +47,28 @@ impl RunningInstances {
         let initial_count = content.processes.len();
 
         for candidate in system.processes_by_exact_name(exact_name) {
+            let raw_pid = candidate.pid().as_u32();
+            let exe_display = candidate
+                .exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "unknown".to_owned());
+            log::info!(
+                "Found candidate process with pid: {} and exe: {}",
+                raw_pid,
+                exe_display
+            );
+
             // Filter by executable path to only match the explorer process,
             // not the launcher which shares the same process name
             if let Some(exe_path) = candidate.exe() {
                 if !exe_path.starts_with(app_path) {
+                    log::info!(
+                        "Discarded candidate pid: {} - exe path does not match app path {}",
+                        raw_pid,
+                        app_path.display()
+                    );
                     continue;
                 }
-
-                let raw_pid = candidate.pid().as_u32();
 
                 if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
                     let name = candidate
@@ -63,11 +77,13 @@ impl RunningInstances {
                         .unwrap_or("cannot parse os string");
                     e.insert(name.to_owned());
                     log::info!(
-                        "Registered process run with id: {} and name {}",
+                        "Accepted and registered process with pid: {} and name {}",
                         raw_pid,
                         name
                     );
                 }
+            } else {
+                log::info!("Discarded candidate pid: {} - no exe path available", raw_pid);
             }
         }
 
