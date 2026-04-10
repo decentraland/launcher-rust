@@ -625,7 +625,7 @@ impl InstallsHub {
                 // Default name of the Explorer client, won't conflict on macOS like it could on
                 // Windows with the default explorer.exe
                 //const NAME: &str = "Explorer";
-                guard.register_new_opened_instance_by_name(explorer_launch_dir);
+                guard.register_new_opened_instance_by_name(explorer_launch_dir.to_str().unwrap_or_default());
             }
         }
 
