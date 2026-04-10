@@ -37,7 +37,7 @@ impl RunningInstances {
     }
 
     #[cfg(target_os = "macos")]
-    pub fn register_new_opened_instance_by_name(&self, process_name: &str) {
+    pub fn register_new_opened_instance_by_name(&self, process_name: &str, app_path: &Path) {
         use std::collections::hash_map::Entry;
         use std::ffi::OsStr;
 
@@ -47,6 +47,16 @@ impl RunningInstances {
         let initial_count = content.processes.len();
 
         for candidate in system.processes_by_exact_name(exact_name) {
+            // Filter by executable path to only match the explorer process,
+            // not the launcher which shares the same process name
+            if let Some(exe_path) = candidate.exe() {
+                if !exe_path.starts_with(app_path) {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+
             let raw_pid = candidate.pid().as_u32();
 
             if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
