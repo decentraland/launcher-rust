@@ -50,8 +50,7 @@ impl RunningInstances {
             let raw_pid = candidate.pid().as_u32();
             let exe_display = candidate
                 .exe()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| "unknown".to_owned());
+                .map_or_else(|| "unknown".to_owned(), |p| p.display().to_string());
             log::info!(
                 "Found candidate process with pid: {} and exe: {}",
                 raw_pid,
