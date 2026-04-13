@@ -15,9 +15,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Stdio;
-#[cfg(target_os = "windows")]
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::{fs, fs::create_dir_all};
 use tokio::sync::Mutex;
@@ -605,7 +603,7 @@ impl InstallsHub {
             ];
 
             macos_params.append(&mut explorer_params);
-            Self::launch_open_blocking(explorer_launch_dir, &macos_params).await?;
+            Self::launch_open_blocking(explorer_launch_dir, &macos_params)?;
         }
 
         #[cfg(target_os = "windows")]
@@ -623,23 +621,20 @@ impl InstallsHub {
             const POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
             const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
-            let mut found = false;
-            // POLL_INTERVAL is non-zero by construction.
-            #[allow(clippy::arithmetic_side_effects)]
-            let max_polls = POLL_TIMEOUT.as_millis() / POLL_INTERVAL.as_millis();
-            for _ in 0..max_polls {
-                let registered = {
-                    let guard = self.running_instances.lock().await;
-                    guard.register_new_opened_instances_by_path(&explorer_launch_path)
-                };
-                if registered > 0 {
-                    found = true;
-                    break;
+            let poll = async {
+                loop {
+                    let found = {
+                        let guard = self.running_instances.lock().await;
+                        guard.register_new_opened_instances_by_fuzzy_path(&explorer_launch_path)
+                    };
+                    if found {
+                        break;
+                    }
+                    tokio::time::sleep(POLL_INTERVAL).await;
                 }
-                tokio::time::sleep(POLL_INTERVAL).await;
-            }
+            };
 
-            if !found {
+            if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
                 log::error!(
                     "Timed out waiting for Explorer process under {} to appear",
                     explorer_launch_path.display()
@@ -682,19 +677,14 @@ impl InstallsHub {
     }
 
     #[cfg(target_os = "macos")]
-    async fn launch_open_blocking(dir: &Path, args: &[String]) -> Result<()> {
-        use tokio::process::Command as TokioCommand;
-
-        let status = TokioCommand::new("open")
+    fn launch_open_blocking(dir: &Path, args: &[String]) -> Result<()> {
+        let status = Command::new("open")
             .current_dir(dir)
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| anyhow!("Failed to start `open`: {}", e))?
-            .wait()
-            .await
-            .context("Failed waiting on `open`")?;
+            .status()
+            .map_err(|e| anyhow!("Failed to run `open`: {}", e))?;
 
         if !status.success() {
             return Err(anyhow!("`open` exited with status {}", status));

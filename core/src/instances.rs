@@ -37,7 +37,7 @@ impl RunningInstances {
     }
 
     #[cfg(target_os = "macos")]
-    pub fn register_new_opened_instances_by_path(&self, app_path: &Path) -> usize {
+    pub fn register_new_opened_instances_by_fuzzy_path(&self, app_path: &Path) -> bool {
         use std::collections::hash_map::Entry;
 
         let system = sysinfo::System::new_all();
@@ -68,8 +68,8 @@ impl RunningInstances {
             }
         }
 
-        let added = content.processes.len().saturating_sub(initial_count);
-        if added == 0 {
+        let found = content.processes.len() > initial_count;
+        if !found {
             log::info!(
                 "No new Explorer instances found this poll under {}",
                 app_path.display()
@@ -77,7 +77,7 @@ impl RunningInstances {
         } else if let Err(e) = Self::write_content(&self.path, &content) {
             log::error!("Cannot persist running instance(s): {:#?}", e);
         }
-        added
+        found
     }
 
     pub fn any_is_running(&self) -> Result<bool> {
