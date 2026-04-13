@@ -6,6 +6,7 @@ use nix::unistd::setsid;
 use std::os::unix::process::CommandExt;
 
 pub trait CommandExtDetached {
+    #[allow(dead_code)]
     fn detached(&mut self) -> &mut Self;
 }
 

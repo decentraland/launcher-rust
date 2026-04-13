@@ -37,62 +37,47 @@ impl RunningInstances {
     }
 
     #[cfg(target_os = "macos")]
-    pub fn register_new_opened_instance_by_name(&self, process_name: &str, app_path: &Path) {
+    pub fn register_new_opened_instances_by_path(&self, app_path: &Path) -> usize {
         use std::collections::hash_map::Entry;
-        use std::ffi::OsStr;
 
         let system = sysinfo::System::new_all();
-        let exact_name = OsStr::new(process_name);
         let mut content: Storage = Self::file_content(self.path.as_path());
         let initial_count = content.processes.len();
 
-        for candidate in system.processes_by_exact_name(exact_name) {
-            let raw_pid = candidate.pid().as_u32();
-            let exe_display = candidate
-                .exe()
-                .map_or_else(|| "unknown".to_owned(), |p| p.display().to_string());
-            log::info!(
-                "Found candidate process with pid: {} and exe: {}",
-                raw_pid,
-                exe_display
-            );
+        for (pid, candidate) in system.processes() {
+            let Some(exe_path) = candidate.exe() else {
+                continue;
+            };
+            if !exe_path.starts_with(app_path) {
+                continue;
+            }
 
-            // Filter by executable path to only match the explorer process,
-            // not the launcher which shares the same process name
-            if let Some(exe_path) = candidate.exe() {
-                if !exe_path.starts_with(app_path) {
-                    log::info!(
-                        "Discarded candidate pid: {} - exe path does not match app path {}",
-                        raw_pid,
-                        app_path.display()
-                    );
-                    continue;
-                }
-
-                if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
-                    let name = candidate
-                        .name()
-                        .to_str()
-                        .unwrap_or("cannot parse os string");
-                    e.insert(name.to_owned());
-                    log::info!(
-                        "Accepted and registered process with pid: {} and name {}",
-                        raw_pid,
-                        name
-                    );
-                }
-            } else {
-                log::info!("Discarded candidate pid: {} - no exe path available", raw_pid);
+            let raw_pid = pid.as_u32();
+            if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
+                let name = candidate
+                    .name()
+                    .to_str()
+                    .unwrap_or("cannot parse os string");
+                e.insert(name.to_owned());
+                log::info!(
+                    "Accepted and registered process pid {} name {} exe {}",
+                    raw_pid,
+                    name,
+                    exe_path.display()
+                );
             }
         }
 
-        if initial_count == content.processes.len() {
-            log::error!(
-                "No new running instances were found. Likely instance is crashed or closed if it has been launched recently"
+        let added = content.processes.len().saturating_sub(initial_count);
+        if added == 0 {
+            log::info!(
+                "No new Explorer instances found this poll under {}",
+                app_path.display()
             );
         } else if let Err(e) = Self::write_content(&self.path, &content) {
-            log::error!("Cannot register running instance: {:#?}", e);
+            log::error!("Cannot persist running instance(s): {:#?}", e);
         }
+        added
     }
 
     pub fn any_is_running(&self) -> Result<bool> {

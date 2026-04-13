@@ -4,6 +4,7 @@ use crate::config;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
+#[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
 use anyhow::{Context, Result, anyhow};
@@ -14,7 +15,9 @@ use std::fmt;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+#[cfg(target_os = "windows")]
+use std::process::Command;
 use std::sync::Arc;
 use std::{fs, fs::create_dir_all};
 use tokio::sync::Mutex;
@@ -602,28 +605,45 @@ impl InstallsHub {
             ];
 
             macos_params.append(&mut explorer_params);
-            Self::launch_command("open", explorer_launch_dir, &macos_params)?;
-
-            // Wait for open command to launch the app, there is no better way to check it on macOS due the indirect launch via the open command
-            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            Self::launch_open_blocking(explorer_launch_dir, &macos_params).await?;
         }
 
         #[cfg(target_os = "windows")]
         let mut child =
             Self::launch_command(&explorer_launch_path, explorer_launch_dir, &explorer_params)?;
 
+        #[cfg(target_os = "windows")]
         {
             let guard = self.running_instances.lock().await;
+            guard.register_instance(child.id());
+        }
 
-            #[cfg(target_os = "windows")]
-            {
-                guard.register_instance(child.id());
+        #[cfg(target_os = "macos")]
+        {
+            const POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+            const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+            let mut found = false;
+            // POLL_INTERVAL is non-zero by construction.
+            #[allow(clippy::arithmetic_side_effects)]
+            let max_polls = POLL_TIMEOUT.as_millis() / POLL_INTERVAL.as_millis();
+            for _ in 0..max_polls {
+                let registered = {
+                    let guard = self.running_instances.lock().await;
+                    guard.register_new_opened_instances_by_path(&explorer_launch_path)
+                };
+                if registered > 0 {
+                    found = true;
+                    break;
+                }
+                tokio::time::sleep(POLL_INTERVAL).await;
             }
 
-            #[cfg(target_os = "macos")]
-            {
-                const NAME: &str = "Explorer";
-                guard.register_new_opened_instance_by_name(NAME, &explorer_launch_path);
+            if !found {
+                log::error!(
+                    "Timed out waiting for Explorer process under {} to appear",
+                    explorer_launch_path.display()
+                );
             }
         }
 
@@ -661,6 +681,28 @@ impl InstallsHub {
         Ok(())
     }
 
+    #[cfg(target_os = "macos")]
+    async fn launch_open_blocking(dir: &Path, args: &[String]) -> Result<()> {
+        use tokio::process::Command as TokioCommand;
+
+        let status = TokioCommand::new("open")
+            .current_dir(dir)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow!("Failed to start `open`: {}", e))?
+            .wait()
+            .await
+            .context("Failed waiting on `open`")?;
+
+        if !status.success() {
+            return Err(anyhow!("`open` exited with status {}", status));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
     fn launch_command<S: AsRef<std::ffi::OsStr> + std::fmt::Debug>(
         command: S,
         dir: &Path,
