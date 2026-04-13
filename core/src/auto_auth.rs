@@ -17,54 +17,53 @@ pub struct DownloadOriginData {
 pub struct AutoAuth {}
 
 impl AutoAuth {
+    /// On Windows, token + `anon_user_id` extraction is handled by the
+    /// `src-auto-auth` binary — this is a no-op.
+    ///
+    /// On macOS, extracts both from the DMG's xattr URLs.
     pub fn try_obtain_auth_token() {
+        #[cfg(target_os = "macos")]
+        Self::try_extract_from_dmg();
+    }
+
+    #[cfg(target_os = "macos")]
+    fn try_extract_from_dmg() {
         let has_token = AuthTokenStorage::has_token();
+        let has_anon_id = crate::config::campaign_anon_user_id().is_some();
 
         if has_token {
             log::info!("Token already obtained");
         }
 
-        // On Windows, token + anon_user_id extraction is handled by the
-        // src-auto-auth binary, so we just check the token here.
-        #[cfg(not(target_os = "macos"))]
-        if has_token {
+        if has_token && has_anon_id {
             return;
         }
 
-        // On macOS, extract from DMG xattr. Skip only when BOTH are present.
-        #[cfg(target_os = "macos")]
-        {
-            let has_anon_id = crate::config::campaign_anon_user_id().is_some();
-            if has_token && has_anon_id {
-                return;
+        match Self::obtain_token_internal() {
+            Ok(origin) => {
+                if !has_token {
+                    match origin.auth_token {
+                        Some(token) => {
+                            log::info!("Token obtained");
+                            if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
+                                log::error!("Cannot write token: {e}");
+                            }
+                        }
+                        None => {
+                            log::warn!("Token value is empty");
+                        }
+                    }
+                }
+
+                if !has_anon_id {
+                    if let Some(ref anon_id) = origin.campaign_anon_user_id {
+                        log::info!("Campaign anon_user_id obtained from DMG origin");
+                        crate::config::write_campaign_anon_user_id(anon_id);
+                    }
+                }
             }
-
-            match Self::obtain_token_internal() {
-                Ok(origin) => {
-                    if !has_token {
-                        match origin.auth_token {
-                            Some(token) => {
-                                log::info!("Token obtained");
-                                if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
-                                    log::error!("Cannot write token: {e}");
-                                }
-                            }
-                            None => {
-                                log::warn!("Token value is empty");
-                            }
-                        }
-                    }
-
-                    if !has_anon_id {
-                        if let Some(ref anon_id) = origin.campaign_anon_user_id {
-                            log::info!("Campaign anon_user_id obtained from DMG origin");
-                            crate::config::write_campaign_anon_user_id(anon_id);
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::error!("Obtain auth token error: {e}");
-                }
+            Err(e) => {
+                log::error!("Obtain auth token error: {e}");
             }
         }
     }
