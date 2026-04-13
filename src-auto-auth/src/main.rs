@@ -84,7 +84,7 @@ fn extract_anon_user_id_from_zone(installer_path: &str) {
 
     for url in urls {
         if let Some(anon_id) = anon_user_id_from_url(url) {
-            log::info!("Campaign anon_user_id extracted from Zone.Identifier: {anon_id}");
+            log::info!("Campaign anon_user_id extracted from Zone.Identifier");
             config::write_campaign_anon_user_id(&anon_id);
             return;
         }
@@ -106,8 +106,12 @@ fn extract_anon_user_id_from_file() {
         Ok(content) => {
             let trimmed = content.trim();
             if !trimmed.is_empty() {
-                log::info!("Campaign anon_user_id extracted from file: {trimmed}");
+                log::info!("Campaign anon_user_id extracted from file");
                 config::write_campaign_anon_user_id(trimmed);
+            }
+            // Delete after reading to prevent stale attribution on reinstalls
+            if let Err(e) = std::fs::remove_file(&path) {
+                log::warn!("Cannot delete campaign anon user id file: {e}");
             }
         }
         Err(_) => {

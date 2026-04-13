@@ -82,11 +82,13 @@ pub fn client_additional_arguments() -> Vec<String> {
     arguments_from_key(KEY)
 }
 
+const CAMPAIGN_ANON_USER_ID_KEY: &str = "campaign-anon-user-id";
+const CAMPAIGN_ATTRIBUTION_REPORTED_KEY: &str = "campaign-attribution-reported";
+
 pub fn campaign_anon_user_id() -> Option<String> {
-    const KEY: &str = "campaign-anon-user-id";
     match config_content() {
         Ok(config) => {
-            if let Some(value) = config.get(KEY) {
+            if let Some(value) = config.get(CAMPAIGN_ANON_USER_ID_KEY) {
                 value.as_str().map(ToOwned::to_owned)
             } else {
                 None
@@ -99,17 +101,49 @@ pub fn campaign_anon_user_id() -> Option<String> {
     }
 }
 
+/// Write campaign anon user id to config. Idempotent — skips if already set.
 pub fn write_campaign_anon_user_id(id: &str) {
-    const KEY: &str = "campaign-anon-user-id";
     match config_content() {
         Ok(mut config) => {
-            config.insert(KEY.to_owned(), Value::String(id.to_owned()));
+            if config.get(CAMPAIGN_ANON_USER_ID_KEY).and_then(|v| v.as_str()) == Some(id) {
+                return;
+            }
+            config.insert(CAMPAIGN_ANON_USER_ID_KEY.to_owned(), Value::String(id.to_owned()));
             if let Err(e) = write_config(&config) {
                 log::error!("Cannot write campaign anon user id to config: {e}");
             }
         }
         Err(e) => {
             log::error!("Cannot read config to write campaign anon user id: {e}");
+        }
+    }
+}
+
+/// Returns true if the CAMPAIGN_ATTRIBUTION_DETECTED event has already been reported.
+pub fn campaign_attribution_reported() -> bool {
+    match config_content() {
+        Ok(config) => config
+            .get(CAMPAIGN_ATTRIBUTION_REPORTED_KEY)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
+/// Mark the campaign attribution event as reported so it only fires once.
+pub fn mark_campaign_attribution_reported() {
+    match config_content() {
+        Ok(mut config) => {
+            config.insert(
+                CAMPAIGN_ATTRIBUTION_REPORTED_KEY.to_owned(),
+                Value::Bool(true),
+            );
+            if let Err(e) = write_config(&config) {
+                log::error!("Cannot mark campaign attribution as reported: {e}");
+            }
+        }
+        Err(e) => {
+            log::error!("Cannot read config to mark campaign attribution: {e}");
         }
     }
 }

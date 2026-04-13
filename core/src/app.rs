@@ -48,14 +48,17 @@ impl AppState {
             })
             .await;
 
-        // Fire CAMPAIGN_ATTRIBUTION_DETECTED if a campaign anon_user_id is present
+        // Fire CAMPAIGN_ATTRIBUTION_DETECTED once per campaign attribution
         if let Some(anon_id) = &campaign_anon_user_id {
-            info!("Firing Campaign Attribution Detected event for anon_user_id: {anon_id}");
-            analytics
-                .track_and_flush_silent(Event::CAMPAIGN_ATTRIBUTION_DETECTED {
-                    anon_user_id: anon_id.clone(),
-                })
-                .await;
+            if !config::campaign_attribution_reported() {
+                info!("Firing Campaign Attribution Detected event");
+                analytics
+                    .track_and_flush_silent(Event::CAMPAIGN_ATTRIBUTION_DETECTED {
+                        anon_user_id: anon_id.clone(),
+                    })
+                    .await;
+                config::mark_campaign_attribution_reported();
+            }
         }
 
         let analytics = Arc::new(Mutex::new(analytics));

@@ -7,38 +7,61 @@ use std::path::{Path, PathBuf};
 
 use auth_token_storage::AuthTokenStorage;
 
+/// Data extracted from the installer's download origin (xattr URLs on macOS,
+/// Zone.Identifier on Windows).
+pub struct DownloadOriginData {
+    pub auth_token: Option<String>,
+    pub campaign_anon_user_id: Option<String>,
+}
+
 pub struct AutoAuth {}
 
 impl AutoAuth {
     pub fn try_obtain_auth_token() {
-        if AuthTokenStorage::has_token() {
-            log::info!("Token already obtained");
+        let has_token = AuthTokenStorage::has_token();
+        let has_anon_id = crate::config::campaign_anon_user_id().is_some();
 
-            // No need to return on windows, just check if token obtained
-            #[cfg(target_os = "macos")]
+        if has_token {
+            log::info!("Token already obtained");
+        }
+
+        // On macOS, skip extraction only when BOTH are already present
+        #[cfg(target_os = "macos")]
+        if has_token && has_anon_id {
+            return;
+        }
+
+        // On Windows, token extraction is handled by src-auto-auth binary;
+        // only skip if token exists (anon_user_id is also handled there).
+        #[cfg(not(target_os = "macos"))]
+        if has_token {
             return;
         }
 
         #[cfg(target_os = "macos")]
         match Self::obtain_token_internal() {
-            Ok((token, campaign_anon_user_id)) => {
+            Ok(origin) => {
                 // Handle auth token
-                match token {
-                    Some(token) => {
-                        log::info!("Token obtained");
-                        if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
-                            log::error!("Cannot write token: {e}");
+                if !has_token {
+                    match origin.auth_token {
+                        Some(token) => {
+                            log::info!("Token obtained");
+                            if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
+                                log::error!("Cannot write token: {e}");
+                            }
                         }
-                    }
-                    None => {
-                        log::warn!("Token value is empty");
+                        None => {
+                            log::warn!("Token value is empty");
+                        }
                     }
                 }
 
                 // Handle anon_user_id independently of token
-                if let Some(anon_id) = campaign_anon_user_id {
-                    log::info!("Campaign anon_user_id obtained: {anon_id}");
-                    crate::config::write_campaign_anon_user_id(&anon_id);
+                if !has_anon_id {
+                    if let Some(ref anon_id) = origin.campaign_anon_user_id {
+                        log::info!("Campaign anon_user_id obtained from DMG origin");
+                        crate::config::write_campaign_anon_user_id(anon_id);
+                    }
                 }
             }
             Err(e) => {
@@ -98,11 +121,11 @@ impl AutoAuth {
         Ok(())
     }
 
-    /// Returns `(auth_token, campaign_anon_user_id)` extracted from the DMG's
-    /// `where-from` xattr URLs.  Both fields are independent — an anon_user_id
+    /// Extracts auth token and campaign `anon_user_id` from the DMG's
+    /// `where-from` xattr URLs.  Both fields are independent — an `anon_user_id`
     /// can be present even when no auth token is found.
     #[cfg(target_os = "macos")]
-    fn obtain_token_internal() -> Result<(Option<String>, Option<String>)> {
+    fn obtain_token_internal() -> Result<DownloadOriginData> {
         use anyhow::Context;
 
         use crate::environment::macos::{dmg_backing_file, dmg_mount_path, where_from_attr};
@@ -113,7 +136,10 @@ impl AutoAuth {
         log::info!("Exe is running from dmg: {dmg_mount_path:?}");
 
         let Some(dmg_mount_path) = dmg_mount_path else {
-            return Ok((None, None));
+            return Ok(DownloadOriginData {
+                auth_token: None,
+                campaign_anon_user_id: None,
+            });
         };
 
         let dmg_file_path = dmg_backing_file(&dmg_mount_path.to_string_lossy())
@@ -158,7 +184,10 @@ impl AutoAuth {
             }
         }
 
-        Ok((found_token, found_anon_user_id))
+        Ok(DownloadOriginData {
+            auth_token: found_token,
+            campaign_anon_user_id: found_anon_user_id,
+        })
     }
 }
 
@@ -185,8 +214,11 @@ pub fn token_from_url(url_str: &str) -> Result<Option<String>> {
         r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
     )?;
 
-    // Search in params
-    for (_, value) in url.query_pairs() {
+    // Search in params — skip anon_user_id to avoid treating it as an auth token
+    for (key, value) in url.query_pairs() {
+        if key == "anon_user_id" {
+            continue;
+        }
         if re.is_match(&value) {
             return Ok(Some(value.to_string()));
         }
