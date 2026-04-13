@@ -382,7 +382,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     #[cfg(target_os = "macos")]
     {
-        const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
+        const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Decentraland";
 
         let from = &branch_path.join("build");
         let to = &branch_path;
@@ -619,9 +619,9 @@ impl InstallsHub {
 
             #[cfg(target_os = "macos")]
             {
-                // Default name of the Explorer client, won't conflict on macOS like it could on
-                // Windows with the default explorer.exe
-                const NAME: &str = "Explorer";
+                // Default name of the Explorer client after the productName rename in
+                // decentraland/unity-explorer#8207.
+                const NAME: &str = "Decentraland";
                 guard.register_new_opened_instance_by_name(NAME);
             }
         }
