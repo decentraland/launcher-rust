@@ -3,7 +3,9 @@
 
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
+    auto_auth::anon_user_id::anon_user_id_from_url,
     auto_auth::auth_token_storage::AuthTokenStorage,
+    config,
     log, logs,
 };
 
@@ -26,10 +28,6 @@ fn main() {
 
 fn main_internal() -> Result<()> {
     log::info!("Start auto auth script v{}", std::env!("CARGO_PKG_VERSION"));
-    if AuthTokenStorage::has_token() {
-        log::info!("Token already installed");
-        return Ok(());
-    }
 
     let args: Vec<String> = std::env::args().collect();
     log::info!("Args: {args:?}");
@@ -39,10 +37,83 @@ fn main_internal() -> Result<()> {
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
     log::info!("Installer path: {installer_path}");
 
+    // Extract anon_user_id from Zone.Identifier URLs (independent of auth token)
+    extract_anon_user_id_from_zone(installer_path);
+
+    // Also check for a file-based campaign anon user id (future mechanism)
+    extract_anon_user_id_from_file();
+
+    if AuthTokenStorage::has_token() {
+        log::info!("Token already installed");
+        return Ok(());
+    }
+
     let token = token_from_file_by_zone_attr(installer_path)?;
     AuthTokenStorage::write_token(token.as_str())?;
     log::info!("Token write complete");
     Ok(())
+}
+
+/// Try to extract `anon_user_id` from Zone.Identifier URLs and persist it to config.
+fn extract_anon_user_id_from_zone(installer_path: &str) {
+    // Already have a campaign anon user id — skip
+    if config::campaign_anon_user_id().is_some() {
+        log::info!("Campaign anon_user_id already present in config");
+        return;
+    }
+
+    let content = match zone_identifier_content(installer_path)
+        .or_else(|e| {
+            log::error!("ADS read for anon_user_id failed via CAPI, fallback to PowerShell: {e:?}");
+            zone_identifier_content_powershell(installer_path)
+        }) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Cannot read Zone.Identifier for anon_user_id: {e:?}");
+            return;
+        }
+    };
+
+    let zone_info = parsed_zone_identifier(&content);
+
+    // Check both host_url and referrer_url for anon_user_id
+    let urls: Vec<&str> = [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect();
+
+    for url in urls {
+        if let Some(anon_id) = anon_user_id_from_url(url) {
+            log::info!("Campaign anon_user_id extracted from Zone.Identifier: {anon_id}");
+            config::write_campaign_anon_user_id(&anon_id);
+            return;
+        }
+    }
+
+    log::info!("No campaign anon_user_id found in Zone.Identifier URLs");
+}
+
+/// Check for a file-based campaign anon user id (`campaign-anon-user-id.txt`).
+/// This supports a future mechanism where the installer can drop the id into a
+/// well-known file location.
+fn extract_anon_user_id_from_file() {
+    if config::campaign_anon_user_id().is_some() {
+        return;
+    }
+
+    let path = dcl_launcher_core::installs::campaign_anon_user_id_file_path();
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                log::info!("Campaign anon_user_id extracted from file: {trimmed}");
+                config::write_campaign_anon_user_id(trimmed);
+            }
+        }
+        Err(_) => {
+            // File doesn't exist — expected, silently skip
+        }
+    }
 }
 
 // Zone.Identifier

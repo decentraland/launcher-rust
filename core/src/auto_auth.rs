@@ -1,3 +1,4 @@
+pub mod anon_user_id;
 pub mod auth_token_storage;
 
 use anyhow::{Result, anyhow};
@@ -20,15 +21,24 @@ impl AutoAuth {
 
         #[cfg(target_os = "macos")]
         match Self::obtain_token_internal() {
-            Ok(token) => {
-                let Some(token) = token else {
-                    log::warn!("Token value is empty");
-                    return;
-                };
+            Ok((token, campaign_anon_user_id)) => {
+                // Handle auth token
+                match token {
+                    Some(token) => {
+                        log::info!("Token obtained");
+                        if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
+                            log::error!("Cannot write token: {e}");
+                        }
+                    }
+                    None => {
+                        log::warn!("Token value is empty");
+                    }
+                }
 
-                log::info!("Token obtained");
-                if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
-                    log::error!("Cannot write token: {e}");
+                // Handle anon_user_id independently of token
+                if let Some(anon_id) = campaign_anon_user_id {
+                    log::info!("Campaign anon_user_id obtained: {anon_id}");
+                    crate::config::write_campaign_anon_user_id(&anon_id);
                 }
             }
             Err(e) => {
@@ -88,8 +98,11 @@ impl AutoAuth {
         Ok(())
     }
 
+    /// Returns `(auth_token, campaign_anon_user_id)` extracted from the DMG's
+    /// `where-from` xattr URLs.  Both fields are independent — an anon_user_id
+    /// can be present even when no auth token is found.
     #[cfg(target_os = "macos")]
-    fn obtain_token_internal() -> Result<Option<String>> {
+    fn obtain_token_internal() -> Result<(Option<String>, Option<String>)> {
         use anyhow::Context;
 
         use crate::environment::macos::{dmg_backing_file, dmg_mount_path, where_from_attr};
@@ -100,7 +113,7 @@ impl AutoAuth {
         log::info!("Exe is running from dmg: {dmg_mount_path:?}");
 
         let Some(dmg_mount_path) = dmg_mount_path else {
-            return Ok(None);
+            return Ok((None, None));
         };
 
         let dmg_file_path = dmg_backing_file(&dmg_mount_path.to_string_lossy())
@@ -119,21 +132,33 @@ impl AutoAuth {
             return Err(anyhow!("Dmg does not have where from data"));
         };
 
+        let mut found_token: Option<String> = None;
+        let mut found_anon_user_id: Option<String> = None;
+
         for attr in &where_from {
-            let url = token_from_url(attr);
-            match url {
-                Ok(token) => {
-                    if token.is_some() {
-                        return Ok(token);
+            // Extract auth token
+            if found_token.is_none() {
+                match token_from_url(attr) {
+                    Ok(token) => {
+                        if token.is_some() {
+                            found_token = token;
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Cannot read token from url '{}' due: {}", attr, e);
                     }
                 }
-                Err(e) => {
-                    log::error!("Cannot read url '{}' due: {}", attr, e);
+            }
+
+            // Extract anon_user_id (independently)
+            if found_anon_user_id.is_none() {
+                if let Some(anon_id) = anon_user_id::anon_user_id_from_url(attr) {
+                    found_anon_user_id = Some(anon_id);
                 }
             }
         }
 
-        Ok(None)
+        Ok((found_token, found_anon_user_id))
     }
 }
 

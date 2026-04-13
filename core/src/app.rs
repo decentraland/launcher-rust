@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::auto_auth::AutoAuth;
+use crate::config;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
 use crate::instances::RunningInstances;
@@ -31,12 +32,31 @@ impl AppState {
 
         Monitoring::try_setup_sentry().context("Cannot setup monitoring")?;
 
-        let mut analytics = analytics::Analytics::new_from_env();
+        // Run auto-auth BEFORE analytics init so that campaign_anon_user_id is
+        // available in config.json for the analytics client constructor.
+        AutoAuth::try_obtain_auth_token();
+        #[cfg(target_os = "macos")]
+        AutoAuth::try_install_to_app_dir_if_from_dmg();
+
+        let campaign_anon_user_id = config::campaign_anon_user_id();
+
+        let mut analytics =
+            analytics::Analytics::new_from_env(campaign_anon_user_id.clone());
         analytics
             .track_and_flush_silent(Event::LAUNCHER_OPEN {
                 version: utils::app_version().to_owned(),
             })
             .await;
+
+        // Fire CAMPAIGN_ATTRIBUTION_DETECTED if a campaign anon_user_id is present
+        if let Some(anon_id) = &campaign_anon_user_id {
+            info!("Firing Campaign Attribution Detected event for anon_user_id: {anon_id}");
+            analytics
+                .track_and_flush_silent(Event::CAMPAIGN_ATTRIBUTION_DETECTED {
+                    anon_user_id: anon_id.clone(),
+                })
+                .await;
+        }
 
         let analytics = Arc::new(Mutex::new(analytics));
         let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
@@ -44,10 +64,6 @@ impl AppState {
             analytics.clone(),
             running_instances.clone(),
         )));
-
-        AutoAuth::try_obtain_auth_token();
-        #[cfg(target_os = "macos")]
-        AutoAuth::try_install_to_app_dir_if_from_dmg();
 
         let flow = LaunchFlow::new(installs_hub, analytics.clone(), running_instances);
         let flow_state = LaunchFlowState::default();

@@ -22,6 +22,7 @@ pub struct CreateArgs {
     anonymous_id: String,
     os: String,
     launcher_version: String,
+    campaign_anon_user_id: Option<String>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -31,7 +32,7 @@ pub enum Analytics {
 }
 
 impl Analytics {
-    pub fn new_from_env() -> Self {
+    pub fn new_from_env(campaign_anon_user_id: Option<String>) -> Self {
         if AppEnvironment::cmd_args().skip_analytics {
             info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
             return Self::new(None);
@@ -52,6 +53,7 @@ impl Analytics {
                     anonymous_id,
                     os,
                     launcher_version,
+                    campaign_anon_user_id,
                 };
                 Some(args)
             }
@@ -68,8 +70,13 @@ impl Analytics {
     pub fn new(args: Option<CreateArgs>) -> Self {
         match args {
             Some(a) => {
-                let client =
-                    AnalyticsClient::new(a.write_key, a.anonymous_id, a.os, a.launcher_version);
+                let client = AnalyticsClient::new(
+                    a.write_key,
+                    a.anonymous_id,
+                    a.os,
+                    a.launcher_version,
+                    a.campaign_anon_user_id,
+                );
                 Self::Client(client)
             }
             None => Self::Null(NullClient::new()),

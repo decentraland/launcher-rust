@@ -90,6 +90,10 @@ pub fn deeplink_bridge_path() -> PathBuf {
     explorer_path().join("deeplink-bridge.json")
 }
 
+pub fn campaign_anon_user_id_file_path() -> PathBuf {
+    explorer_path().join("campaign-anon-user-id.txt")
+}
+
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
@@ -491,6 +495,11 @@ impl InstallsHub {
 
         if let Some(value) = deeplink {
             output.insert(0, value.into());
+        }
+
+        if let Some(anon_id) = config::campaign_anon_user_id() {
+            output.push("--campaign_anon_user_id".to_string());
+            output.push(anon_id);
         }
 
         let mut additionals = config::client_additional_arguments();

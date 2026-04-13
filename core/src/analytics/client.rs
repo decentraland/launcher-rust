@@ -26,6 +26,7 @@ pub struct AnalyticsClient {
     anonymous_id: String,
     os: String,
     launcher_version: String,
+    campaign_anon_user_id: Option<String>,
     session_id: SessionId,
     batcher: QueuedBatcher,
     send_daemon: AnalyticsEventSendDaemon<HttpClient>,
@@ -37,6 +38,7 @@ impl AnalyticsClient {
         anonymous_id: String,
         os: String,
         launcher_version: String,
+        campaign_anon_user_id: Option<String>,
     ) -> Self {
         let queue = new_event_queue();
         let queue = Arc::new(Mutex::new(queue));
@@ -54,6 +56,7 @@ impl AnalyticsClient {
             anonymous_id,
             os,
             launcher_version,
+            campaign_anon_user_id,
             session_id,
             batcher,
             send_daemon,
@@ -71,6 +74,13 @@ impl AnalyticsClient {
             Value::String(self.session_id.value().to_owned()),
         );
         properties.insert("appId".to_owned(), Value::String(APP_ID.to_owned()));
+
+        if let Some(anon_id) = &self.campaign_anon_user_id {
+            properties.insert(
+                "campaignAnonUserId".to_owned(),
+                Value::String(anon_id.clone()),
+            );
+        }
 
         let user = User::AnonymousId {
             anonymous_id: self.anonymous_id.clone(),
