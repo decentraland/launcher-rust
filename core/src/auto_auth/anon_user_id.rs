@@ -22,9 +22,12 @@ pub fn anon_user_id_from_url(url_str: &str) -> Option<String> {
 }
 
 /// Only allow alphanumeric chars, hyphens, and underscores, up to 128 chars.
-fn is_valid_anon_user_id(value: &str) -> bool {
+/// Only allow alphanumeric chars, hyphens, and underscores, up to 128 chars.
+/// Must not start with `-` to prevent CLI flag injection.
+pub fn is_valid_anon_user_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
+        && !value.starts_with('-')
         && value
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')

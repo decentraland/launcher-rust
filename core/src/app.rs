@@ -48,16 +48,17 @@ impl AppState {
             })
             .await;
 
-        // Fire CAMPAIGN_ATTRIBUTION_DETECTED once per campaign attribution
+        // Fire CAMPAIGN_ATTRIBUTION_DETECTED once per campaign attribution.
+        // Mark before sending (at-most-once) to avoid duplicates on crash.
         if let Some(anon_id) = &campaign_anon_user_id {
             if !config::campaign_attribution_reported() {
+                config::mark_campaign_attribution_reported();
                 info!("Firing Campaign Attribution Detected event");
                 analytics
                     .track_and_flush_silent(Event::CAMPAIGN_ATTRIBUTION_DETECTED {
                         anon_user_id: anon_id.clone(),
                     })
                     .await;
-                config::mark_campaign_attribution_reported();
             }
         }
 

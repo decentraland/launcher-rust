@@ -3,7 +3,7 @@
 
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
-    auto_auth::anon_user_id::anon_user_id_from_url,
+    auto_auth::anon_user_id::{anon_user_id_from_url, is_valid_anon_user_id},
     auto_auth::auth_token_storage::AuthTokenStorage,
     config,
     log, logs,
@@ -105,7 +105,7 @@ fn extract_anon_user_id_from_file() {
     match std::fs::read_to_string(&path) {
         Ok(content) => {
             let trimmed = content.trim();
-            if !trimmed.is_empty() {
+            if is_valid_anon_user_id(trimmed) {
                 log::info!("Campaign anon_user_id extracted from file");
                 config::write_campaign_anon_user_id(trimmed);
             }

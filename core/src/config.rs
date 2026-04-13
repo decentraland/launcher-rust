@@ -119,12 +119,12 @@ pub fn write_campaign_anon_user_id(id: &str) {
     }
 }
 
-/// Returns true if the CAMPAIGN_ATTRIBUTION_DETECTED event has already been reported.
+/// Returns true if the `CAMPAIGN_ATTRIBUTION_DETECTED` event has already been reported.
 pub fn campaign_attribution_reported() -> bool {
     match config_content() {
         Ok(config) => config
             .get(CAMPAIGN_ATTRIBUTION_REPORTED_KEY)
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
         Err(_) => false,
     }
