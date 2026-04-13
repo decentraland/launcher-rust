@@ -622,11 +622,8 @@ impl InstallsHub {
 
             #[cfg(target_os = "macos")]
             {
-                let app_name = explorer_launch_path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_default();
-                guard.register_new_opened_instance_by_name(app_name, &explorer_launch_path);
+                const NAME: &str = "Explorer";
+                guard.register_new_opened_instance_by_name(NAME, &explorer_launch_path);
             }
         }
 
