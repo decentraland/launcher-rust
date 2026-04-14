@@ -77,7 +77,7 @@ impl AnalyticsClient {
 
         if let Some(anon_id) = &self.campaign_anon_user_id {
             properties.insert(
-                "campaignAnonUserId".to_owned(),
+                "campaign_anon_user_id".to_owned(),
                 Value::String(anon_id.clone()),
             );
         }

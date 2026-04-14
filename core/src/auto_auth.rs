@@ -5,6 +5,7 @@ use anyhow::{Result, anyhow};
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "macos")]
 use auth_token_storage::AuthTokenStorage;
 
 /// Data extracted from the installer's download origin (xattr URLs on macOS,
@@ -21,6 +22,7 @@ impl AutoAuth {
     /// `src-auto-auth` binary — this is a no-op.
     ///
     /// On macOS, extracts both from the DMG's xattr URLs.
+    #[allow(clippy::missing_const_for_fn)]
     pub fn try_obtain_auth_token() {
         #[cfg(target_os = "macos")]
         Self::try_extract_from_dmg();
