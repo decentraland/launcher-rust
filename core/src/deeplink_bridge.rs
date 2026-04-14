@@ -52,7 +52,7 @@ fn bring_explorer_to_front() {
     #[cfg(target_os = "macos")]
     {
         let result = std::process::Command::new("osascript")
-            .args(["-e", "tell application \"Decentraland\" to activate"])
+            .args(["-e", "tell application \"Explorer\" to activate"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn();
