@@ -48,6 +48,7 @@ impl From<std::io::Error> for PlaceDeeplinkError {
 pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
 
 /// Best-effort attempt to bring the Explorer window to the front.
+#[allow(clippy::missing_const_for_fn)]
 fn bring_explorer_to_front() {
     #[cfg(target_os = "macos")]
     {
