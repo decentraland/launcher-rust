@@ -3,7 +3,7 @@
 
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
-    auto_auth::anon_user_id::{anon_user_id_from_url, is_valid_anon_user_id},
+    auto_auth::anon_user_id::AnonUserId,
     auto_auth::auth_token_storage::AuthTokenStorage,
     config,
     log, logs,
@@ -83,9 +83,9 @@ fn extract_anon_user_id_from_zone(installer_path: &str) {
         .collect();
 
     for url in urls {
-        if let Some(anon_id) = anon_user_id_from_url(url) {
+        if let Some(anon_id) = AnonUserId::from_url(url) {
             log::info!("Campaign anon_user_id extracted from Zone.Identifier");
-            config::write_campaign_anon_user_id(&anon_id);
+            config::write_campaign_anon_user_id(anon_id.as_str());
             return;
         }
     }
@@ -105,9 +105,9 @@ fn extract_anon_user_id_from_file() {
     match std::fs::read_to_string(&path) {
         Ok(content) => {
             let trimmed = content.trim();
-            if is_valid_anon_user_id(trimmed) {
+            if let Some(anon_id) = AnonUserId::parse(trimmed) {
                 log::info!("Campaign anon_user_id extracted from file");
-                config::write_campaign_anon_user_id(trimmed);
+                config::write_campaign_anon_user_id(anon_id.as_str());
             }
             // Delete after reading to prevent stale attribution on reinstalls
             if let Err(e) = std::fs::remove_file(&path) {
@@ -135,17 +135,16 @@ fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
 }
 
 fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
-    if let Some(url) = &zone_info.host_url {
-        let token = dcl_launcher_core::auto_auth::token_from_url(url)?;
-        if let Some(token) = token {
-            return Ok(token);
-        }
-    }
+    use dcl_launcher_core::auto_auth::DownloadOriginData;
 
-    if let Some(url) = &zone_info.referrer_url {
-        let token = dcl_launcher_core::auto_auth::token_from_url(url)?;
-        if let Some(token) = token {
-            return Ok(token);
+    for url in [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        if let Ok(origin) = DownloadOriginData::from_url(url) {
+            if let Some(token) = origin.auth_token {
+                return Ok(token);
+            }
         }
     }
 

@@ -8,11 +8,59 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use auth_token_storage::AuthTokenStorage;
 
-/// Data extracted from the installer's download origin (xattr URLs on macOS,
-/// Zone.Identifier on Windows).
+use anon_user_id::AnonUserId;
+
+/// Data extracted from a download URL — auth token and campaign anonymous user ID.
+///
+/// Both fields are parsed independently from the same URL via `from_url()`,
+/// avoiding ordering or collision issues between the two.
 pub struct DownloadOriginData {
     pub auth_token: Option<String>,
-    pub campaign_anon_user_id: Option<String>,
+    pub campaign_anon_user_id: Option<AnonUserId>,
+}
+
+impl DownloadOriginData {
+    /// Extract both auth token and `anon_user_id` from a single URL.
+    ///
+    /// The auth token is matched by UUID regex on any query param value (except
+    /// `anon_user_id`) or path segment. The `anon_user_id` is matched by key name.
+    pub fn from_url(url_str: &str) -> Result<Self> {
+        let url = url::Url::parse(url_str)?;
+
+        let re = regex::Regex::new(
+            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        )?;
+
+        // Extract auth token from query params (skip anon_user_id key) or path segments
+        let mut auth_token: Option<String> = None;
+
+        for (key, value) in url.query_pairs() {
+            if key == "anon_user_id" {
+                continue;
+            }
+            if re.is_match(&value) {
+                auth_token = Some(value.to_string());
+                break;
+            }
+        }
+
+        if auth_token.is_none() {
+            if let Some(segments) = url.path_segments() {
+                auth_token = segments
+                    .filter(|s| re.is_match(s))
+                    .map(ToString::to_string)
+                    .next();
+            }
+        }
+
+        // Extract anon_user_id by key name (validated by AnonUserId::from_url)
+        let campaign_anon_user_id = AnonUserId::from_url(url_str);
+
+        Ok(Self {
+            auth_token,
+            campaign_anon_user_id,
+        })
+    }
 }
 
 pub struct AutoAuth {}
@@ -60,7 +108,7 @@ impl AutoAuth {
                 if !has_anon_id {
                     if let Some(ref anon_id) = origin.campaign_anon_user_id {
                         log::info!("Campaign anon_user_id obtained from DMG origin");
-                        crate::config::write_campaign_anon_user_id(anon_id);
+                        crate::config::write_campaign_anon_user_id(anon_id.as_str());
                     }
                 }
             }
@@ -107,7 +155,6 @@ impl AutoAuth {
             dest_path.display()
         );
 
-        // Use Apple's ditto, safest and signature-preserving
         let status = std::process::Command::new("ditto")
             .arg(&app_bundle)
             .arg(&dest_path)
@@ -158,36 +205,28 @@ impl AutoAuth {
             return Err(anyhow!("Dmg does not have where from data"));
         };
 
-        let mut found_token: Option<String> = None;
-        let mut found_anon_user_id: Option<String> = None;
+        let mut result = DownloadOriginData {
+            auth_token: None,
+            campaign_anon_user_id: None,
+        };
 
         for attr in &where_from {
-            // Extract auth token
-            if found_token.is_none() {
-                match token_from_url(attr) {
-                    Ok(token) => {
-                        if token.is_some() {
-                            found_token = token;
-                        }
+            match DownloadOriginData::from_url(attr) {
+                Ok(parsed) => {
+                    if result.auth_token.is_none() {
+                        result.auth_token = parsed.auth_token;
                     }
-                    Err(e) => {
-                        log::error!("Cannot read token from url '{}' due: {}", attr, e);
+                    if result.campaign_anon_user_id.is_none() {
+                        result.campaign_anon_user_id = parsed.campaign_anon_user_id;
                     }
                 }
-            }
-
-            // Extract anon_user_id (independently)
-            if found_anon_user_id.is_none() {
-                if let Some(anon_id) = anon_user_id::anon_user_id_from_url(attr) {
-                    found_anon_user_id = Some(anon_id);
+                Err(e) => {
+                    log::error!("Cannot parse url '{}': {}", attr, e);
                 }
             }
         }
 
-        Ok(DownloadOriginData {
-            auth_token: found_token,
-            campaign_anon_user_id: found_anon_user_id,
-        })
+        Ok(result)
     }
 }
 
@@ -206,32 +245,6 @@ fn app_bundle_from_exe_path(exe_path: &Path) -> std::io::Result<PathBuf> {
     ))
 }
 
-pub fn token_from_url(url_str: &str) -> Result<Option<String>> {
-    let url = url::Url::parse(url_str)?;
-
-    // Regex for token find
-    let re = regex::Regex::new(
-        r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-    )?;
-
-    // Search in params — skip anon_user_id to avoid treating it as an auth token
-    for (key, value) in url.query_pairs() {
-        if key == "anon_user_id" {
-            continue;
-        }
-        if re.is_match(&value) {
-            return Ok(Some(value.to_string()));
-        }
-    }
-
-    // Split into path segments e.g. "391a85da-a3bb-49e2-a45e-96c740c38424"
-    let mut segments = url
-        .path_segments()
-        .ok_or_else(|| anyhow!("Cannot split url"))?;
-
-    Ok(segments.find(|s| re.is_match(s)).map(ToString::to_string))
-}
-
 #[cfg(target_os = "macos")]
 #[cfg(test)]
 mod tests {
@@ -247,9 +260,20 @@ mod tests {
         "https://explorer-artifacts.decentraland.zone/dry-run-launcher-rust/pr-196/run-855-19672401394/Decentraland_installer.exe?token=b5876cf1-9b6b-451e-b467-9700f754a8f7",
         "b5876cf1-9b6b-451e-b467-9700f754a8f7"
     )]
-    fn test_token_from_url(#[case] url: &str, #[case] expected_token: &str) -> Result<()> {
-        let token = token_from_url(url)?.ok_or_else(|| anyhow!("Empty url"))?;
+    fn test_token_from_url(#[case] url: &str, #[case] expected_token: &str) -> anyhow::Result<()> {
+        let origin = DownloadOriginData::from_url(url)?;
+        let token = origin.auth_token.ok_or_else(|| anyhow!("No token found"))?;
         assert_eq!(expected_token, token.as_str());
+        Ok(())
+    }
+
+    #[test]
+    fn test_both_token_and_anon_id() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?anon_user_id=abc-123";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(origin.auth_token.as_deref(), Some("391a85da-a3bb-49e2-a45e-96c740c38424"));
+        assert!(origin.campaign_anon_user_id.is_some());
+        assert_eq!(origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()), Some("abc-123".to_owned()));
         Ok(())
     }
 }

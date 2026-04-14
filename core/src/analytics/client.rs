@@ -38,7 +38,6 @@ impl AnalyticsClient {
         anonymous_id: String,
         os: String,
         launcher_version: String,
-        campaign_anon_user_id: Option<String>,
     ) -> Self {
         let queue = new_event_queue();
         let queue = Arc::new(Mutex::new(queue));
@@ -56,11 +55,15 @@ impl AnalyticsClient {
             anonymous_id,
             os,
             launcher_version,
-            campaign_anon_user_id,
+            campaign_anon_user_id: None,
             session_id,
             batcher,
             send_daemon,
         }
+    }
+
+    pub fn set_campaign_anon_user_id(&mut self, id: String) {
+        self.campaign_anon_user_id = Some(id);
     }
 
     async fn track(&mut self, event: String, mut properties: Map<String, Value>) -> Result<()> {

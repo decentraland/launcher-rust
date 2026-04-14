@@ -94,6 +94,10 @@ pub fn campaign_anon_user_id_file_path() -> PathBuf {
     explorer_path().join("campaign-anon-user-id.txt")
 }
 
+pub fn campaign_attribution_reported_path() -> PathBuf {
+    explorer_path().join("campaign-attribution-reported")
+}
+
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {

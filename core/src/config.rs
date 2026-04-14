@@ -83,7 +83,6 @@ pub fn client_additional_arguments() -> Vec<String> {
 }
 
 const CAMPAIGN_ANON_USER_ID_KEY: &str = "campaign-anon-user-id";
-const CAMPAIGN_ATTRIBUTION_REPORTED_KEY: &str = "campaign-attribution-reported";
 
 pub fn campaign_anon_user_id() -> Option<String> {
     match config_content() {
@@ -115,35 +114,6 @@ pub fn write_campaign_anon_user_id(id: &str) {
         }
         Err(e) => {
             log::error!("Cannot read config to write campaign anon user id: {e}");
-        }
-    }
-}
-
-/// Returns true if the `CAMPAIGN_ATTRIBUTION_DETECTED` event has already been reported.
-pub fn campaign_attribution_reported() -> bool {
-    match config_content() {
-        Ok(config) => config
-            .get(CAMPAIGN_ATTRIBUTION_REPORTED_KEY)
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
-        Err(_) => false,
-    }
-}
-
-/// Mark the campaign attribution event as reported so it only fires once.
-pub fn mark_campaign_attribution_reported() {
-    match config_content() {
-        Ok(mut config) => {
-            config.insert(
-                CAMPAIGN_ATTRIBUTION_REPORTED_KEY.to_owned(),
-                Value::Bool(true),
-            );
-            if let Err(e) = write_config(&config) {
-                log::error!("Cannot mark campaign attribution as reported: {e}");
-            }
-        }
-        Err(e) => {
-            log::error!("Cannot read config to mark campaign attribution: {e}");
         }
     }
 }

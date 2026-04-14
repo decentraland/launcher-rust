@@ -32,27 +32,33 @@ impl AppState {
 
         Monitoring::try_setup_sentry().context("Cannot setup monitoring")?;
 
-        // Run auto-auth BEFORE analytics init so that campaign_anon_user_id is
-        // available in config.json for the analytics client constructor.
         AutoAuth::try_obtain_auth_token();
         #[cfg(target_os = "macos")]
         AutoAuth::try_install_to_app_dir_if_from_dmg();
 
-        let campaign_anon_user_id = config::campaign_anon_user_id();
+        let mut analytics = analytics::Analytics::new_from_env();
 
-        let mut analytics =
-            analytics::Analytics::new_from_env(campaign_anon_user_id.clone());
+        // Attach campaign anon_user_id if present — stamps all subsequent events
+        let campaign_anon_user_id = config::campaign_anon_user_id();
+        if let Some(ref anon_id) = campaign_anon_user_id {
+            analytics.set_campaign_anon_user_id(anon_id);
+        }
+
         analytics
             .track_and_flush_silent(Event::LAUNCHER_OPEN {
                 version: utils::app_version().to_owned(),
             })
             .await;
 
-        // Fire CAMPAIGN_ATTRIBUTION_DETECTED once per campaign attribution.
-        // Mark before sending (at-most-once) to avoid duplicates on crash.
+        // Fire CAMPAIGN_ATTRIBUTION_DETECTED once per install.
+        // Uses a marker file (not config) to track at-most-once delivery.
         if let Some(anon_id) = &campaign_anon_user_id {
-            if !config::campaign_attribution_reported() {
-                config::mark_campaign_attribution_reported();
+            let marker = installs::campaign_attribution_reported_path();
+            if !marker.exists() {
+                // Write marker before sending (at-most-once) to avoid duplicates on crash
+                if let Err(e) = std::fs::write(&marker, "") {
+                    log::warn!("Cannot write attribution marker: {e}");
+                }
                 info!("Firing Campaign Attribution Detected event");
                 analytics
                     .track_and_flush_silent(Event::CAMPAIGN_ATTRIBUTION_DETECTED {

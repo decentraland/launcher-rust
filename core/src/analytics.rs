@@ -22,7 +22,6 @@ pub struct CreateArgs {
     anonymous_id: String,
     os: String,
     launcher_version: String,
-    campaign_anon_user_id: Option<String>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -32,7 +31,7 @@ pub enum Analytics {
 }
 
 impl Analytics {
-    pub fn new_from_env(campaign_anon_user_id: Option<String>) -> Self {
+    pub fn new_from_env() -> Self {
         if AppEnvironment::cmd_args().skip_analytics {
             info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
             return Self::new(None);
@@ -53,7 +52,6 @@ impl Analytics {
                     anonymous_id,
                     os,
                     launcher_version,
-                    campaign_anon_user_id,
                 };
                 Some(args)
             }
@@ -75,11 +73,18 @@ impl Analytics {
                     a.anonymous_id,
                     a.os,
                     a.launcher_version,
-                    a.campaign_anon_user_id,
                 );
                 Self::Client(client)
             }
             None => Self::Null(NullClient::new()),
+        }
+    }
+
+    /// Set the campaign anonymous user ID for attribution tracking.
+    /// Once set, all subsequent events will include this ID.
+    pub fn set_campaign_anon_user_id(&mut self, id: &str) {
+        if let Self::Client(client) = self {
+            client.set_campaign_anon_user_id(id.to_owned());
         }
     }
 
