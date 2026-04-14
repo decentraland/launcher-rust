@@ -48,21 +48,17 @@ impl From<std::io::Error> for PlaceDeeplinkError {
 pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
 
 /// Best-effort attempt to bring the Explorer window to the front.
-#[allow(clippy::missing_const_for_fn)]
-fn bring_explorer_to_front() {
-    #[cfg(target_os = "macos")]
-    {
-        // Derive the app name from the .app bundle constant (e.g. "Decentraland.app" → "Decentraland")
-        let app_name = crate::installs::explorer_app_name();
-        let script = format!("tell application \"{app_name}\" to activate");
-        let result = std::process::Command::new("osascript")
-            .args(["-e", &script])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-        if let Err(e) = result {
-            log::warn!("Failed to bring Explorer to front: {e}");
-        }
+#[cfg(target_os = "macos")]
+fn try_bring_explorer_to_front() {
+    let app_name = crate::installs::explorer_app_name();
+    let script = format!("tell application \"{app_name}\" to activate");
+    let result = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    if let Err(e) = result {
+        log::warn!("Failed to bring Explorer to front: {e}");
     }
 }
 
@@ -82,7 +78,8 @@ pub async fn place_deeplink_and_wait_until_consumed(
     }
 
     // Bring the Explorer window to the front
-    bring_explorer_to_front();
+    #[cfg(target_os = "macos")]
+    try_bring_explorer_to_front();
 
     // Wait until file is deleted or operation is cancelled
     loop {
