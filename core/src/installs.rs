@@ -623,11 +623,7 @@ impl InstallsHub {
 
             let poll = async {
                 loop {
-                    let found = {
-                        let guard = self.running_instances.lock().await;
-                        guard.register_new_opened_instances_by_fuzzy_path(&explorer_launch_path)
-                    };
-                    if found {
+                    if self.running_instances.lock().await.register_new_opened_instances_by_fuzzy_path(&explorer_launch_path) {
                         break;
                     }
                     tokio::time::sleep(POLL_INTERVAL).await;
