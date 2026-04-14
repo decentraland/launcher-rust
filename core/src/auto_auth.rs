@@ -1,7 +1,9 @@
 pub mod anon_user_id;
 pub mod auth_token_storage;
 
-use anyhow::{Result, anyhow};
+#[cfg(target_os = "macos")]
+use anyhow::anyhow;
+use anyhow::Result;
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 
