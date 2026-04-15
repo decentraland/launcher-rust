@@ -4,6 +4,7 @@ use crate::config;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
+#[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
 use anyhow::{Context, Result, anyhow};
@@ -602,27 +603,38 @@ impl InstallsHub {
             ];
 
             macos_params.append(&mut explorer_params);
-            Self::launch_command("open", explorer_launch_dir, &macos_params)?;
+            Self::launch_open_blocking(explorer_launch_dir, &macos_params)?;
         }
 
         #[cfg(target_os = "windows")]
         let mut child =
             Self::launch_command(&explorer_launch_path, explorer_launch_dir, &explorer_params)?;
 
+        #[cfg(target_os = "windows")]
         {
             let guard = self.running_instances.lock().await;
+            guard.register_instance(child.id());
+        }
 
-            #[cfg(target_os = "windows")]
-            {
-                guard.register_instance(child.id());
-            }
+        #[cfg(target_os = "macos")]
+        {
+            const POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+            const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
-            #[cfg(target_os = "macos")]
-            {
-                // Default name of the Explorer client, won't conflict on macOS like it could on
-                // Windows with the default explorer.exe
-                const NAME: &str = "Explorer";
-                guard.register_new_opened_instance_by_name(NAME);
+            let poll = async {
+                loop {
+                    if self.running_instances.lock().await.register_new_opened_instances_by_fuzzy_path(&explorer_launch_path) {
+                        break;
+                    }
+                    tokio::time::sleep(POLL_INTERVAL).await;
+                }
+            };
+
+            if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
+                log::error!(
+                    "Timed out waiting for Explorer process under {} to appear",
+                    explorer_launch_path.display()
+                );
             }
         }
 
@@ -660,6 +672,23 @@ impl InstallsHub {
         Ok(())
     }
 
+    #[cfg(target_os = "macos")]
+    fn launch_open_blocking(dir: &Path, args: &[String]) -> Result<()> {
+        let status = Command::new("open")
+            .current_dir(dir)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .status()
+            .map_err(|e| anyhow!("Failed to run `open`: {}", e))?;
+
+        if !status.success() {
+            return Err(anyhow!("`open` exited with status {}", status));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
     fn launch_command<S: AsRef<std::ffi::OsStr> + std::fmt::Debug>(
         command: S,
         dir: &Path,
