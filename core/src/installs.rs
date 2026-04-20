@@ -39,15 +39,9 @@ const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 
 #[cfg(target_os = "macos")]
-const EXPLORER_MAC_APP_PATH: &str = "Decentraland.app";
-
-/// Returns the macOS app name without the `.app` extension (e.g. "Decentraland").
+pub const EXPLORER_MAC_APP_NAME: &str = "Decentraland";
 #[cfg(target_os = "macos")]
-pub fn explorer_app_name() -> &'static str {
-    EXPLORER_MAC_APP_PATH
-        .strip_suffix(".app")
-        .unwrap_or(EXPLORER_MAC_APP_PATH)
-}
+const EXPLORER_MAC_APP_PATH: &str = concat!("Decentraland", ".app");
 
 #[cfg(target_os = "windows")]
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";

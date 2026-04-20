@@ -50,7 +50,7 @@ pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
 /// Best-effort attempt to bring the Explorer window to the front.
 #[cfg(target_os = "macos")]
 fn try_bring_explorer_to_front() {
-    let app_name = crate::installs::explorer_app_name();
+    let app_name = crate::installs::EXPLORER_MAC_APP_NAME;
     let script = format!("tell application \"{app_name}\" to activate");
     let result = std::process::Command::new("osascript")
         .args(["-e", &script])
