@@ -377,7 +377,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
-        
+
         if let Some(download) = recent_download {
             let version = download.version.clone();
             self.analytics
@@ -397,16 +397,17 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                         error: e.to_string(),
                     })
                     .await;
-            } else {
-                self.analytics
-                    .lock()
-                    .await
-                    .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
-                    .await;
+                return result;
             }
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
+                .await;
+            installs::rename_explorer_to_latest()?;
         }
 
-        installs::rename_explorer_to_latest()
+        StepResult::Ok(())
     }
 }
 

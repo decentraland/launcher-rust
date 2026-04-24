@@ -381,6 +381,11 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         .into();
     }
 
+    // Windows `fs::rename` fails when a non-empty directory already exists at
+    // the target, so wipe any stale build before extracting a fresh one.
+    if branch_path.exists() {
+        fs::remove_dir_all(&branch_path)?;
+    }
     compression::decompress_file(&file_path, &branch_path)?;
 
     #[cfg(target_os = "macos")]
@@ -419,7 +424,17 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     if let Ok(v) = latest_version
         && latest_path.exists()
     {
-        fs::rename(latest_path, explorer_path.join(v))?;
+        let target = explorer_path.join(&v);
+        if target == branch_path {
+            // Reinstalling the same version: the fresh extract already
+            // occupies `target`, so drop the stale copy at latest/.
+            fs::remove_dir_all(&latest_path)?;
+        } else {
+            if target.exists() {
+                fs::remove_dir_all(&target)?;
+            }
+            fs::rename(&latest_path, &target)?;
+        }
     }
 
     if version != "dev" {
