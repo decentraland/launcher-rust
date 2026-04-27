@@ -74,6 +74,9 @@ pub enum Event {
     RETRY_FLOW_BUTTON_CLICK {
         version: String,
     },
+    CAMPAIGN_ATTRIBUTION_DETECTED {
+        anon_user_id: String,
+    },
 }
 
 impl Display for Event {
@@ -104,6 +107,7 @@ impl Display for Event {
                 Event::LAUNCHER_UPDATE_DOWNLOADED { .. } => "Launcher Update Downloaded",
                 Event::FLOW_ATTEMPT_ERROR { .. } => "Launcher Attempt Error",
                 Event::RETRY_FLOW_BUTTON_CLICK { .. } => "Retry Flow Button Click",
+                Event::CAMPAIGN_ATTRIBUTION_DETECTED { .. } => "Campaign Attribution Detected",
             }
         )
     }
