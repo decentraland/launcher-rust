@@ -5,7 +5,7 @@ use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
     auto_auth::anon_user_id::AnonUserId,
     auto_auth::auth_token_storage::AuthTokenStorage,
-    config,
+    auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
     log, logs,
 };
 
@@ -37,11 +37,16 @@ fn main_internal() -> Result<()> {
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
     log::info!("Installer path: {installer_path}");
 
-    // Extract anon_user_id from Zone.Identifier URLs (independent of auth token)
-    extract_anon_user_id_from_zone(installer_path);
-
-    // Also check for a file-based campaign anon user id (future mechanism)
-    extract_anon_user_id_from_file();
+    if CampaignAnonUserIdStorage::has() {
+        log::info!("Campaign anon_user_id already present in storage");
+    } else if let Some(anon_id) = extract_anon_user_id_from_zone(installer_path) {
+        log::info!("Campaign anon_user_id extracted from Zone.Identifier");
+        if let Err(e) = CampaignAnonUserIdStorage::write(&anon_id) {
+            log::error!("Cannot write campaign anon user id: {e}");
+        }
+    } else {
+        log::info!("No campaign anon_user_id found in Zone.Identifier URLs");
+    }
 
     if AuthTokenStorage::has_token() {
         log::info!("Token already installed");
@@ -54,70 +59,25 @@ fn main_internal() -> Result<()> {
     Ok(())
 }
 
-/// Try to extract `anon_user_id` from Zone.Identifier URLs and persist it to config.
-fn extract_anon_user_id_from_zone(installer_path: &str) {
-    // Already have a campaign anon user id — skip
-    if config::campaign_anon_user_id().is_some() {
-        log::info!("Campaign anon_user_id already present in config");
-        return;
-    }
-
-    let content = match zone_identifier_content(installer_path)
-        .or_else(|e| {
-            log::error!("ADS read for anon_user_id failed via CAPI, fallback to PowerShell: {e:?}");
-            zone_identifier_content_powershell(installer_path)
-        }) {
+/// Try to extract `anon_user_id` from Zone.Identifier URLs.
+fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
+    let content = match zone_identifier_content(installer_path).or_else(|e| {
+        log::error!("ADS read for anon_user_id failed via CAPI, fallback to PowerShell: {e:?}");
+        zone_identifier_content_powershell(installer_path)
+    }) {
         Ok(c) => c,
         Err(e) => {
             log::error!("Cannot read Zone.Identifier for anon_user_id: {e:?}");
-            return;
+            return None;
         }
     };
 
     let zone_info = parsed_zone_identifier(&content);
 
-    // Check both host_url and referrer_url for anon_user_id
-    let urls: Vec<&str> = [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
+    [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
         .into_iter()
         .flatten()
-        .collect();
-
-    for url in urls {
-        if let Some(anon_id) = AnonUserId::from_url(url) {
-            log::info!("Campaign anon_user_id extracted from Zone.Identifier");
-            config::write_campaign_anon_user_id(anon_id.as_str());
-            return;
-        }
-    }
-
-    log::info!("No campaign anon_user_id found in Zone.Identifier URLs");
-}
-
-/// Check for a file-based campaign anon user id (`campaign-anon-user-id.txt`).
-/// This supports a future mechanism where the installer can drop the id into a
-/// well-known file location.
-fn extract_anon_user_id_from_file() {
-    if config::campaign_anon_user_id().is_some() {
-        return;
-    }
-
-    let path = dcl_launcher_core::installs::campaign_anon_user_id_file_path();
-    match std::fs::read_to_string(&path) {
-        Ok(content) => {
-            let trimmed = content.trim();
-            if let Some(anon_id) = AnonUserId::parse(trimmed) {
-                log::info!("Campaign anon_user_id extracted from file");
-                config::write_campaign_anon_user_id(anon_id.as_str());
-            }
-            // Delete after reading to prevent stale attribution on reinstalls
-            if let Err(e) = std::fs::remove_file(&path) {
-                log::warn!("Cannot delete campaign anon user id file: {e}");
-            }
-        }
-        Err(_) => {
-            // File doesn't exist — expected, silently skip
-        }
-    }
+        .find_map(AnonUserId::from_url)
 }
 
 // Zone.Identifier

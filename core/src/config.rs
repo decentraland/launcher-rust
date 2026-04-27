@@ -81,39 +81,3 @@ pub fn client_additional_arguments() -> Vec<String> {
     const KEY: &str = "client-additional-arguments";
     arguments_from_key(KEY)
 }
-
-const CAMPAIGN_ANON_USER_ID_KEY: &str = "campaign-anon-user-id";
-
-pub fn campaign_anon_user_id() -> Option<String> {
-    match config_content() {
-        Ok(config) => {
-            if let Some(value) = config.get(CAMPAIGN_ANON_USER_ID_KEY) {
-                value.as_str().map(ToOwned::to_owned)
-            } else {
-                None
-            }
-        }
-        Err(e) => {
-            log::error!("Cannot read config for campaign anon user id: {e}");
-            None
-        }
-    }
-}
-
-/// Write campaign anon user id to config. Idempotent — skips if already set.
-pub fn write_campaign_anon_user_id(id: &str) {
-    match config_content() {
-        Ok(mut config) => {
-            if config.get(CAMPAIGN_ANON_USER_ID_KEY).and_then(|v| v.as_str()) == Some(id) {
-                return;
-            }
-            config.insert(CAMPAIGN_ANON_USER_ID_KEY.to_owned(), Value::String(id.to_owned()));
-            if let Err(e) = write_config(&config) {
-                log::error!("Cannot write campaign anon user id to config: {e}");
-            }
-        }
-        Err(e) => {
-            log::error!("Cannot read config to write campaign anon user id: {e}");
-        }
-    }
-}

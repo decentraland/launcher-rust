@@ -2,16 +2,14 @@ use std::fmt;
 
 /// Validated campaign anonymous user ID for attribution tracking.
 ///
-/// Guarantees the value is safe to pass as a CLI argument (no flag injection)
-/// and conforms to a reasonable format (alphanumeric + hyphens/underscores, max 128 chars).
+/// Format constraint: alphanumeric + hyphens/underscores, max 128 chars.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AnonUserId(String);
 
 impl AnonUserId {
-    /// Parse from a raw string. Returns `None` if invalid.
     pub fn parse(value: &str) -> Option<Self> {
         let trimmed = value.trim();
-        if is_valid(trimmed) {
+        if Self::is_valid(trimmed) {
             Some(Self(trimmed.to_string()))
         } else {
             None
@@ -37,23 +35,20 @@ impl AnonUserId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    fn is_valid(value: &str) -> bool {
+        !value.is_empty()
+            && value.len() <= 128
+            && value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    }
 }
 
 impl fmt::Display for AnonUserId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
-}
-
-/// Only allow alphanumeric chars, hyphens, and underscores, up to 128 chars.
-/// Must not start with `-` to prevent CLI flag injection.
-fn is_valid(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && !value.starts_with('-')
-        && value
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 #[cfg(test)]
@@ -102,8 +97,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_value_with_cli_flag_injection() {
-        let url = "https://example.com/file.dmg?anon_user_id=--some-explorer-flag";
+    fn rejects_value_with_disallowed_chars() {
+        let url = "https://example.com/file.dmg?anon_user_id=a%20b";
         assert_eq!(AnonUserId::from_url(url), None);
     }
 
@@ -125,16 +120,14 @@ mod tests {
 
     #[test]
     fn parse_valid() {
-        assert_eq!(AnonUserId::parse("abc-123"), Some(AnonUserId("abc-123".to_string())));
+        assert_eq!(
+            AnonUserId::parse("abc-123"),
+            Some(AnonUserId("abc-123".to_string()))
+        );
     }
 
     #[test]
     fn parse_rejects_empty() {
         assert_eq!(AnonUserId::parse(""), None);
-    }
-
-    #[test]
-    fn parse_rejects_flag_injection() {
-        assert_eq!(AnonUserId::parse("--flag"), None);
     }
 }

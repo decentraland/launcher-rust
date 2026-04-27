@@ -91,12 +91,12 @@ pub fn deeplink_bridge_path() -> PathBuf {
     explorer_path().join("deeplink-bridge.json")
 }
 
-pub fn campaign_anon_user_id_file_path() -> PathBuf {
+pub fn campaign_anon_user_id_storage_path() -> PathBuf {
     explorer_path().join("campaign-anon-user-id.txt")
 }
 
-pub fn campaign_attribution_reported_path() -> PathBuf {
-    explorer_path().join("campaign-attribution-reported")
+pub fn campaign_attribution_reported_marker_path() -> PathBuf {
+    explorer_path().join("campaign-attribution-reported-marker.txt")
 }
 
 // There is no point to recovery if the app failed to create working directory
@@ -502,9 +502,11 @@ impl InstallsHub {
             output.insert(0, value.into());
         }
 
-        if let Some(anon_id) = config::campaign_anon_user_id() {
+        if let Some(anon_id) =
+            crate::auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
+        {
             output.push("--campaign_anon_user_id".to_string());
-            output.push(anon_id);
+            output.push(anon_id.as_str().to_owned());
         }
 
         let mut additionals = config::client_additional_arguments();

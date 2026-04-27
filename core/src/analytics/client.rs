@@ -62,8 +62,9 @@ impl AnalyticsClient {
         }
     }
 
-    pub fn set_campaign_anon_user_id(&mut self, id: String) {
+    pub fn with_campaign_anon_user_id(mut self, id: String) -> Self {
         self.campaign_anon_user_id = Some(id);
+        self
     }
 
     async fn track(&mut self, event: String, mut properties: Map<String, Value>) -> Result<()> {

@@ -80,11 +80,11 @@ impl Analytics {
         }
     }
 
-    /// Set the campaign anonymous user ID for attribution tracking.
-    /// Once set, all subsequent events will include this ID.
-    pub fn set_campaign_anon_user_id(&mut self, id: &str) {
-        if let Self::Client(client) = self {
-            client.set_campaign_anon_user_id(id.to_owned());
+    #[must_use]
+    pub fn with_campaign_anon_user_id(self, id: &str) -> Self {
+        match self {
+            Self::Client(client) => Self::Client(client.with_campaign_anon_user_id(id.to_owned())),
+            null @ Self::Null(_) => null,
         }
     }
 
