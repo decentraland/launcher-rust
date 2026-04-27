@@ -384,7 +384,12 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     // Windows `fs::rename` fails when a non-empty directory already exists at
     // the target, so wipe any stale build before extracting a fresh one.
     if branch_path.exists() {
-        fs::remove_dir_all(&branch_path)?;
+        fs::remove_dir_all(&branch_path).map_err(|source| {
+            StepError::E3005_STALE_BUILD_CLEANUP_FAILED {
+                path: branch_path.to_string_lossy().into_owned(),
+                source,
+            }
+        })?;
     }
     compression::decompress_file(&file_path, &branch_path)?;
 
@@ -425,15 +430,21 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         && latest_path.exists()
     {
         let target = explorer_path.join(&v);
+        let rename_back_err = |path: &Path, source: std::io::Error| {
+            StepError::E3006_RENAME_BACK_FAILED {
+                path: path.to_string_lossy().into_owned(),
+                source,
+            }
+        };
         if target == branch_path {
             // Reinstalling the same version: the fresh extract already
             // occupies `target`, so drop the stale copy at latest/.
-            fs::remove_dir_all(&latest_path)?;
+            fs::remove_dir_all(&latest_path).map_err(|e| rename_back_err(&latest_path, e))?;
         } else {
             if target.exists() {
-                fs::remove_dir_all(&target)?;
+                fs::remove_dir_all(&target).map_err(|e| rename_back_err(&target, e))?;
             }
-            fs::rename(&latest_path, &target)?;
+            fs::rename(&latest_path, &target).map_err(|e| rename_back_err(&latest_path, e))?;
         }
     }
 
@@ -450,7 +461,8 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     let version_data_str =
         serde_json::to_string(&version_data).context("Cannot serialize version_data")?;
     let version_path = explorer_version_path();
-    fs::write(version_path, version_data_str)?;
+    fs::write(version_path, version_data_str)
+        .map_err(|source| StepError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
     // Remove the downloaded file
     fs::remove_file(file_path)?;
