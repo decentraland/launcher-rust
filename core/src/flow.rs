@@ -387,7 +387,8 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                     version: version.clone(),
                 })
                 .await;
-            let result = Self::execute_internal(download);
+            let result = Self::execute_internal(download)
+                .and_then(|()| installs::rename_explorer_to_latest());
             if let Err(e) = &result {
                 self.analytics
                     .lock()
@@ -397,14 +398,14 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                         error: e.to_string(),
                     })
                     .await;
-                return result;
+            } else {
+                self.analytics
+                    .lock()
+                    .await
+                    .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
+                    .await;
             }
-            self.analytics
-                .lock()
-                .await
-                .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
-                .await;
-            installs::rename_explorer_to_latest()?;
+            return result;
         }
 
         StepResult::Ok(())

@@ -211,13 +211,13 @@ impl StepError {
                 "Could not rename \"latest\" folder. Delete everything and start over."
             }
             Self::E3005_STALE_BUILD_CLEANUP_FAILED { .. } => {
-                "We couldn't clean up a previous build folder before installing. Please check folder permissions or close any programs that might be using Decentraland files."
+                "We couldn't clean up a previous build folder. Please close the Decentraland client if it's running and try again."
             }
             Self::E3006_RENAME_BACK_FAILED { .. } => {
-                "We couldn't move the current build aside before installing the update. Please check folder permissions or close any programs that might be using Decentraland files."
+                "We couldn't move the current build aside before installing the update. Please close the Decentraland client if it's running and try again."
             }
             Self::E3007_VERSION_DATA_WRITE_FAILED { .. } => {
-                "We couldn't save the updated version information. Please check folder permissions and try again."
+                "We couldn't save the updated version information. Please close the Decentraland client if it's running and try again."
             }
         }
     }
