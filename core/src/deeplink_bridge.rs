@@ -47,6 +47,21 @@ impl From<std::io::Error> for PlaceDeeplinkError {
 
 pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
 
+/// Best-effort attempt to bring the Explorer window to the front.
+#[cfg(target_os = "macos")]
+fn try_bring_explorer_to_front() {
+    let app_name = crate::installs::EXPLORER_MAC_APP_NAME;
+    let script = format!("tell application \"{app_name}\" to activate");
+    let result = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    if let Err(e) = result {
+        log::warn!("Failed to bring Explorer to front: {e}");
+    }
+}
+
 pub async fn place_deeplink_and_wait_until_consumed(
     deeplink: DeepLink,
     token: CancellationToken,
@@ -61,6 +76,10 @@ pub async fn place_deeplink_and_wait_until_consumed(
         let json = serde_json::to_string(&dto)?;
         File::create(&path)?.write_all(json.as_bytes())?;
     }
+
+    // Bring the Explorer window to the front
+    #[cfg(target_os = "macos")]
+    try_bring_explorer_to_front();
 
     // Wait until file is deleted or operation is cancelled
     loop {

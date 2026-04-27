@@ -39,7 +39,9 @@ const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 
 #[cfg(target_os = "macos")]
-const EXPLORER_MAC_APP_PATH: &str = "Decentraland.app";
+pub const EXPLORER_MAC_APP_NAME: &str = "Decentraland";
+#[cfg(target_os = "macos")]
+const EXPLORER_MAC_APP_PATH: &str = concat!("Decentraland", ".app");
 
 #[cfg(target_os = "windows")]
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
