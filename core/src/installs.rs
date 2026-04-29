@@ -169,7 +169,7 @@ fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
         .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
 }
 
-fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
+pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
         None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
