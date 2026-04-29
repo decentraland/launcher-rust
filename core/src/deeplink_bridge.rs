@@ -69,8 +69,7 @@ fn try_bring_explorer_to_front() {
         Ok(out) => {
             if out.status.success() {
                 log::info!("Finish: Bring Explorer to front at {}", app_path.display());
-            }
-            else {
+            } else {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 log::warn!(
                     "`open {}` exited with {}: {}",
@@ -112,8 +111,7 @@ pub async fn place_deeplink_and_wait_until_consumed(
             () = sleep(Duration::from_millis(50)) => {
                 if !path.exists() {
 
-                    // Bring the Explorer window to the front only in case if the deeplink was
-                    // consumed
+                    // Bring the Explorer window to the front only in case if the deeplink was consumed
                     #[cfg(target_os = "macos")]
                     try_bring_explorer_to_front();
 
