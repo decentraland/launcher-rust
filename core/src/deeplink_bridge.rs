@@ -7,10 +7,7 @@ use tokio::time::sleep;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::{
-    installs::{deeplink_bridge_path, get_explorer_launch_path},
-    protocols::DeepLink,
-};
+use crate::{installs::deeplink_bridge_path, protocols::DeepLink};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -55,7 +52,7 @@ pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
 /// Keep it in mind using this function.
 #[cfg(target_os = "macos")]
 fn try_bring_explorer_to_front() {
-    let app_path = match get_explorer_launch_path(None) {
+    let app_path = match crate::installs::get_explorer_launch_path(None) {
         Ok(p) => p,
         Err(e) => {
             log::warn!("Failed to resolve Explorer .app path for activation: {e}");
