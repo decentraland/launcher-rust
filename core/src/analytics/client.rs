@@ -26,6 +26,7 @@ pub struct AnalyticsClient {
     anonymous_id: String,
     os: String,
     launcher_version: String,
+    campaign_anon_user_id: Option<String>,
     session_id: SessionId,
     batcher: QueuedBatcher,
     send_daemon: AnalyticsEventSendDaemon<HttpClient>,
@@ -54,10 +55,16 @@ impl AnalyticsClient {
             anonymous_id,
             os,
             launcher_version,
+            campaign_anon_user_id: None,
             session_id,
             batcher,
             send_daemon,
         }
+    }
+
+    pub fn with_campaign_anon_user_id(mut self, id: String) -> Self {
+        self.campaign_anon_user_id = Some(id);
+        self
     }
 
     async fn track(&mut self, event: String, mut properties: Map<String, Value>) -> Result<()> {
@@ -71,6 +78,13 @@ impl AnalyticsClient {
             Value::String(self.session_id.value().to_owned()),
         );
         properties.insert("appId".to_owned(), Value::String(APP_ID.to_owned()));
+
+        if let Some(anon_id) = &self.campaign_anon_user_id {
+            properties.insert(
+                "campaign_anon_user_id".to_owned(),
+                Value::String(anon_id.clone()),
+            );
+        }
 
         let user = User::AnonymousId {
             anonymous_id: self.anonymous_id.clone(),
