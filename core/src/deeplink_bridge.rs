@@ -55,7 +55,7 @@ pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
 /// Uses `open <path-to-.app>` so Launch Services activates the already-running
 /// instance by bundle id. We avoid `osascript tell application "Decentraland"`
 /// because the launcher itself is also named "Decentraland" and that
-/// AppleScript form resolves by display name, which is ambiguous.
+/// `AppleScript` form resolves by display name, which is ambiguous.
 #[cfg(target_os = "macos")]
 fn try_bring_explorer_to_front() {
     let app_path = match get_explorer_launch_path(None) {
