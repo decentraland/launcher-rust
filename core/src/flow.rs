@@ -342,6 +342,7 @@ impl InstallStep {
             &recent_download.version,
             Some(recent_download.downloaded_path),
         )
+        .and_then(|()| installs::rename_explorer_to_latest())
     }
 
     async fn recent_download_and_update_state(
@@ -387,8 +388,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                     version: version.clone(),
                 })
                 .await;
-            let result = Self::execute_internal(download)
-                .and_then(|()| installs::rename_explorer_to_latest());
+            let result = Self::execute_internal(download);
             if let Err(e) = &result {
                 self.analytics
                     .lock()
