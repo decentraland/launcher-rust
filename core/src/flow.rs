@@ -342,6 +342,7 @@ impl InstallStep {
             &recent_download.version,
             Some(recent_download.downloaded_path),
         )
+        .and_then(|()| installs::rename_explorer_to_latest())
     }
 
     async fn recent_download_and_update_state(
@@ -377,7 +378,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
-        
+
         if let Some(download) = recent_download {
             let version = download.version.clone();
             self.analytics
@@ -404,9 +405,10 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                     .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
                     .await;
             }
+            return result;
         }
 
-        installs::rename_explorer_to_latest()
+        StepResult::Ok(())
     }
 }
 

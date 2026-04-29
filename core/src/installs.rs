@@ -374,6 +374,27 @@ pub fn target_download_path() -> PathBuf {
     explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
 }
 
+fn as_rename_back_err(path: &Path, source: std::io::Error) -> StepError {
+    StepError::E3006_RENAME_BACK_FAILED {
+        path: path.to_string_lossy().into_owned(),
+        source,
+    }
+}
+
+fn rename_latest_back_to_version(
+    latest_path: &Path,
+    target: &Path,
+    branch_path: &Path,
+) -> StepResult {
+    if target == branch_path {
+        return fs::remove_dir_all(latest_path).map_err(|e| as_rename_back_err(latest_path, e));
+    }
+    if target.exists() {
+        fs::remove_dir_all(target).map_err(|e| as_rename_back_err(target, e))?;
+    }
+    fs::rename(latest_path, target).map_err(|e| as_rename_back_err(latest_path, e))
+}
+
 pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
     let current_version: EntryVersion = EntryVersion::from_str(version)
         .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
@@ -389,6 +410,14 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         .into();
     }
 
+    if branch_path.exists() {
+        fs::remove_dir_all(&branch_path).map_err(|source| {
+            StepError::E3005_STALE_BUILD_CLEANUP_FAILED {
+                path: branch_path.to_string_lossy().into_owned(),
+                source,
+            }
+        })?;
+    }
     compression::decompress_file(&file_path, &branch_path)?;
 
     #[cfg(target_os = "macos")]
@@ -427,7 +456,8 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     if let Ok(v) = latest_version
         && latest_path.exists()
     {
-        fs::rename(latest_path, explorer_path.join(v))?;
+        let target = explorer_path.join(&v);
+        rename_latest_back_to_version(&latest_path, &target, &branch_path)?;
     }
 
     if version != "dev" {
@@ -443,7 +473,8 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     let version_data_str =
         serde_json::to_string(&version_data).context("Cannot serialize version_data")?;
     let version_path = explorer_version_path();
-    fs::write(version_path, version_data_str)?;
+    fs::write(version_path, version_data_str)
+        .map_err(|source| StepError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
     // Remove the downloaded file
     fs::remove_file(file_path)?;
