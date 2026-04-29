@@ -50,12 +50,9 @@ impl From<std::io::Error> for PlaceDeeplinkError {
 
 pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
 
-/// Best-effort attempt to bring the Explorer window to the front.
-///
-/// Uses `open <path-to-.app>` so Launch Services activates the already-running
-/// instance by bundle id. We avoid `osascript tell application "Decentraland"`
-/// because the launcher itself is also named "Decentraland" and that
-/// `AppleScript` form resolves by display name, which is ambiguous.
+/// Uses `open <path-to-.app>` so Launch Services activates the already-running instance by bundle id.
+/// Since the function internally uses "open" command and if instance is not running then it may accidentally open new instance of the app.
+/// Keep it in mind using this function.
 #[cfg(target_os = "macos")]
 fn try_bring_explorer_to_front() {
     let app_path = match get_explorer_launch_path(None) {
@@ -69,20 +66,22 @@ fn try_bring_explorer_to_front() {
     let output = std::process::Command::new("open").arg(&app_path).output();
 
     match output {
-        Ok(out) if out.status.success() => {
-            log::info!("Activated Explorer at {}", app_path.display());
-        }
         Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            log::warn!(
-                "`open {}` exited with {}: {}",
-                app_path.display(),
-                out.status,
-                stderr.trim()
-            );
+            if out.status.success() {
+                log::info!("Finish: Bring Explorer to front at {}", app_path.display());
+            }
+            else {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                log::warn!(
+                    "`open {}` exited with {}: {}",
+                    app_path.display(),
+                    out.status,
+                    stderr.trim()
+                );
+            }
         }
         Err(e) => {
-            log::warn!("Failed to spawn `open` to activate Explorer: {e}");
+            log::warn!("Failed to spawn `open` to Bring Explorer to front: {e}");
         }
     }
 }
@@ -102,10 +101,6 @@ pub async fn place_deeplink_and_wait_until_consumed(
         File::create(&path)?.write_all(json.as_bytes())?;
     }
 
-    // Bring the Explorer window to the front
-    #[cfg(target_os = "macos")]
-    try_bring_explorer_to_front();
-
     // Wait until file is deleted or operation is cancelled
     loop {
         tokio::select! {
@@ -116,6 +111,12 @@ pub async fn place_deeplink_and_wait_until_consumed(
             },
             () = sleep(Duration::from_millis(50)) => {
                 if !path.exists() {
+
+                    // Bring the Explorer window to the front only in case if the deeplink was
+                    // consumed
+                    #[cfg(target_os = "macos")]
+                    try_bring_explorer_to_front();
+
                     break;
                 }
             }
