@@ -153,10 +153,8 @@ fn get_version_data() -> Result<Map<String, Value>> {
 }
 
 fn get_version_data_or_empty() -> Map<String, Value> {
-    get_version_data().unwrap_or_else(|e| {
-        log::error!(
-            "Cannot get version data, fallback to new empty: File doesn't exist: version.json: {e}"
-        );
+    get_version_data().unwrap_or_else(|_e| {
+        log::error!("Cannot get version data, fallback to new empty");
 
         Map::new()
     })
