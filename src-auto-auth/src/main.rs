@@ -1,6 +1,8 @@
 // Avoid popup terminal window
 #![windows_subsystem = "windows"]
 
+use std::path::Path;
+
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
     auto_auth::anon_user_id::AnonUserId,
@@ -8,6 +10,12 @@ use dcl_launcher_core::{
     auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
     log, logs,
 };
+
+/// Filename prefix the download gateway uses when serving the anonymous EXE.
+/// The full filename is `<INSTALLER_FILENAME_PREFIX><UUID>.exe` (with an
+/// optional ` (n)` suffix added by the browser when deduplicating downloads
+/// in the user's Downloads folder).
+const INSTALLER_FILENAME_PREFIX: &str = "Decentraland-Installer-";
 
 #[derive(Debug, Default)]
 pub struct ZoneInfo {
@@ -44,8 +52,18 @@ fn main_internal() -> Result<()> {
         if let Err(e) = CampaignAnonUserIdStorage::write(&anon_id) {
             log::error!("Cannot write campaign anon user id: {e}");
         }
+    } else if let Some(anon_id) = extract_anon_user_id_from_filename(installer_path) {
+        // Fallback for the anonymous Download First flow on Windows: the
+        // gateway encodes the UUID in the Content-Disposition filename so
+        // attribution survives Windows' silent-unblock-on-launch handling
+        // (which strips the Zone.Identifier ADS for trusted signed binaries
+        // before this script runs).
+        log::info!("Campaign anon_user_id extracted from filename");
+        if let Err(e) = CampaignAnonUserIdStorage::write(&anon_id) {
+            log::error!("Cannot write campaign anon user id: {e}");
+        }
     } else {
-        log::info!("No campaign anon_user_id found in Zone.Identifier URLs");
+        log::info!("No campaign anon_user_id found in Zone.Identifier URLs or installer filename");
     }
 
     if AuthTokenStorage::has_token() {
@@ -78,6 +96,24 @@ fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
         .into_iter()
         .flatten()
         .find_map(AnonUserId::from_url)
+}
+
+/// Try to extract `anon_user_id` from the installer's filename.
+///
+/// The download gateway names anonymous EXE downloads
+/// `Decentraland-Installer-<UUID>.exe`. When the user already has a file with
+/// the same name in `Downloads`, browsers append a ` (n)` dedup suffix
+/// (e.g. `Decentraland-Installer-<UUID> (3).exe`); we tolerate that.
+///
+/// This is the fallback path used when Zone.Identifier has been stripped by
+/// Windows' silent-unblock handling for trusted signed binaries — which is
+/// the steady-state for popular pre-signed installers and not an edge case.
+fn extract_anon_user_id_from_filename(installer_path: &str) -> Option<AnonUserId> {
+    let stem = Path::new(installer_path).file_stem()?.to_str()?;
+    let after_prefix = stem.strip_prefix(INSTALLER_FILENAME_PREFIX)?;
+    // Strip the browser's " (n)" dedup suffix if present.
+    let cleaned = after_prefix.split(" (").next().unwrap_or(after_prefix);
+    AnonUserId::parse(cleaned)
 }
 
 // Zone.Identifier
@@ -407,5 +443,58 @@ mod tests {
         let token = token_from_zone_info(zone)?;
         assert_eq!(expected_token, token.as_str());
         Ok(())
+    }
+
+    // Tests use forward-slash paths so they run on both Windows and Unix CI
+    // hosts. `Path::file_stem` uses the host OS's path semantics, but the
+    // production code targets Windows where `\` and `/` both work as
+    // separators — and we only need to exercise the parsing logic here, not
+    // the OS path resolution.
+    #[rstest]
+    #[case(
+        "Downloads/Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
+        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+    )]
+    #[case(
+        // Bare filename, no parent directory.
+        "Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
+        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+    )]
+    #[case(
+        // Browser dedup suffix when the file already exists in Downloads.
+        "Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424 (3).exe",
+        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+    )]
+    #[case(
+        // Different valid UUID, slash-prefixed absolute path.
+        "/tmp/Decentraland-Installer-62792c33-59e3-4e7f-be42-289c053ecb37.exe",
+        Some("62792c33-59e3-4e7f-be42-289c053ecb37")
+    )]
+    #[case(
+        // Old-style filename (no UUID) → no fallback match, the caller must
+        // treat this as "no anon_user_id available".
+        "Decentraland-Installer.exe",
+        None
+    )]
+    #[case(
+        // Wrong prefix (different launcher build) → no match.
+        "some-other-installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
+        None
+    )]
+    #[case(
+        // Prefix matches but the UUID part contains a character AnonUserId
+        // rejects (raw space). Defends against malformed filenames written by
+        // an attacker who controls the download URL.
+        "Decentraland-Installer-not a uuid.exe",
+        None
+    )]
+    #[case(
+        // Empty stem (impossible in practice, but we should not panic).
+        "",
+        None
+    )]
+    fn test_extract_anon_user_id_from_filename(#[case] path: &str, #[case] expected: Option<&str>) {
+        let actual = extract_anon_user_id_from_filename(path);
+        assert_eq!(expected, actual.as_ref().map(|id| id.as_str()));
     }
 }
