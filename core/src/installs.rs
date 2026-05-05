@@ -33,6 +33,7 @@ use std::thread;
 use std::time::Duration;
 
 pub mod compression;
+pub mod download_speed_estimator;
 pub mod downloads;
 
 const APP_NAME: &str = "DecentralandLauncherLight";

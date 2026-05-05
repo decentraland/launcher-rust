@@ -255,6 +255,8 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         let status = Status::State {
             step: Step::Downloading {
                 progress: 0,
+                bytes_per_second: 0.0,
+                time_remaining: None,
                 build_type: mode,
             },
         };
@@ -360,8 +362,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
 
-        Ok(guard.recent_download.is_none()
-            && installs::explorer_latest_version_path().exists())
+        Ok(guard.recent_download.is_none() && installs::explorer_latest_version_path().exists())
     }
 
     fn start_label(&self) -> Result<Status> {

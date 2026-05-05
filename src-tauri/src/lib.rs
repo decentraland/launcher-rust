@@ -13,6 +13,7 @@
 use dcl_launcher_core::analytics::event::Event;
 use dcl_launcher_core::environment::{AppEnvironment, Args};
 use dcl_launcher_core::errors::FlowError;
+use dcl_launcher_core::installs::download_speed_estimator::DownloadSpeedEstimator;
 use dcl_launcher_core::log::{error, info};
 use dcl_launcher_core::protocols::Protocol;
 use dcl_launcher_core::types::LauncherUpdate;
@@ -20,15 +21,17 @@ use dcl_launcher_core::utils;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::env;
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 use tauri::async_runtime::Mutex;
 use tauri::Url;
 use tauri::{ipc::Channel, App, AppHandle, Manager, State};
 #[cfg(unix)]
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::UpdaterExt;
-
 type MutState = Arc<Mutex<AppState>>;
 
+#[derive(Clone)]
 pub struct StatusChannel(Channel<types::Status>);
 
 impl EventChannel for StatusChannel {
@@ -166,41 +169,12 @@ async fn update_if_needed_and_restart(
 
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
-        let mut downloaded: usize = 0;
+        let mut download_state = DownloadStatus::new(channel.clone());
 
         let content = update
             .download(
                 |chunk_length, content_length| {
-                    downloaded = downloaded.saturating_add(chunk_length);
-                    info!("downloaded {downloaded} from {content_length:?}");
-                    match content_length {
-                        Some(length) => {
-                            let current = (downloaded as u64).saturating_mul(100);
-                            let percentage = current.checked_div(length);
-
-                            match percentage {
-                                Some(p) => {
-                                    let progress: u8 = p.min(100) as u8;
-
-                                    channel.send_silent(
-                                        LauncherUpdate::Downloading {
-                                            progress: Some(progress),
-                                        }
-                                        .into(),
-                                    );
-                                }
-                                None => {
-                                    channel.send_silent(
-                                        LauncherUpdate::Downloading { progress: None }.into(),
-                                    );
-                                }
-                            }
-                        }
-                        None => {
-                            channel
-                                .send_silent(LauncherUpdate::Downloading { progress: None }.into());
-                        }
-                    }
+                    download_state.on_chunk(chunk_length, content_length);
                 },
                 || {
                     info!("download finished");
@@ -229,6 +203,96 @@ async fn update_if_needed_and_restart(
     }
 
     Ok(())
+}
+
+struct DownloadStatus {
+    bytes_per_interval: u64,
+    downloaded: u64,
+    last_update_time: Option<Instant>,
+    estimator: DownloadSpeedEstimator,
+    channel: StatusChannel,
+}
+
+impl DownloadStatus {
+    fn new(channel: StatusChannel) -> Self {
+        Self {
+            bytes_per_interval: 0,
+            downloaded: 0,
+            last_update_time: None,
+            estimator: DownloadSpeedEstimator::default(),
+            channel,
+        }
+    }
+
+    fn on_chunk(&mut self, chunk_length: usize, content_length: Option<u64>) {
+        let chunk_length: u64 = chunk_length as u64;
+        let update_interval = Duration::from_millis(500);
+
+        self.bytes_per_interval = self.bytes_per_interval.saturating_add(chunk_length);
+        let downloaded = self.downloaded;
+        self.downloaded = downloaded.saturating_add(chunk_length);
+        info!("downloaded {downloaded} from {content_length:?}");
+
+        if self
+            .last_update_time
+            .is_none_or(|v| v.elapsed() >= update_interval)
+        {
+            self.last_update_time = Some(Instant::now());
+
+            self.estimator
+                .try_update(self.bytes_per_interval, update_interval);
+
+            self.bytes_per_interval = 0;
+        }
+
+        let bytes_per_second = self.estimator.bytes_per_second();
+
+        match content_length {
+            Some(length) => {
+                let current = (self.downloaded).saturating_mul(100);
+                let percentage = current.checked_div(length);
+
+                let time_remaining = self
+                    .estimator
+                    .time_remaining(length.saturating_sub(self.downloaded));
+
+                match percentage {
+                    Some(p) => {
+                        let progress: u8 = p.min(100) as u8;
+
+                        self.channel.send_silent(
+                            LauncherUpdate::Downloading {
+                                progress: Some(progress),
+                                bytes_per_second,
+                                time_remaining,
+                            }
+                            .into(),
+                        );
+                    }
+                    None => {
+                        self.channel.send_silent(
+                            LauncherUpdate::Downloading {
+                                progress: None,
+                                bytes_per_second,
+                                time_remaining,
+                            }
+                            .into(),
+                        );
+                    }
+                }
+            }
+            None => {
+                self.channel.send_silent(
+                    LauncherUpdate::Downloading {
+                        progress: None,
+                        bytes_per_second,
+                        time_remaining: None,
+                    }
+                    .into(),
+                );
+            }
+        }
+    }
 }
 
 #[cfg_attr(windows, allow(unused_variables))]

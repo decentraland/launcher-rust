@@ -19,7 +19,13 @@ pub enum Step {
     #[serde(rename_all = "camelCase")]
     Fetching,
     #[serde(rename_all = "camelCase")]
-    Downloading { progress: u8, build_type: BuildType },
+    Downloading {
+        progress: u8,
+        bytes_per_second: f64,
+        /// In milliseconds because that's what JavaScript's `Date` uses.
+        time_remaining: Option<f64>,
+        build_type: BuildType,
+    },
     #[serde(rename_all = "camelCase")]
     Installing { build_type: BuildType },
     #[serde(rename_all = "camelCase")]
@@ -30,7 +36,12 @@ pub enum Step {
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum LauncherUpdate {
     CheckingForUpdate,
-    Downloading { progress: Option<u8> },
+    Downloading {
+        progress: Option<u8>,
+        bytes_per_second: f64,
+        /// In milliseconds because that's what JavaScript's `Date` uses.
+        time_remaining: Option<f64>,
+    },
     DownloadFinished,
     InstallingUpdate,
     RestartingApp,
