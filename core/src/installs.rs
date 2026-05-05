@@ -34,6 +34,7 @@ use std::time::Duration;
 
 pub mod compression;
 pub mod downloads;
+pub mod download_speed_estimator;
 
 const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
@@ -164,7 +165,7 @@ fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
     version_data
         .get("version")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
+        .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message().1))
 }
 
 pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {

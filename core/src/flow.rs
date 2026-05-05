@@ -136,8 +136,10 @@ impl LaunchFlow {
         }
 
         if let Some(e) = last_error {
+            let user_message = e.error.user_message();
             let error = FlowError {
-                user_message: e.error.user_message().to_owned(),
+                user_title: user_message.0.to_owned(),
+                user_message: user_message.1.to_owned(),
             };
             std::result::Result::Err(error)
         } else {
@@ -255,7 +257,9 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         let status = Status::State {
             step: Step::Downloading {
                 progress: 0,
-                build_type: mode,
+                bytes_per_second: 0.0,
+                time_remaining: 0.0,
+                build_type: mode
             },
         };
         Ok(status)

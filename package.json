@@ -21,13 +21,14 @@
     "analyze": "npm run analyze-tauri && npm run analyze-core && npm run analyze-src-auto-auth"
   },
   "dependencies": {
+    "@fontsource/inter": "*",
     "@sentry/react": "^8.29.0",
     "@sentry/vite-plugin": "^2.22.4",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-deep-link": "^2.2.1",
     "@tauri-apps/plugin-process": "^2.2.1",
     "@tauri-apps/plugin-updater": "^2.7.0",
-    "decentraland-ui2": "^0.12.1",
+    "decentraland-ui2": "^1.3.10",
     "path": "^0.12.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

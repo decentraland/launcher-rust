@@ -9,12 +9,14 @@ use crate::deeplink_bridge::PlaceDeeplinkError;
 use super::types::Status;
 
 pub struct FlowError {
+    pub user_title: String,
     pub user_message: String,
 }
 
 impl From<&FlowError> for Status {
     fn from(err: &FlowError) -> Self {
         Self::Error {
+            title: err.user_title.clone(),
             message: err.user_message.clone(),
         }
     }
@@ -147,65 +149,65 @@ impl StepError {
     }
 
     // migrate to json config for i18n later
-    pub fn user_message(&self) -> &str {
+    pub fn user_message(&self) -> (&str, &str) {
         #[allow(clippy::match_same_arms)]
         match self {
             Self::E0000_GENERIC_ERROR {
                 error: _,
                 user_message,
             } => match &user_message {
-                Some(m) => m,
+                Some(m) => ("Generic Error", m),
                 None => {
-                    "Internal communication error during download. Please restart the launcher and try again."
+                    ("Generic Error", "Internal communication error during download. Please restart the launcher and try again.")
                 }
             },
             Self::E1001_FILE_NOT_FOUND { .. } => {
-                "The downloaded file could not be found. Please try downloading again or check your antivirus and disk permissions."
+                ("File Not Found", "The downloaded file could not be found. Please try downloading again or check your antivirus and disk permissions.")
             }
             Self::E1002_CORRUPTED_ARCHIVE { .. } => {
-                "The downloaded file appears to be corrupted. Please try downloading it again."
+                ("Corrupted Archive", "The downloaded file appears to be corrupted. Please try downloading it again.")
             }
             Self::E1003_DECOMPRESS_ACCESS_DENIED { .. } => {
-                "We couldn’t extract the files. Please run the launcher as administrator or check your folder permissions."
+                ("Access Denied", "We couldn’t extract the files. Please run the launcher as administrator or check your folder permissions.")
             }
             Self::E1004_DISK_FULL { .. } => {
-                "There isn’t enough space on your disk to install Decentraland. Please free up some space and try again."
+                ("Disk Full", "There isn’t enough space on your disk to install Decentraland. Please free up some space and try again.")
             }
             Self::E1005_DECOMPRESS_OUT_OF_MEMORY { .. } => {
-                "Your system ran out of memory while installing the game. Try closing other programs or restarting your computer."
+                ("Out of Memory", "Your system ran out of memory while installing the game. Try closing other programs or restarting your computer.")
             }
             Self::E1006_FILE_DELETE_FAILED { .. } => {
-                "We couldn’t remove a previous download. Please check your permissions or try restarting the launcher."
+                ("Delete Failed", "We couldn’t remove a previous download. Please check your permissions or try restarting the launcher.")
             }
             Self::E1007_FILE_CREATE_FAILED { .. } => {
-                "We couldn’t create a file to download. Please check your permissions or try restarting the launcher."
+                ("Create Failed", "We couldn’t create a file to download. Please check your permissions or try restarting the launcher.")
             }
             Self::E2001_DOWNLOAD_FAILED { .. } => {
-                "There was an error while downloading Decentraland. Please check your internet connection and try again."
+                ("Download Failed", "There was an error while downloading Decentraland. Please check your internet connection and try again.")
             }
             Self::E2002_MISSING_CONTENT_LENGTH { .. } => {
-                "Failed to get the file size from the server. Please try again later or verify the download URL is reachable."
+                ("Missing Content-Length", "Failed to get the file size from the server. Please try again later or verify the download URL is reachable.")
             }
             Self::E2003_NETWORK_WRITE_ERROR { .. } => {
-                "There was an error while saving the downloaded file. Please make sure you have enough disk space and permission to write to the folder."
+                ("Network Write Error", "There was an error while saving the downloaded file. Please make sure you have enough disk space and permission to write to the folder.")
             }
             Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => {
-                "There was an error while downloading Decentraland. Please check your internet connection and try again."
+                ("Download Failed", "There was an error while downloading Decentraland. Please check your internet connection and try again.")
             }
             Self::E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE { .. } => {
-                "Downloading file is incomplete due an error. Please check your internet connection and try again."
+                ("File Incomplete", "Downloading file is incomplete due an error. Please check your internet connection and try again.")
             }
             Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT => {
-                "Timeout while downloading Decentraland. Please check your internet connection and try again."
+                ("Network Timeout", "Timeout while downloading Decentraland. Please check your internet connection and try again.")
             }
             Self::E3001_OPEN_DEEPLINK_TIMEOUT => {
-                "There was an error while opening the deeplink. Please restart client and try again."
+                ("Deeplink Timeout", "There was an error while opening the deeplink. Please restart client and try again.")
             }
             Self::E3002_PLACE_DEEPLINK_ERROR { .. } => {
-                "There was an error while passing the deeplink. Please restart client and try again."
+                ("Deeplink Error", "There was an error while passing the deeplink. Please restart client and try again.")
             }
             Self::E3003_CANT_GET_VERSION => {
-                "Version data could not be read. Please delete launcher's data folder."
+                ("Can't Get Version", "Version data could not be read. Please delete launcher's data folder.")
             }
             Self::E3004_CANT_RENAME_LATEST => {
                 "Could not rename \"latest\" folder. Delete everything and start over."
@@ -225,7 +227,7 @@ impl StepError {
 
 impl Display for StepError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.user_message())
+        write!(f, "{}", self.user_message().1)
     }
 }
 
