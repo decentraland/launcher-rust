@@ -112,7 +112,9 @@ fn extract_anon_user_id_from_filename(installer_path: &str) -> Option<AnonUserId
     let stem = Path::new(installer_path).file_stem()?.to_str()?;
     let after_prefix = stem.strip_prefix(INSTALLER_FILENAME_PREFIX)?;
     // Strip the browser's " (n)" dedup suffix if present.
-    let cleaned = after_prefix.split(" (").next().unwrap_or(after_prefix);
+    let cleaned = after_prefix
+        .split_once(" (")
+        .map_or(after_prefix, |(before, _)| before);
     AnonUserId::parse(cleaned)
 }
 
