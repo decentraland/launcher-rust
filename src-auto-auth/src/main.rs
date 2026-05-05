@@ -10,12 +10,7 @@ use dcl_launcher_core::{
     auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
     log, logs,
 };
-
-/// Filename prefix the download gateway uses when serving the anonymous EXE.
-/// The full filename is `<INSTALLER_FILENAME_PREFIX><UUID>.exe` (with an
-/// optional ` (n)` suffix added by the browser when deduplicating downloads
-/// in the user's Downloads folder).
-const INSTALLER_FILENAME_PREFIX: &str = "Decentraland-Installer-";
+use regex::Regex;
 
 #[derive(Debug, Default)]
 pub struct ZoneInfo {
@@ -101,21 +96,29 @@ fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
 /// Try to extract `anon_user_id` from the installer's filename.
 ///
 /// The download gateway names anonymous EXE downloads
-/// `Decentraland-Installer-<UUID>.exe`. When the user already has a file with
-/// the same name in `Downloads`, browsers append a ` (n)` dedup suffix
-/// (e.g. `Decentraland-Installer-<UUID> (3).exe`); we tolerate that.
+/// `Decentraland-Installer-<UUID>.exe`. The regex matches any RFC 4122 UUID
+/// embedded in the filename so we tolerate browser-added suffixes (e.g.
+/// `Decentraland-Installer-<UUID> (3).exe` for dedup) and don't lock the
+/// launcher to a specific gateway-side filename convention.
 ///
 /// This is the fallback path used when Zone.Identifier has been stripped by
 /// Windows' silent-unblock handling for trusted signed binaries — which is
 /// the steady-state for popular pre-signed installers and not an edge case.
 fn extract_anon_user_id_from_filename(installer_path: &str) -> Option<AnonUserId> {
-    let stem = Path::new(installer_path).file_stem()?.to_str()?;
-    let after_prefix = stem.strip_prefix(INSTALLER_FILENAME_PREFIX)?;
-    // Strip the browser's " (n)" dedup suffix if present.
-    let cleaned = after_prefix
-        .split_once(" (")
-        .map_or(after_prefix, |(before, _)| before);
-    AnonUserId::parse(cleaned)
+    let file_name = Path::new(installer_path).file_name()?.to_str()?;
+
+    let re = match Regex::new(
+        r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            log::error!("Regex compile error (anon_user_id extraction): {e}");
+            return None;
+        }
+    };
+
+    let m = re.find(file_name)?;
+    AnonUserId::parse(m.as_str())
 }
 
 // Zone.Identifier
@@ -479,16 +482,30 @@ mod tests {
         None
     )]
     #[case(
-        // Wrong prefix (different launcher build) → no match.
+        // Different surrounding context — the regex finds the UUID anywhere
+        // in the filename, so the parser stays decoupled from the gateway's
+        // exact filename convention.
         "some-other-installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
+        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+    )]
+    #[case(
+        // Prefix matches but the UUID part is malformed (raw space). The
+        // RFC 4122 regex rejects it. Defends against attacker-controlled
+        // filenames.
+        "Decentraland-Installer-not a uuid.exe",
         None
     )]
     #[case(
-        // Prefix matches but the UUID part contains a character AnonUserId
-        // rejects (raw space). Defends against malformed filenames written by
-        // an attacker who controls the download URL.
-        "Decentraland-Installer-not a uuid.exe",
+        // Wrong variant bits (third group does not start with 1-5). RFC 4122
+        // strict regex rejects, even though AnonUserId::parse alone would
+        // accept the alphanumeric+hyphen string.
+        "Decentraland-Installer-391a85da-a3bb-09e2-a45e-96c740c38424.exe",
         None
+    )]
+    #[case(
+        // Uppercase hex still matches thanks to the (?i) flag.
+        "Decentraland-Installer-391A85DA-A3BB-49E2-A45E-96C740C38424.exe",
+        Some("391A85DA-A3BB-49E2-A45E-96C740C38424")
     )]
     #[case(
         // Empty stem (impossible in practice, but we should not panic).
