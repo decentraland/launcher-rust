@@ -16,6 +16,7 @@ panic = "abort" # Higher performance by disabling panic handlers.
 strip = "symbols" # Ensures debug symbols are removed.
 
 [dependencies]
+regex = "1.11.1"
 rstest = "0.26.1"
 
 [dependencies.dcl-launcher-core]
