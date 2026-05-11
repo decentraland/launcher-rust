@@ -18,6 +18,7 @@ use crate::analytics::network_info::network_context;
 use crate::environment::AppEnvironment;
 
 use super::event::Event;
+use super::fingerprint::ClientFingerprint;
 use super::session::SessionId;
 
 const APP_ID: &str = "decentraland-launcher-rust";
@@ -28,6 +29,7 @@ pub struct AnalyticsClient {
     launcher_version: String,
     campaign_anon_user_id: Option<String>,
     session_id: SessionId,
+    fingerprint: ClientFingerprint,
     batcher: QueuedBatcher,
     send_daemon: AnalyticsEventSendDaemon<HttpClient>,
 }
@@ -57,6 +59,7 @@ impl AnalyticsClient {
             launcher_version,
             campaign_anon_user_id: None,
             session_id,
+            fingerprint: ClientFingerprint::collect(),
             batcher,
             send_daemon,
         }
@@ -84,6 +87,14 @@ impl AnalyticsClient {
                 "campaign_anon_user_id".to_owned(),
                 Value::String(anon_id.clone()),
             );
+        }
+
+        // Per-event properties win over the fingerprint defaults so callers
+        // can override individual fields without losing the rest.
+        if let Ok(Value::Object(fp_map)) = serde_json::to_value(&self.fingerprint) {
+            for (k, v) in fp_map {
+                properties.entry(k).or_insert(v);
+            }
         }
 
         let user = User::AnonymousId {
