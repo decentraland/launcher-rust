@@ -1,43 +1,59 @@
+use std::sync::LazyLock;
+
 use log::debug;
 use serde::Serialize;
+use serde_json::{Map, Value};
 
 // Cross-source attribution join with landing-site Segment events relies on
-// these field names and shapes matching `landing-site/src/modules/fingerprint.ts`
-// exactly. `timezone_offset_minutes` (sent by the browser) is intentionally
-// not mirrored here: `time::OffsetDateTime::now_local()` requires the
+// these field names and shapes matching the landing-site fingerprint module
+// exactly. See:
+//   https://github.com/decentraland/landing-site/blob/main/src/modules/fingerprint.ts
+//
+// `timezone_offset_minutes` (sent by the browser) is intentionally not
+// mirrored here: `time::OffsetDateTime::now_local()` requires the
 // `local-offset` feature and returns `Err` from inside the tokio runtime
-// for soundness reasons. The IANA `timezone` field is more useful anyway —
-// the data warehouse can derive the offset from the timezone + event
+// for soundness reasons. The IANA `fp_timezone` field is more useful anyway
+// — the data warehouse can derive the offset from the timezone + event
 // timestamp at join time.
+// `fp_` prefix keeps these fields from colliding with caller-supplied
+// property names when merged into a Segment event payload.
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone, Serialize)]
 pub struct ClientFingerprint {
-    screen_width: u32,
-    screen_height: u32,
-    device_pixel_ratio: f64,
-    // `display-info` doesn't expose bit depth on any platform we ship to,
-    // so the launcher omits the field entirely instead of emitting a
-    // constant that would only confuse the warehouse join. The
-    // landing-site side keeps reporting it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    color_depth: Option<u32>,
-    hardware_concurrency: u32,
-    timezone: String,
-    language: String,
-    platform: String,
+    fp_screen_width: u32,
+    fp_screen_height: u32,
+    fp_device_pixel_ratio: f64,
+    fp_hardware_concurrency: Option<u32>,
+    fp_timezone: Option<String>,
+    fp_language: Option<String>,
+    fp_platform: &'static str,
 }
 
 impl ClientFingerprint {
-    pub fn collect() -> Self {
+    pub fn current() -> Self {
         let display = primary_display_info();
         Self {
-            screen_width: display.width,
-            screen_height: display.height,
-            device_pixel_ratio: display.scale_factor,
-            color_depth: None,
-            hardware_concurrency: hardware_concurrency(),
-            timezone: timezone_name(),
-            language: locale(),
-            platform: platform_string(),
+            fp_screen_width: display.width,
+            fp_screen_height: display.height,
+            fp_device_pixel_ratio: display.scale_factor,
+            fp_hardware_concurrency: hardware_concurrency(),
+            fp_timezone: iana_time_zone::get_timezone().ok(),
+            fp_language: sys_locale::get_locale(),
+            fp_platform: PLATFORM.as_str(),
+        }
+    }
+}
+
+#[allow(clippy::fallible_impl_from)]
+impl From<ClientFingerprint> for Map<String, Value> {
+    #[allow(clippy::unwrap_used)]
+    fn from(value: ClientFingerprint) -> Self {
+        // Infallible by construction: a `#[derive(Serialize)]` struct of
+        // plain fields always serializes to a JSON Object. Anything else
+        // would be a compile-time bug in this module.
+        match serde_json::to_value(value).unwrap() {
+            Value::Object(map) => map,
+            _ => unreachable!(),
         }
     }
 }
@@ -84,25 +100,22 @@ fn primary_display_info() -> DisplaySnapshot {
     }
 }
 
-fn hardware_concurrency() -> u32 {
+// `available_parallelism` returns `NonZero<usize>`; map to `u32` and surface
+// `None` if the probe fails (locked-down CI / containers) rather than
+// emitting a misleading zero or a fabricated default.
+fn hardware_concurrency() -> Option<u32> {
     std::thread::available_parallelism()
-        .map(|n| u32::try_from(n.get()).unwrap_or(u32::MAX))
-        .unwrap_or(0)
+        .ok()
+        .and_then(|n| u32::try_from(n.get()).ok())
 }
 
-fn timezone_name() -> String {
-    iana_time_zone::get_timezone().unwrap_or_default()
-}
-
-fn locale() -> String {
-    sys_locale::get_locale().unwrap_or_default()
-}
-
-// Includes the arch so multi-arch builds (Apple Silicon vs Intel, ARM
-// Windows) are distinguishable: e.g. "macos/aarch64", "windows/x86_64".
-fn platform_string() -> String {
+// `concat!` only accepts literal tokens, so we resolve the constants via
+// `LazyLock` once on first access instead. Includes the arch so multi-arch
+// builds (Apple Silicon vs Intel, ARM Windows) are distinguishable:
+// e.g. "macos/aarch64", "windows/x86_64".
+static PLATFORM: LazyLock<String> = LazyLock::new(|| {
     format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH)
-}
+});
 
 #[cfg(test)]
 mod tests {
@@ -110,31 +123,28 @@ mod tests {
     use anyhow::{Result, anyhow};
 
     #[test]
-    fn collect_produces_a_serializable_snapshot_with_every_field() -> Result<()> {
-        let fp = ClientFingerprint::collect();
+    fn current_produces_a_serializable_snapshot_with_expected_fields() -> Result<()> {
+        let fp = ClientFingerprint::current();
         let value = serde_json::to_value(&fp)?;
         let obj = value.as_object().ok_or_else(|| anyhow!("not an object"))?;
 
         for key in [
-            "screen_width",
-            "screen_height",
-            "device_pixel_ratio",
-            "hardware_concurrency",
-            "timezone",
-            "language",
-            "platform",
+            "fp_screen_width",
+            "fp_screen_height",
+            "fp_device_pixel_ratio",
+            "fp_hardware_concurrency",
+            "fp_timezone",
+            "fp_language",
+            "fp_platform",
         ] {
             assert!(obj.contains_key(key), "missing field: {key}");
         }
-        // `color_depth` is intentionally omitted when not available
-        // (always, on current launcher targets) thanks to `skip_serializing_if`.
-        assert!(!obj.contains_key("color_depth"));
         Ok(())
     }
 
     #[test]
-    fn platform_string_includes_os_and_arch_separated_by_slash() -> Result<()> {
-        let platform = platform_string();
+    fn platform_includes_os_and_arch_separated_by_slash() -> Result<()> {
+        let platform = PLATFORM.as_str();
         let parts: Vec<&str> = platform.split('/').collect();
         assert_eq!(parts.len(), 2, "expected os/arch, got {platform}");
         let os = parts.first().ok_or_else(|| anyhow!("missing os part"))?;
@@ -145,11 +155,20 @@ mod tests {
     }
 
     #[test]
-    fn hardware_concurrency_returns_a_plausible_count() {
+    fn hardware_concurrency_is_either_absent_or_plausible() {
         // Guards against accidental overflow / wrap-around in the
-        // `u32::try_from` path. Real machines won't realistically expose
-        // thousands of logical cores.
-        let n = hardware_concurrency();
-        assert!(n < 4096, "implausibly high hardware concurrency: {n}");
+        // `u32::try_from` path. On hosts where the probe fails (some CI
+        // sandboxes) the value is `None` and that's fine.
+        if let Some(n) = hardware_concurrency() {
+            assert!(n < 4096, "implausibly high hardware concurrency: {n}");
+        }
+    }
+
+    #[test]
+    fn fingerprint_converts_into_property_map() -> Result<()> {
+        let map: Map<String, Value> = ClientFingerprint::current().into();
+        assert!(map.contains_key("fp_platform"));
+        assert!(map.contains_key("fp_screen_width"));
+        Ok(())
     }
 }

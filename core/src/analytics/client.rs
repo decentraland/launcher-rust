@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use log::{error, info, warn};
+use log::{error, info};
 use segment::HttpClient;
 use segment::message::{Track, User};
 use segment::queue::event_queue::{
@@ -59,7 +59,7 @@ impl AnalyticsClient {
             launcher_version,
             campaign_anon_user_id: None,
             session_id,
-            fingerprint_props: serialize_fingerprint(&ClientFingerprint::collect()),
+            fingerprint_props: ClientFingerprint::current().into(),
             batcher,
             send_daemon,
         }
@@ -154,26 +154,6 @@ impl AnalyticsClient {
     }
 }
 
-// Serialize the fingerprint snapshot once at client construction time so
-// every subsequent `track()` call can merge a pre-built map instead of
-// re-serializing the same struct. A serialization failure here would
-// indicate a programmer error in `ClientFingerprint` (it's a plain struct
-// of primitives), so we degrade to an empty map and log a warning rather
-// than failing the analytics client startup.
-fn serialize_fingerprint(fp: &ClientFingerprint) -> Map<String, Value> {
-    match serde_json::to_value(fp) {
-        Ok(Value::Object(map)) => map,
-        Ok(other) => {
-            warn!("ClientFingerprint serialized to non-object value: {other}");
-            Map::new()
-        }
-        Err(e) => {
-            warn!("Cannot serialize ClientFingerprint, dropping fingerprint fields: {e}");
-            Map::new()
-        }
-    }
-}
-
 // Per-event properties win over the static defaults so a caller that wants
 // to override an individual field (e.g. for a synthetic event) keeps that
 // override without having to repeat the rest of the fingerprint.
@@ -250,21 +230,27 @@ mod tests {
     #[test]
     fn merge_static_defaults_preserves_per_event_properties() {
         let mut properties = Map::new();
-        properties.insert("platform".to_owned(), Value::String("override".to_owned()));
+        properties.insert("fp_platform".to_owned(), Value::String("override".to_owned()));
 
         let mut defaults = Map::new();
-        defaults.insert("platform".to_owned(), Value::String("macos/aarch64".to_owned()));
-        defaults.insert("hardware_concurrency".to_owned(), Value::from(8u32));
+        defaults.insert(
+            "fp_platform".to_owned(),
+            Value::String("macos/aarch64".to_owned()),
+        );
+        defaults.insert("fp_hardware_concurrency".to_owned(), Value::from(8u32));
 
         merge_static_defaults(&mut properties, &defaults);
 
         // Caller-supplied value wins.
         assert_eq!(
-            properties.get("platform"),
+            properties.get("fp_platform"),
             Some(&Value::String("override".to_owned()))
         );
         // Missing keys are filled in from the defaults.
-        assert_eq!(properties.get("hardware_concurrency"), Some(&Value::from(8u32)));
+        assert_eq!(
+            properties.get("fp_hardware_concurrency"),
+            Some(&Value::from(8u32))
+        );
     }
 
     #[test]
