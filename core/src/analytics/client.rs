@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use log::{error, info};
+use log::{error, info, warn};
 use segment::HttpClient;
 use segment::message::{Track, User};
 use segment::queue::event_queue::{
@@ -29,7 +29,7 @@ pub struct AnalyticsClient {
     launcher_version: String,
     campaign_anon_user_id: Option<String>,
     session_id: SessionId,
-    fingerprint: ClientFingerprint,
+    fingerprint_props: Map<String, Value>,
     batcher: QueuedBatcher,
     send_daemon: AnalyticsEventSendDaemon<HttpClient>,
 }
@@ -59,7 +59,7 @@ impl AnalyticsClient {
             launcher_version,
             campaign_anon_user_id: None,
             session_id,
-            fingerprint: ClientFingerprint::collect(),
+            fingerprint_props: serialize_fingerprint(&ClientFingerprint::collect()),
             batcher,
             send_daemon,
         }
@@ -89,13 +89,7 @@ impl AnalyticsClient {
             );
         }
 
-        // Per-event properties win over the fingerprint defaults so callers
-        // can override individual fields without losing the rest.
-        if let Ok(Value::Object(fp_map)) = serde_json::to_value(&self.fingerprint) {
-            for (k, v) in fp_map {
-                properties.entry(k).or_insert(v);
-            }
-        }
+        merge_static_defaults(&mut properties, &self.fingerprint_props);
 
         let user = User::AnonymousId {
             anonymous_id: self.anonymous_id.clone(),
@@ -157,6 +151,35 @@ impl AnalyticsClient {
         self.send_daemon
             .wait_until_empty_queue_or_abandon(None)
             .await;
+    }
+}
+
+// Serialize the fingerprint snapshot once at client construction time so
+// every subsequent `track()` call can merge a pre-built map instead of
+// re-serializing the same struct. A serialization failure here would
+// indicate a programmer error in `ClientFingerprint` (it's a plain struct
+// of primitives), so we degrade to an empty map and log a warning rather
+// than failing the analytics client startup.
+fn serialize_fingerprint(fp: &ClientFingerprint) -> Map<String, Value> {
+    match serde_json::to_value(fp) {
+        Ok(Value::Object(map)) => map,
+        Ok(other) => {
+            warn!("ClientFingerprint serialized to non-object value: {other}");
+            Map::new()
+        }
+        Err(e) => {
+            warn!("Cannot serialize ClientFingerprint, dropping fingerprint fields: {e}");
+            Map::new()
+        }
+    }
+}
+
+// Per-event properties win over the static defaults so a caller that wants
+// to override an individual field (e.g. for a synthetic event) keeps that
+// override without having to repeat the rest of the fingerprint.
+fn merge_static_defaults(properties: &mut Map<String, Value>, defaults: &Map<String, Value>) {
+    for (k, v) in defaults {
+        properties.entry(k.clone()).or_insert_with(|| v.clone());
     }
 }
 
@@ -223,6 +246,26 @@ fn new_event_queue() -> CombinedAnalyticsEventQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_static_defaults_preserves_per_event_properties() {
+        let mut properties = Map::new();
+        properties.insert("platform".to_owned(), Value::String("override".to_owned()));
+
+        let mut defaults = Map::new();
+        defaults.insert("platform".to_owned(), Value::String("macos/aarch64".to_owned()));
+        defaults.insert("hardware_concurrency".to_owned(), Value::from(8u32));
+
+        merge_static_defaults(&mut properties, &defaults);
+
+        // Caller-supplied value wins.
+        assert_eq!(
+            properties.get("platform"),
+            Some(&Value::String("override".to_owned()))
+        );
+        // Missing keys are filled in from the defaults.
+        assert_eq!(properties.get("hardware_concurrency"), Some(&Value::from(8u32)));
+    }
 
     #[test]
     fn context_attachments() -> Result<()> {

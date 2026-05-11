@@ -1,3 +1,4 @@
+use log::debug;
 use serde::Serialize;
 
 // Cross-source attribution join with landing-site Segment events relies on
@@ -13,7 +14,12 @@ pub struct ClientFingerprint {
     screen_width: u32,
     screen_height: u32,
     device_pixel_ratio: f64,
-    color_depth: u32,
+    // `display-info` doesn't expose bit depth on any platform we ship to,
+    // so the launcher omits the field entirely instead of emitting a
+    // constant that would only confuse the warehouse join. The
+    // landing-site side keeps reporting it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    color_depth: Option<u32>,
     hardware_concurrency: u32,
     timezone: String,
     language: String,
@@ -27,7 +33,7 @@ impl ClientFingerprint {
             screen_width: display.width,
             screen_height: display.height,
             device_pixel_ratio: display.scale_factor,
-            color_depth: display.color_depth,
+            color_depth: None,
             hardware_concurrency: hardware_concurrency(),
             timezone: timezone_name(),
             language: locale(),
@@ -40,7 +46,6 @@ struct DisplaySnapshot {
     width: u32,
     height: u32,
     scale_factor: f64,
-    color_depth: u32,
 }
 
 impl Default for DisplaySnapshot {
@@ -49,14 +54,19 @@ impl Default for DisplaySnapshot {
             width: 0,
             height: 0,
             scale_factor: 1.0,
-            color_depth: 0,
         }
     }
 }
 
 fn primary_display_info() -> DisplaySnapshot {
-    let Ok(displays) = display_info::DisplayInfo::all() else {
-        return DisplaySnapshot::default();
+    let displays = match display_info::DisplayInfo::all() {
+        Ok(d) => d,
+        Err(e) => {
+            // Real desktops shouldn't hit this; CI and headless RDP do.
+            // Debug level keeps it visible without noisy warnings.
+            debug!("display-info probe failed, defaulting screen fields: {e}");
+            return DisplaySnapshot::default();
+        }
     };
 
     let chosen = displays
@@ -69,10 +79,6 @@ fn primary_display_info() -> DisplaySnapshot {
             width: d.width,
             height: d.height,
             scale_factor: f64::from(d.scale_factor),
-            // `display-info` doesn't expose bit depth on every platform.
-            // Modern displays are 24- or 32-bit; pinning to 24 keeps the
-            // schema parity with the browser-side payload.
-            color_depth: 24,
         },
         None => DisplaySnapshot::default(),
     }
@@ -101,18 +107,18 @@ fn platform_string() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::{Result, anyhow};
 
     #[test]
-    fn collect_produces_a_serializable_snapshot_with_every_field() {
+    fn collect_produces_a_serializable_snapshot_with_every_field() -> Result<()> {
         let fp = ClientFingerprint::collect();
-        let value = serde_json::to_value(&fp).expect("serializable");
-        let obj = value.as_object().expect("object");
+        let value = serde_json::to_value(&fp)?;
+        let obj = value.as_object().ok_or_else(|| anyhow!("not an object"))?;
 
         for key in [
             "screen_width",
             "screen_height",
             "device_pixel_ratio",
-            "color_depth",
             "hardware_concurrency",
             "timezone",
             "language",
@@ -120,15 +126,22 @@ mod tests {
         ] {
             assert!(obj.contains_key(key), "missing field: {key}");
         }
+        // `color_depth` is intentionally omitted when not available
+        // (always, on current launcher targets) thanks to `skip_serializing_if`.
+        assert!(!obj.contains_key("color_depth"));
+        Ok(())
     }
 
     #[test]
-    fn platform_string_includes_os_and_arch_separated_by_slash() {
+    fn platform_string_includes_os_and_arch_separated_by_slash() -> Result<()> {
         let platform = platform_string();
         let parts: Vec<&str> = platform.split('/').collect();
         assert_eq!(parts.len(), 2, "expected os/arch, got {platform}");
-        assert!(!parts[0].is_empty());
-        assert!(!parts[1].is_empty());
+        let os = parts.first().ok_or_else(|| anyhow!("missing os part"))?;
+        let arch = parts.get(1).ok_or_else(|| anyhow!("missing arch part"))?;
+        assert!(!os.is_empty());
+        assert!(!arch.is_empty());
+        Ok(())
     }
 
     #[test]
