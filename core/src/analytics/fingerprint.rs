@@ -165,10 +165,9 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_converts_into_property_map() -> Result<()> {
+    fn fingerprint_converts_into_property_map() {
         let map: Map<String, Value> = ClientFingerprint::current().into();
         assert!(map.contains_key("fp_platform"));
         assert!(map.contains_key("fp_screen_width"));
-        Ok(())
     }
 }
