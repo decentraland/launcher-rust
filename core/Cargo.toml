@@ -69,6 +69,12 @@ sentry-types = "0.37.0"
 
 get_if_addrs = "0.5.3"
 
+# Stable device signals for the cross-source attribution join with
+# landing-site Segment events. See analytics/fingerprint.rs.
+display-info = "0.5"
+iana-time-zone = "0.1"
+sys-locale = "0.3"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 system-configuration = "0.6.1"
 rusqlite = { version = "0.37.0" }
