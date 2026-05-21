@@ -91,6 +91,7 @@ impl LaunchFlow {
             },
             install_step: InstallStep {
                 analytics: analytics.clone(),
+                running_instances: running_instances.clone(),
             },
             app_launch_step: AppLaunchStep {
                 installs_hub,
@@ -119,9 +120,18 @@ impl LaunchFlow {
                     e,
                     e
                 );
+                let code = e.code();
                 let e = AttemptError { error: e, attempt };
 
-                sentry::capture_error(&e);
+                sentry::with_scope(
+                    |scope| {
+                        scope.set_tag("error_code", code);
+                        scope.set_fingerprint(Some([code]));
+                    },
+                    || {
+                        sentry::capture_error(&e);
+                    },
+                );
                 self.analytics
                     .lock()
                     .await
@@ -334,6 +344,7 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
 
 struct InstallStep {
     analytics: Arc<Mutex<Analytics>>,
+    running_instances: Arc<Mutex<RunningInstances>>,
 }
 
 impl InstallStep {
@@ -343,6 +354,22 @@ impl InstallStep {
             Some(recent_download.downloaded_path),
         )
         .and_then(|()| installs::rename_explorer_to_latest())
+    }
+
+    async fn check_explorer_not_running(&self) -> StepResult {
+        let running = self
+            .running_instances
+            .lock()
+            .await
+            .explorer_processes_by_path();
+        if running.is_empty() {
+            return StepResult::Ok(());
+        }
+        log::warn!(
+            "Explorer is still running; refusing to install. Blocking processes: {:?}",
+            running
+        );
+        StepResult::Err(StepError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
     }
 
     async fn recent_download_and_update_state(
@@ -388,7 +415,10 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                     version: version.clone(),
                 })
                 .await;
-            let result = Self::execute_internal(download);
+            let result = match self.check_explorer_not_running().await {
+                Ok(()) => Self::execute_internal(download),
+                Err(e) => Err(e),
+            };
             if let Err(e) = &result {
                 self.analytics
                     .lock()

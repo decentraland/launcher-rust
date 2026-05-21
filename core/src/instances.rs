@@ -80,6 +80,29 @@ impl RunningInstances {
         found
     }
 
+    /// Scans the OS process list for any process whose executable lives under
+    /// the `latest/` Explorer directory. Returns "name (pid)" strings for each
+    /// match. Used to detect installs blocked by a still-running Explorer
+    /// before we attempt the rename that would fail with a sharing violation.
+    /// Authoritative — does not depend on the `running-instances.json` tracker,
+    /// which can hold stale PIDs across sessions.
+    pub fn explorer_processes_by_path(&self) -> Vec<String> {
+        let latest_path = installs::explorer_latest_version_path();
+        let system = sysinfo::System::new_all();
+        let mut found = Vec::new();
+
+        for (pid, process) in system.processes() {
+            let Some(exe_path) = process.exe() else {
+                continue;
+            };
+            if exe_path.starts_with(&latest_path) {
+                let name = process.name().to_str().unwrap_or("unknown");
+                found.push(format!("{} (pid {})", name, pid.as_u32()));
+            }
+        }
+        found
+    }
+
     pub fn any_is_running(&self) -> Result<bool> {
         let system = sysinfo::System::new_all();
         let mut content = Self::file_content(self.path.as_path());
