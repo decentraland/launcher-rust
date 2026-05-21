@@ -126,7 +126,7 @@ impl LaunchFlow {
                 sentry::with_scope(
                     |scope| {
                         scope.set_tag("error_code", code);
-                        scope.set_fingerprint(Some([code]));
+                        scope.set_fingerprint(Some(&[code]));
                     },
                     || {
                         sentry::capture_error(&e);
@@ -415,10 +415,10 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                     version: version.clone(),
                 })
                 .await;
-            let result = match self.check_explorer_not_running().await {
-                Ok(()) => Self::execute_internal(download),
-                Err(e) => Err(e),
-            };
+            let result = self
+                .check_explorer_not_running()
+                .await
+                .and_then(|()| Self::execute_internal(download));
             if let Err(e) = &result {
                 self.analytics
                     .lock()
