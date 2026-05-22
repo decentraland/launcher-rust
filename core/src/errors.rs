@@ -132,7 +132,7 @@ impl StepError {
     /// Stable identifier for Sentry grouping. Must not include any variable
     /// data (paths, OS messages) — only the variant name. Sentry fingerprints
     /// off this so all occurrences of the same failure cluster into one issue.
-    pub fn code(&self) -> &'static str {
+    pub const fn code(&self) -> &'static str {
         match self {
             Self::E0000_GENERIC_ERROR { .. } => "E0000_GENERIC_ERROR",
             Self::E1001_FILE_NOT_FOUND { .. } => "E1001_FILE_NOT_FOUND",
