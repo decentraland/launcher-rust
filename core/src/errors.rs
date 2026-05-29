@@ -191,68 +191,68 @@ impl StepError {
             } => match &user_message {
                 Some(m) => m,
                 None => {
-                    "Internal communication error during download. Please restart the launcher and try again."
+                    "Something went wrong. Please close the launcher and open it again to try once more."
                 }
             },
             Self::E1001_FILE_NOT_FOUND { .. } => {
-                "The downloaded file could not be found. Please try downloading again or check your antivirus and disk permissions."
+                "We couldn't find the downloaded file. Your antivirus may have removed it. Please add Decentraland as an exception in your antivirus and try again."
             }
             Self::E1002_CORRUPTED_ARCHIVE { .. } => {
-                "The downloaded file appears to be corrupted. Please try downloading it again."
+                "The download didn't finish correctly. Please try again."
             }
             Self::E1003_DECOMPRESS_ACCESS_DENIED { .. } => {
-                "We couldn’t extract the files. Please run the launcher as administrator or check your folder permissions."
+                "We don't have permission to install Decentraland here. Please right-click the launcher and choose \"Run as administrator\", then try again."
             }
             Self::E1004_DISK_FULL { .. } => {
-                "There isn’t enough space on your disk to install Decentraland. Please free up some space and try again."
+                "There isn't enough free space on your computer to install Decentraland. Please free up some space and try again."
             }
             Self::E1005_DECOMPRESS_OUT_OF_MEMORY { .. } => {
-                "Your system ran out of memory while installing the game. Try closing other programs or restarting your computer."
+                "Your computer ran out of memory while installing Decentraland. Please close other programs (or restart your computer) and try again."
             }
             Self::E1006_FILE_DELETE_FAILED { .. } => {
-                "We couldn’t remove a previous download. Please check your permissions or try restarting the launcher."
+                "We couldn't remove files from a previous download. If Decentraland is open, please close it and try again."
             }
             Self::E1007_FILE_CREATE_FAILED { .. } => {
-                "We couldn’t create a file to download. Please check your permissions or try restarting the launcher."
+                "We couldn't save the download to your computer. Please close the launcher and open it again. If the problem continues, try running it as administrator."
             }
             Self::E2001_DOWNLOAD_FAILED { .. } => {
-                "There was an error while downloading Decentraland. Please check your internet connection and try again."
+                "The download couldn't finish. Please check your internet connection and try again."
             }
             Self::E2002_MISSING_CONTENT_LENGTH { .. } => {
-                "Failed to get the file size from the server. Please try again later or verify the download URL is reachable."
+                "We couldn't start the download. Please check your internet connection and try again in a few minutes."
             }
             Self::E2003_NETWORK_WRITE_ERROR { .. } => {
-                "There was an error while saving the downloaded file. Please make sure you have enough disk space and permission to write to the folder."
+                "We couldn't save the download to your computer. Please make sure you have enough free space and try again."
             }
             Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => {
-                "There was an error while downloading Decentraland. Please check your internet connection and try again."
+                "The download couldn't finish. Please check your internet connection and try again."
             }
             Self::E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE { .. } => {
-                "Downloading file is incomplete due an error. Please check your internet connection and try again."
+                "The download was interrupted. Please check your internet connection and try again."
             }
             Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT => {
-                "Timeout while downloading Decentraland. Please check your internet connection and try again."
+                "The download is taking too long. Please check your internet connection and try again."
             }
             Self::E3001_OPEN_DEEPLINK_TIMEOUT => {
-                "There was an error while opening the deeplink. Please restart client and try again."
+                "We couldn't open the deeplink in Decentraland. Please close Decentraland and try again."
             }
             Self::E3002_PLACE_DEEPLINK_ERROR { .. } => {
-                "There was an error while passing the deeplink. Please restart client and try again."
+                "We couldn't send the deeplink to Decentraland. Please close Decentraland and try again."
             }
             Self::E3003_CANT_GET_VERSION => {
-                "Version data could not be read. Please delete launcher's data folder."
+                "We couldn't read your installation details. Please reinstall the launcher to fix this."
             }
             Self::E3004_CANT_RENAME_LATEST => {
-                "Could not rename \"latest\" folder. Delete everything and start over."
+                "We couldn't update your Decentraland installation. Please close Decentraland (and pause your antivirus if you have one) and try again. If the problem continues, please reinstall the launcher."
             }
             Self::E3005_STALE_BUILD_CLEANUP_FAILED { .. } => {
-                "We couldn't clean up a previous build folder. Please close the Decentraland client if it's running and try again."
+                "We couldn't clean up files from a previous version. If Decentraland is open, please close it and try again."
             }
             Self::E3006_RENAME_BACK_FAILED { .. } => {
-                "We couldn't move the current build aside before installing the update. Please close the Decentraland client if it's running and try again."
+                "We couldn't prepare the update because a file is in use. If Decentraland is open, please close it and try again."
             }
             Self::E3007_VERSION_DATA_WRITE_FAILED { .. } => {
-                "We couldn't save the updated version information. Please close the Decentraland client if it's running and try again."
+                "We couldn't save the update details. If Decentraland is open, please close it and try again."
             }
             Self::E3008_EXPLORER_ALREADY_RUNNING { .. } => {
                 "Decentraland is already running and is blocking the update. Please close it and try again."
