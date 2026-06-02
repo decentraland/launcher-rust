@@ -4,7 +4,7 @@ path = "src/main.rs"
 
 [package]
 name = "Decentraland-Launcher"
-version = "1.4.1"
+version = "1.16.2"
 description = "Decentraland Launcher App"
 authors = [ "Decentraland",]
 edition = "2021"
@@ -30,7 +30,7 @@ codegen-units = 1
 lto = true
 opt-level = "z"
 panic = "abort"
-strip = true
+strip = "symbols"
 
 [build-dependencies.tauri-build]
 version = "2"

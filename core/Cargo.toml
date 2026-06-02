@@ -1,6 +1,6 @@
 [package]
 name = "dcl-launcher-core"
-version = "1.4.1"
+version = "1.16.2"
 edition = "2024"
 
 [lib]
@@ -21,7 +21,7 @@ codegen-units = 1 # Allows LLVM to perform better optimization.
 lto = true # Enables link-time-optimizations.
 opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
 panic = "abort" # Higher performance by disabling panic handlers.
-strip = true # Ensures debug symbols are removed.
+strip = "symbols" # Ensures debug symbols are removed.
 
 [dependencies]
 # fix for the issue: https://github.com/ebarnard/rust-plist/issues/151
@@ -32,6 +32,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 regex = "1.11.1"
+url = "2.5.4"
 anyhow = "1.0.97"
 
 futures-util = "0.3.14"
@@ -46,15 +47,17 @@ sysinfo = "0.35.2"
 
 dirs = "5.0"
 tar = "0.4.44"
-zip = "2.5.0"
+zip = "3.0.0"
 flate2 = "1.1.0"
+
+time = "0.3.41"
 
 log = "0.4"
 fern = "0.7.1"
 pretty_env_logger = "0.5.0"
 humantime = "2.2.0"
 
-segment = { version = "0.2.6", default-features = false, features = ["rustls-tls"] }
+segment = { git = "https://github.com/decentraland/segment", branch = "main", default-features = false, features = ["rustls-tls"] }
 uuid = { version = "1.16.0", features = ["v4"] }
 
 nix =  { version = "0.29.0", features = ["process"] }
@@ -64,4 +67,31 @@ sentry-anyhow = { version = "0.37.0" }
 sentry-log = "0.37.0"
 sentry-types = "0.37.0"
 
-windows-sys = { version = "0.59.0", features = ["Win32_System_Threading"] }
+get_if_addrs = "0.5.3"
+
+# Stable device signals for the cross-source attribution join with
+# landing-site Segment events. See analytics/fingerprint.rs.
+display-info = "0.5"
+iana-time-zone = "0.1"
+sys-locale = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+system-configuration = "0.6.1"
+rusqlite = { version = "0.37.0" }
+libc = "0.2.176"
+core-foundation = "0.10.1"
+core-foundation-sys = "0.8.7"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+windows-sys = { version = "0.59", features = [
+  "Win32_System_Threading",
+] }
+windows = { version = "0.61.3", features = [
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock",
+  "Win32_NetworkManagement_Ndis",
+] }
+
+[dev-dependencies]
+rstest = "0.26.1"

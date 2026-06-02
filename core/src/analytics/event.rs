@@ -2,6 +2,8 @@ use serde::Serialize;
 use std::fmt;
 use std::fmt::Display;
 
+use crate::errors::AttemptError;
+
 #[allow(non_camel_case_types)]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
@@ -65,6 +67,16 @@ pub enum Event {
     LAUNCHER_UPDATE_DOWNLOADED {
         version: String,
     },
+    FLOW_ATTEMPT_ERROR {
+        message: String,
+        attempt: u8,
+    },
+    RETRY_FLOW_BUTTON_CLICK {
+        version: String,
+    },
+    CAMPAIGN_ATTRIBUTION_DETECTED {
+        anon_user_id: String,
+    },
 }
 
 impl Display for Event {
@@ -93,7 +105,19 @@ impl Display for Event {
                 Event::LAUNCHER_UPDATE_CANCELLED { .. } => "Launcher Update Cancelled",
                 Event::LAUNCHER_UPDATE_ERROR { .. } => "Launcher Update Error",
                 Event::LAUNCHER_UPDATE_DOWNLOADED { .. } => "Launcher Update Downloaded",
+                Event::FLOW_ATTEMPT_ERROR { .. } => "Launcher Attempt Error",
+                Event::RETRY_FLOW_BUTTON_CLICK { .. } => "Retry Flow Button Click",
+                Event::CAMPAIGN_ATTRIBUTION_DETECTED { .. } => "Campaign Attribution Detected",
             }
         )
+    }
+}
+
+impl From<&AttemptError> for Event {
+    fn from(value: &AttemptError) -> Self {
+        Self::FLOW_ATTEMPT_ERROR {
+            message: value.error.to_string(),
+            attempt: value.attempt,
+        }
     }
 }

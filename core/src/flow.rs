@@ -2,7 +2,8 @@ use crate::channel::EventChannel;
 use crate::deeplink_bridge::{
     PlaceDeeplinkError, PlaceDeeplinkResult, place_deeplink_and_wait_until_consumed,
 };
-use crate::errors::{StepError, StepResultTyped};
+use crate::environment::{ARG_LOCAL_SCENE, ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE};
+use crate::errors::{AttemptError, StepError, StepResultTyped};
 use crate::instances::RunningInstances;
 use crate::protocols::Protocol;
 use crate::{
@@ -73,6 +74,8 @@ pub struct LaunchFlow {
     download_step: DownloadStep,
     install_step: InstallStep,
     app_launch_step: AppLaunchStep,
+
+    analytics: Arc<Mutex<Analytics>>,
 }
 
 impl LaunchFlow {
@@ -80,19 +83,20 @@ impl LaunchFlow {
         installs_hub: Arc<Mutex<InstallsHub>>,
         analytics: Arc<Mutex<Analytics>>,
         running_instances: Arc<Mutex<RunningInstances>>,
-        protocol: Protocol,
     ) -> Self {
         Self {
             fetch_step: FetchStep {},
             download_step: DownloadStep {
                 analytics: analytics.clone(),
             },
-            install_step: InstallStep { analytics },
+            install_step: InstallStep {
+                analytics: analytics.clone(),
+            },
             app_launch_step: AppLaunchStep {
                 installs_hub,
                 running_instances,
-                protocol,
             },
+            analytics,
         }
     }
 
@@ -101,17 +105,44 @@ impl LaunchFlow {
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> std::result::Result<(), FlowError> {
-        let result = self.launch_internal(channel, state.clone()).await;
-        if let Err(e) = result {
-            log::error!("Error during the flow {} {:#?}", e, e);
-            sentry::capture_error(&e);
-            let error = FlowError {
-                user_message: e.user_message().to_owned(),
-            };
-            return std::result::Result::Err(error);
+        const SILENT_ATTEMPTS_COUNT: u8 = 3;
+
+        let mut last_error: Option<AttemptError> = None;
+
+        for attempt in 1..=SILENT_ATTEMPTS_COUNT {
+            let result = self.launch_internal(channel, state.clone()).await;
+
+            if let Err(e) = result {
+                log::error!(
+                    "Error during the flow. Attempt: {}, Cause {} {:#?}",
+                    attempt,
+                    e,
+                    e
+                );
+                let e = AttemptError { error: e, attempt };
+
+                sentry::capture_error(&e);
+                self.analytics
+                    .lock()
+                    .await
+                    .track_and_flush_silent((&e).into())
+                    .await;
+
+                last_error = Some(e);
+                continue;
+            }
+
+            return std::result::Result::Ok(());
         }
 
-        std::result::Result::Ok(())
+        if let Some(e) = last_error {
+            let error = FlowError {
+                user_message: e.error.user_message().to_owned(),
+            };
+            std::result::Result::Err(error)
+        } else {
+            std::result::Result::Ok(())
+        }
     }
 
     async fn launch_internal<T: EventChannel>(
@@ -311,6 +342,7 @@ impl InstallStep {
             &recent_download.version,
             Some(recent_download.downloaded_path),
         )
+        .and_then(|()| installs::rename_explorer_to_latest())
     }
 
     async fn recent_download_and_update_state(
@@ -327,7 +359,9 @@ impl InstallStep {
 impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
-        Ok(guard.recent_download.is_none())
+
+        Ok(guard.recent_download.is_none()
+            && installs::explorer_latest_version_path().exists())
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -344,55 +378,43 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
-        match recent_download {
-            Some(download) => {
-                let version = download.version.clone();
-                self.analytics
-                    .lock()
-                    .await
-                    .track_and_flush_silent(Event::INSTALL_VERSION_START {
-                        version: version.clone(),
-                    })
-                    .await;
-                let result = Self::execute_internal(download);
-                if let Err(e) = &result {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                            version: Some(version),
-                            error: e.to_string(),
-                        })
-                        .await;
-                } else {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
-                        .await;
-                }
-                result
-            }
-            None => {
-                const ERROR_MESSAGE: &str = "Downloaded archive not found";
+
+        if let Some(download) = recent_download {
+            let version = download.version.clone();
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::INSTALL_VERSION_START {
+                    version: version.clone(),
+                })
+                .await;
+            let result = Self::execute_internal(download);
+            if let Err(e) = &result {
                 self.analytics
                     .lock()
                     .await
                     .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                        version: None,
-                        error: ERROR_MESSAGE.to_owned(),
+                        version: Some(version),
+                        error: e.to_string(),
                     })
                     .await;
-                StepResult::Err(anyhow!(ERROR_MESSAGE).into())
+            } else {
+                self.analytics
+                    .lock()
+                    .await
+                    .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
+                    .await;
             }
+            return result;
         }
+
+        StepResult::Ok(())
     }
 }
 
 struct AppLaunchStep {
     installs_hub: Arc<Mutex<InstallsHub>>,
     running_instances: Arc<Mutex<RunningInstances>>,
-    protocol: Protocol,
 }
 
 impl AppLaunchStep {
@@ -423,12 +445,16 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
         type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
 
-        match self.protocol.value() {
+        match Protocol::value() {
             Some(deeplink) => {
-                let open_new_instance =
-                    AppEnvironment::cmd_args().any(|e| e == "--open-deeplink-in-new-instance");
+                let args = AppEnvironment::cmd_args();
+
+                let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
+                    || args.open_deeplink_in_new_instance;
                 let any_is_running = self.is_any_instance_running().await?;
-                if !open_new_instance && any_is_running {
+                let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
+
+                if !open_new_instance && any_is_running && !is_local_scene {
                     channel.send(Status::State {
                         step: Step::DeeplinkOpening,
                     })?;

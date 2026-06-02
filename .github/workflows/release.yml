@@ -107,7 +107,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -118,21 +118,23 @@ jobs:
           cache-targets: true
           cache-provider: github
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: lts/*
           cache: 'npm'
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.88.0
+          components: clippy,rustfmt
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - run: npm ci
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-      - run: npm run build
+      - run: npm run build-ui
         env:
           MODE: production
           DRY_RUN: ${{ inputs.dry-run }}
@@ -140,21 +142,8 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
-      - name: Generate Release Version
-        id: version
-        uses: paulhatch/semantic-version@v5.4.0
-        with:
-          tag_prefix: ""
-          version_format: ${major}.${minor}.${patch}
-          major_pattern: "/^(major|breaking).+/"
-          minor_pattern: "/^(minor|feat).+/"
-          bump_each_commit: false
-          bump_each_commit_patch_pattern: "/^(patch|fix).+/"
-          search_commit_body: true
-          user_format_type: "json"
-
       - name: Import Apple Developer certificate
-        if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        if: ${{ matrix.os == 'macos-latest' }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.MACOS_CSC_LINK }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
@@ -170,7 +159,7 @@ jobs:
           security find-identity -v -p codesigning build.keychain
 
       - name: Verify Apple certificate
-        if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        if: ${{ matrix.os == 'macos-latest' }}
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
@@ -205,14 +194,31 @@ jobs:
           Write-Host "Set CODESIGN_JAR to $($jarPath.FullName)"
           Write-Host "Set CODESIGN_JAVA to $($javaExe.FullName)"
           
+      - name: Patch sign command in tauri.conf.json
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          cd src-tauri\scripts
+          .\patch-config-sign-command.ps1
+          cd -
+
       - name: Patch sign.ps1 path in tauri.conf.json
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
           SIGN_SCRIPT_PATH="${GITHUB_WORKSPACE}/src-tauri/scripts/sign.ps1"
           sed -i.bak "s|\"sign.ps1\"|\"${SIGN_SCRIPT_PATH//\\/\/}\"|g" src-tauri/tauri.conf.json
 
+      - name: Prebuild AutoAuth
+        working-directory: ${{ github.workspace }}
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: powershell -ExecutionPolicy Bypass -File ./pre-build-auto-auth.ps1
+
       - name: Code Analysis Core
         working-directory: ${{ github.workspace }}/core
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Code Analysis AutoAuth
+        working-directory: ${{ github.workspace }}/src-auto-auth
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Code Analysis Tauri
@@ -267,6 +273,175 @@ jobs:
         with:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
+
+      - name: Sign dcl_launcher.exe manually (Win)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        env:
+          ES_USERNAME: ${{ secrets.ES_USERNAME }}
+          ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
+          WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
+          ES_TOTP_SECRET: ${{ secrets.ES_TOTP_SECRET }}
+          CODESIGN_JAR: ${{ env.CODESIGN_JAR }}
+          CODESIGN_JAVA: ${{ env.CODESIGN_JAVA }}
+        run: |
+          & "${{ github.workspace }}\src-tauri\scripts\sign.ps1" -filePath "${{ github.workspace }}\src-tauri\target\release\dcl_launcher.exe"
+
+      - name: Build & replace custom DMG (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        env:
+          APP_NAME: Decentraland
+          DMG_BACKGROUND: ${{ github.workspace }}/src-tauri/images/background.png
+          OUTDIR: src-tauri/target/custom-dmg
+          CERT_ID: ${{ env.CERT_ID }}
+          APPLE_ID: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PWD }}
+          APPLE_TEAM_ID: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
+        run: |
+          set -euo pipefail
+
+          # --- Resolve .app bundle path ---
+          APP_PATH=$(
+            ls -1d src-tauri/target/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
+            ls -1d src-tauri/target/universal-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
+            ls -1d src-tauri/target/aarch64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null || \
+            ls -1d src-tauri/target/x86_64-apple-darwin/release/bundle/macos/${APP_NAME}.app 2>/dev/null
+          )
+          echo "APP_PATH=$APP_PATH" | tee -a "$GITHUB_ENV"
+          [[ -d "$APP_PATH" ]] || { echo "❌ .app not found"; exit 1; }
+          [[ -f "$DMG_BACKGROUND" ]] || { echo "⚠️ Missing background: $DMG_BACKGROUND"; }
+
+          # --- Ensure shell create-dmg is available ---
+          if ! command -v create-dmg >/dev/null; then
+            brew install create-dmg
+          fi
+
+          # --- Prepare unique staging folder ---
+          mkdir -p "$OUTDIR"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          STAGE="$OUTDIR/dmg-src-$TIMESTAMP"
+          mkdir -p "$STAGE"
+          echo "Using staging folder: $STAGE"
+
+          # Copy only the .app into the staging folder
+          cp -R "$APP_PATH" "$STAGE/${APP_NAME}.app"
+
+          # --- Build custom DMG ---
+          DMG_NAME="${APP_NAME}-custom.dmg"
+          create-dmg \
+            --volname "Decentraland Installer" \
+            --background "$DMG_BACKGROUND" \
+            --window-pos 200 120 \
+            --window-size 600 520 \
+            --icon-size 120 \
+            --icon "${APP_NAME}.app" 300 230 \
+            --no-internet-enable \
+            --format ULFO \
+            "$OUTDIR/$DMG_NAME" \
+            "$STAGE"
+
+          NEW_DMG_PATH="$OUTDIR/$DMG_NAME"
+          echo "NEW_DMG_PATH=$NEW_DMG_PATH" | tee -a "$GITHUB_ENV"
+          [[ -f "$NEW_DMG_PATH" ]] || { echo "❌ Custom DMG not created"; exit 1; }
+
+          # --- Codesign + verify ---
+          codesign --force --sign "$CERT_ID" --timestamp "$NEW_DMG_PATH"
+          codesign --verify --verbose "$NEW_DMG_PATH"
+
+          # --- Notarize + staple ---
+          xcrun notarytool submit "$NEW_DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_PASSWORD" \
+            --wait
+          xcrun stapler staple "$NEW_DMG_PATH"
+
+          # --- Replace Tauri DMG with same original filename ---
+          DMG_DIR=$(
+            ls -1d src-tauri/target/release/bundle/dmg 2>/dev/null || \
+            ls -1d src-tauri/target/universal-apple-darwin/release/bundle/dmg 2>/dev/null || \
+            ls -1d src-tauri/target/aarch64-apple-darwin/release/bundle/dmg 2>/dev/null || \
+            ls -1d src-tauri/target/x86_64-apple-darwin/release/bundle/dmg 2>/dev/null
+          )
+          if [[ ! -d "$DMG_DIR" ]]; then
+            echo "⚠️ Tauri DMG dir not found; leaving custom DMG at $NEW_DMG_PATH"
+            exit 1
+          fi
+
+          ORIG_DMG=$(ls -1 "$DMG_DIR"/*.dmg 2>/dev/null | head -n1 || true)
+          if [[ -z "${ORIG_DMG}" ]]; then
+            echo "❌ No existing Tauri DMG found in $DMG_DIR to infer original name"; exit 1
+          fi
+          ORIG_NAME="$(basename "$ORIG_DMG")"
+
+          rm -f "$DMG_DIR"/*.dmg
+          FINAL_DMG="$DMG_DIR/$ORIG_NAME"
+          cp "$NEW_DMG_PATH" "$FINAL_DMG"
+
+          echo "FINAL_DMG=$FINAL_DMG" | tee -a "$GITHUB_ENV"
+          echo "✅ Replaced Tauri DMG with custom DMG at $FINAL_DMG (kept original filename)"
+
+      - name: Update GitHub draft release with custom DMG (macOS)
+        if: ${{ matrix.os == 'macos-latest' && inputs.dry-run == false }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          FILE_BASE="$(basename "$FINAL_DMG")"
+          VERSION=$(echo "$FILE_BASE" | sed -E 's/^Decentraland_([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          TAG_TO_USE="app-v${VERSION}"
+          echo " Determined TAG_TO_USE = ${TAG_TO_USE} from FINAL_DMG=${FINAL_DMG}"
+
+          printf "=================================================\n"
+          echo " Listing draft releases"
+          ALL_RELEASES=$(gh api --paginate repos/decentraland/launcher-rust/releases)
+          echo "$ALL_RELEASES" \
+            | jq -r '.[] | select(.draft == true) | "\(.id)  \(.tag_name)  draft=\(.draft)  created=\(.created_at)"'
+
+          printf " \n=================================================\n"
+          echo " Selecting draft release: ${TAG_TO_USE}"
+          RELEASE=$(echo "$ALL_RELEASES" \
+            | jq --arg TAG "$TAG_TO_USE" '.[] | select(.draft == true and .tag_name == $TAG)')
+          [[ -n "$RELEASE" ]] || { echo "❌ Draft release not found: $TAG_TO_USE"; exit 1; }
+
+          RELEASE_JSON="$RELEASE"
+          RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url' | sed 's/{?name,label}//')
+          echo "Using release ID:  $RELEASE_ID"
+          echo "Upload URL:        $UPLOAD_URL"
+
+          printf " \n=================================================\n"
+          echo " Locating DMG asset"
+          # Ensure exactly one DMG exists in this draft
+          DMG_COUNT=$(echo "$RELEASE_JSON" | jq '[.assets[] | select(.name | endswith(".dmg"))] | length')
+          [[ "$DMG_COUNT" -eq 1 ]] || { echo "❌ Unexpected number of DMG assets: $DMG_COUNT"; exit 1; }
+
+          DMG_ASSET=$(echo "$RELEASE_JSON" | jq '.assets[] | select(.name | endswith(".dmg"))')
+          ORIGINAL_DMG_NAME=$(echo "$DMG_ASSET" | jq -r '.name')
+          ORIGINAL_DMG_ID=$(echo "$DMG_ASSET" | jq -r '.id')
+          echo "DMG asset:"
+          echo "  Name: $ORIGINAL_DMG_NAME"
+          echo "  ID:   $ORIGINAL_DMG_ID"
+
+          printf " \n=================================================\n"
+          echo " Deleting original DMG from release"
+
+          gh api --method DELETE \
+            "repos/decentraland/launcher-rust/releases/assets/${ORIGINAL_DMG_ID}"
+
+          echo "✅ Deleted: ${ORIGINAL_DMG_NAME}"
+
+          printf " \n=================================================\n"
+          echo " Uploading custom DMG"
+
+          gh api --method POST \
+            -H "Content-Type: application/octet-stream" \
+            --input "$FINAL_DMG" \
+            "${UPLOAD_URL}?name=${ORIGINAL_DMG_NAME}"
+
+          printf " \n \n"
+          echo "✅ Upload complete: ${ORIGINAL_DMG_NAME}"
 
       - name: Verify Windows signature
         if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}

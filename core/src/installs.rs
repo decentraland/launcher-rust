@@ -1,31 +1,36 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
+use crate::config;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
+#[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
-use anyhow::{Context, Error, Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use semver::Version;
 use serde_json::{Map, Value};
 use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::Display;
+use std::path::Path;
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 use std::{fs, fs::create_dir_all};
 use tokio::sync::Mutex;
 
 #[cfg(target_os = "macos")]
 use std::os::unix::fs::PermissionsExt;
 
-#[cfg(target_os = "macos")]
-use std::os::unix::process::ExitStatusExt;
 #[cfg(windows)]
 use std::os::windows::process::ExitStatusExt;
+#[cfg(windows)]
+use std::process::ExitStatus;
+#[cfg(windows)]
+use std::thread;
+#[cfg(windows)]
+use std::time::Duration;
 
 pub mod compression;
 pub mod downloads;
@@ -34,7 +39,9 @@ const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 
 #[cfg(target_os = "macos")]
-const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
+pub const EXPLORER_MAC_APP_NAME: &str = "Decentraland";
+#[cfg(target_os = "macos")]
+const EXPLORER_MAC_APP_PATH: &str = concat!("Decentraland", ".app");
 
 #[cfg(target_os = "windows")]
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
@@ -66,12 +73,32 @@ pub fn config_path() -> PathBuf {
     explorer_path().join("config.json")
 }
 
+pub fn auth_token_marker_path() -> PathBuf {
+    explorer_path().join("auth-token-marker.txt")
+}
+
+pub fn auth_token_bridge_path() -> PathBuf {
+    explorer_path().join("auth-token-bridge.txt")
+}
+
+pub fn analytics_queue_db_path() -> PathBuf {
+    explorer_path().join("analytics_queue.db")
+}
+
 pub fn running_instances_path() -> PathBuf {
     explorer_path().join("running-instances.json")
 }
 
 pub fn deeplink_bridge_path() -> PathBuf {
     explorer_path().join("deeplink-bridge.json")
+}
+
+pub fn campaign_anon_user_id_storage_path() -> PathBuf {
+    explorer_path().join("campaign-anon-user-id.txt")
+}
+
+pub fn campaign_attribution_reported_marker_path() -> PathBuf {
+    explorer_path().join("campaign-attribution-reported-marker.txt")
 }
 
 // There is no point to recovery if the app failed to create working directory
@@ -98,15 +125,8 @@ fn explorer_version_path() -> PathBuf {
     explorer_path().join("version.json")
 }
 
-fn explorer_latest_version_path() -> Result<PathBuf> {
-    let data = get_version_data()?;
-    let path = data
-        .get("path")
-        .context("missing \"path\" property in version data")?;
-    let value = path
-        .as_str()
-        .context("cannot get string value from path property")?;
-    Ok(PathBuf::from(value))
+pub fn explorer_latest_version_path() -> PathBuf {
+    explorer_path().join("latest")
 }
 
 fn explorer_dev_version_path() -> PathBuf {
@@ -133,31 +153,44 @@ fn get_version_data() -> Result<Map<String, Value>> {
 }
 
 fn get_version_data_or_empty() -> Map<String, Value> {
-    get_version_data().unwrap_or_else(|e| {
-        log::error!("Cannot get version data, fallback to new empty: {:#?}", e);
+    get_version_data().unwrap_or_else(|_e| {
+        log::error!("Cannot get version data, fallback to new empty");
 
         Map::new()
     })
 }
 
-#[cfg(target_os = "macos")]
-fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
-    let base_path = match version {
-        Some("dev") => explorer_dev_version_path(),
-        Some(v) => explorer_path().join(v),
-        None => explorer_latest_version_path()?,
-    };
-    Ok(base_path.join(EXPLORER_MAC_BIN_PATH))
+fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
+    version_data
+        .get("version")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
 }
 
-#[cfg(target_os = "windows")]
-fn get_explorer_bin_path(version: Option<&str>) -> Result<PathBuf> {
+pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
+        None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
-        Some(v) => explorer_path().join(v),
-        None => explorer_latest_version_path()?,
+        Some(v) => {
+            let version_data = get_version_data()?;
+            let latest_version = get_latest_version(&version_data)?;
+            if v == latest_version {
+                explorer_latest_version_path()
+            } else {
+                explorer_path().join(v)
+            }
+        }
     };
-    Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
+
+    #[cfg(target_os = "macos")]
+    {
+        Ok(base_path.join(EXPLORER_MAC_APP_PATH))
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -248,13 +281,20 @@ impl Display for EntryVersion {
     }
 }
 
-fn cleanup_versions() -> Result<()> {
-    const KEEP_VERSIONS_AMOUNT: usize = 2;
+fn remove_version_if_exists(version: &EntryVersion) {
+    let folder_path = explorer_path().join(version.to_restored());
+    if folder_path.exists() {
+        match fs::remove_dir_all(&folder_path) {
+            Ok(()) => log::info!("Removed old version: {}", version),
+            Err(err) => log::error!("Failed to remove {}: {}", version, err),
+        }
+    }
+}
 
-    let entries = match fs::read_dir(explorer_path()) {
-        Ok(entries) => entries,
-        Err(err) => return Err(Error::msg(err.to_string())),
-    };
+fn cleanup_versions(current_version: &EntryVersion) -> Result<()> {
+    const KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT: usize = 2;
+
+    let entries = fs::read_dir(explorer_path()).context("Cannot read entries in the app dir")?;
 
     let mut installations: Vec<EntryVersion> = Vec::new();
 
@@ -272,10 +312,19 @@ fn cleanup_versions() -> Result<()> {
         return Ok(());
     }
 
+    installations.retain(|i| {
+        // remove versions above the current version in a case of rollback
+        let should_be_removed = i > current_version;
+        if should_be_removed {
+            remove_version_if_exists(i);
+        }
+        !should_be_removed
+    });
+
     // Sort versions
     installations.sort();
 
-    if installations.len() <= KEEP_VERSIONS_AMOUNT {
+    if installations.len() <= KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT {
         // Don't need to uninstall anything
         return Ok(());
     }
@@ -285,15 +334,9 @@ fn cleanup_versions() -> Result<()> {
     #[allow(clippy::arithmetic_side_effects)]
     for version in installations
         .iter()
-        .take(installations.len() - KEEP_VERSIONS_AMOUNT)
+        .take(installations.len() - KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT)
     {
-        let folder_path = explorer_path().join(version.to_restored());
-        if folder_path.exists() {
-            match fs::remove_dir_all(&folder_path) {
-                Ok(()) => log::info!("Removed old version: {}", version),
-                Err(err) => log::error!("Failed to remove {}: {}", version, err),
-            }
-        }
+        remove_version_if_exists(version);
     }
 
     Ok(())
@@ -314,7 +357,7 @@ fn is_app_updated(version: &str) -> bool {
 }
 
 pub fn is_explorer_installed(version: Option<&str>) -> bool {
-    let path = get_explorer_bin_path(version);
+    let path = get_explorer_launch_path(version);
     match path {
         Ok(path) => path.exists(),
         Err(_) => false,
@@ -329,10 +372,34 @@ pub fn target_download_path() -> PathBuf {
     explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
 }
 
+fn as_rename_back_err(path: &Path, source: std::io::Error) -> StepError {
+    StepError::E3006_RENAME_BACK_FAILED {
+        path: path.to_string_lossy().into_owned(),
+        source,
+    }
+}
+
+fn rename_latest_back_to_version(
+    latest_path: &Path,
+    target: &Path,
+    branch_path: &Path,
+) -> StepResult {
+    if target == branch_path {
+        return fs::remove_dir_all(latest_path).map_err(|e| as_rename_back_err(latest_path, e));
+    }
+    if target.exists() {
+        fs::remove_dir_all(target).map_err(|e| as_rename_back_err(target, e))?;
+    }
+    fs::rename(latest_path, target).map_err(|e| as_rename_back_err(latest_path, e))
+}
+
 pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
-    let branch_path = explorer_path().join(version);
-    let file_path = downloaded_file_path
-        .unwrap_or_else(|| explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME));
+    let current_version: EntryVersion = EntryVersion::from_str(version)
+        .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
+
+    let explorer_path = explorer_path();
+    let branch_path = explorer_path.join(version);
+    let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
 
     if !file_path.exists() {
         return StepError::E1001_FILE_NOT_FOUND {
@@ -341,13 +408,22 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         .into();
     }
 
+    if branch_path.exists() {
+        fs::remove_dir_all(&branch_path).map_err(|source| {
+            StepError::E3005_STALE_BUILD_CLEANUP_FAILED {
+                path: branch_path.to_string_lossy().into_owned(),
+                source,
+            }
+        })?;
+    }
     compression::decompress_file(&file_path, &branch_path)?;
 
     #[cfg(target_os = "macos")]
     {
+        const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
+
         let from = &branch_path.join("build");
         let to = &branch_path;
-
         move_recursive(from, to).context("Cannot move build folder")?;
 
         let explorer_bin_path = branch_path.join(EXPLORER_MAC_BIN_PATH);
@@ -370,21 +446,56 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     );
     version_data.insert(version.to_owned(), install_time);
 
+    let latest_version = get_latest_version(&version_data).map(String::from);
+    let latest_path = explorer_latest_version_path();
+
+    // Rename latest back to its version so that cleanup_versions can do its
+    // job. InstallStep will rename the new newest build to "latest".
+    if let Ok(v) = latest_version
+        && latest_path.exists()
+    {
+        let target = explorer_path.join(&v);
+        rename_latest_back_to_version(&latest_path, &target, &branch_path)?;
+    }
+
     if version != "dev" {
         version_data.insert("version".to_owned(), Value::String(version.to_owned()));
     }
 
-    version_data.insert("path".to_owned(), branch_path.to_string_lossy().into());
+    // The path to the latest explorer build will be just "latest" from now on.
+    // Remove the path value from version data to not confuse people. You can
+    // remove this line in like 2027.
+    version_data.remove("path");
 
     // Write version data to file
     let version_data_str =
         serde_json::to_string(&version_data).context("Cannot serialize version_data")?;
     let version_path = explorer_version_path();
-    fs::write(version_path, version_data_str)?;
+    fs::write(version_path, version_data_str)
+        .map_err(|source| StepError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
     // Remove the downloaded file
     fs::remove_file(file_path)?;
-    cleanup_versions().context("Cannot clean up the old versions")?;
+    cleanup_versions(&current_version).context("Cannot clean up the old versions")?;
+
+    Ok(())
+}
+
+pub fn rename_explorer_to_latest() -> StepResult {
+    let Ok(version_data) = get_version_data() else {
+        return Err(StepError::E3003_CANT_GET_VERSION);
+    };
+
+    let Ok(latest_version) = get_latest_version(&version_data) else {
+        return Err(StepError::E3003_CANT_GET_VERSION);
+    };
+
+    let Ok(()) = fs::rename(
+        explorer_path().join(latest_version),
+        explorer_latest_version_path(),
+    ) else {
+        return Err(StepError::E3004_CANT_RENAME_LATEST);
+    };
 
     Ok(())
 }
@@ -421,6 +532,16 @@ impl InstallsHub {
         if let Some(value) = deeplink {
             output.insert(0, value.into());
         }
+
+        if let Some(anon_id) =
+            crate::auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
+        {
+            output.push("--campaign_anon_user_id".to_string());
+            output.push(anon_id.as_str().to_owned());
+        }
+
+        let mut additionals = config::client_additional_arguments();
+        output.append(&mut additionals);
 
         output
     }
@@ -484,39 +605,144 @@ impl InstallsHub {
         deeplink: Option<DeepLink>,
         preferred_version: Option<&str>,
     ) -> Result<()> {
-        const WAIT_TIMEOUT: Duration = Duration::from_secs(3);
-        const CHECK_INTERVAL: Duration = Duration::from_millis(100);
-
         log::info!("Launching Explorer...");
 
-        let explorer_bin_path = get_explorer_bin_path(preferred_version)?;
-        let explorer_bin_dir = explorer_bin_path
+        // macOS uses .app instaed of launching direct binary
+        let explorer_launch_path = get_explorer_launch_path(preferred_version)?;
+
+        let explorer_launch_dir = explorer_launch_path
             .parent()
             .ok_or_else(|| anyhow!("Failed to get explorer binary directory"))?;
 
-        if !explorer_bin_path.exists() {
+        if !explorer_launch_path.exists() {
             let error_message = match preferred_version {
                 Some(ver) => format!("The explorer version specified ({}) is not installed.", ver),
                 None => "The explorer is not installed.".to_string(),
             };
-            log::error!("{}, {}", error_message, explorer_bin_path.display());
+            log::error!("{}, {}", error_message, explorer_launch_path.display());
             return Err(anyhow!(error_message));
         }
 
-        // Ensure binary is executable
-        fs::metadata(&explorer_bin_path).context("Failed to access explorer binary")?;
+        // Ensure binary is executable, windows only, macOS doesn't use direct launch due
+        // the permissions issue
+        #[cfg(windows)]
+        fs::metadata(&explorer_launch_path).context("Failed to access explorer binary")?;
 
         // Prepare explorer parameters
+        #[cfg(target_os = "macos")]
+        let mut explorer_params = self.explorer_params(deeplink).await;
+        #[cfg(target_os = "windows")]
         let explorer_params = self.explorer_params(deeplink).await;
+
         log::info!(
             "Opening Explorer at {} with params: {:?}",
-            explorer_bin_path.display(),
+            explorer_launch_path.display(),
             explorer_params
         );
 
-        let mut child = Command::new(&explorer_bin_path)
-            .current_dir(explorer_bin_dir)
-            .args(&explorer_params)
+        #[cfg(target_os = "macos")]
+        {
+            let mut macos_params: Vec<String> = vec![
+                "-n".to_owned(),
+                explorer_launch_path.to_string_lossy().to_string(),
+                "--args".to_owned(),
+            ];
+
+            macos_params.append(&mut explorer_params);
+            Self::launch_open_blocking(explorer_launch_dir, &macos_params)?;
+        }
+
+        #[cfg(target_os = "windows")]
+        let mut child =
+            Self::launch_command(&explorer_launch_path, explorer_launch_dir, &explorer_params)?;
+
+        #[cfg(target_os = "windows")]
+        {
+            let guard = self.running_instances.lock().await;
+            guard.register_instance(child.id());
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            const POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+            const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+            let poll = async {
+                loop {
+                    if self.running_instances.lock().await.register_new_opened_instances_by_fuzzy_path(&explorer_launch_path) {
+                        break;
+                    }
+                    tokio::time::sleep(POLL_INTERVAL).await;
+                }
+            };
+
+            if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
+                log::error!(
+                    "Timed out waiting for Explorer process under {} to appear",
+                    explorer_launch_path.display()
+                );
+            }
+        }
+
+        // Check is not applyable on macOS due the indirect launch via the open command
+        #[cfg(target_os = "windows")]
+        {
+            const WAIT_TIMEOUT: Duration = Duration::from_secs(3);
+            const CHECK_INTERVAL: Duration = Duration::from_millis(100);
+
+            let graceful_exit_code: ExitStatus = std::process::ExitStatus::from_raw(0);
+            let still_active_exit_code: ExitStatus = std::process::ExitStatus::from_raw(259);
+
+            // it's clear that CHECK_INTERVAL is never 0 by the const value
+            #[allow(clippy::arithmetic_side_effects)]
+            for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
+                if let Some(exit_status) = child.try_wait()? {
+                    if exit_status == graceful_exit_code {
+                        return Ok(());
+                    }
+
+                    if exit_status == still_active_exit_code {
+                        break;
+                    }
+
+                    return Err(anyhow!(
+                        "Child process died shorly after launch with code: {}",
+                        exit_status
+                    ));
+                }
+
+                thread::sleep(CHECK_INTERVAL);
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn launch_open_blocking(dir: &Path, args: &[String]) -> Result<()> {
+        let status = Command::new("open")
+            .current_dir(dir)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .status()
+            .map_err(|e| anyhow!("Failed to run `open`: {}", e))?;
+
+        if !status.success() {
+            return Err(anyhow!("`open` exited with status {}", status));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn launch_command<S: AsRef<std::ffi::OsStr> + std::fmt::Debug>(
+        command: S,
+        dir: &Path,
+        args: &[String],
+    ) -> Result<std::process::Child> {
+        Command::new(&command)
+            .current_dir(dir)
+            .args(args.iter())
             .detached()
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -524,49 +750,11 @@ impl InstallsHub {
             .map_err(|e| anyhow!("Failed to start explorer process: {}", e))
             .with_context(|| {
                 format!(
-                    "Dir: {}, Bin: {} Args: {:?}",
-                    explorer_bin_dir.display(),
-                    explorer_bin_path.display(),
-                    explorer_params
+                    "Dir: {}, Launch: {:?}, Args: {:?}",
+                    dir.display(),
+                    command,
+                    args
                 )
-            })?;
-
-        {
-            let guard = self.running_instances.lock().await;
-            guard.register_instance(child.id());
-        }
-
-        #[cfg(windows)]
-        let graceful_exit_code: ExitStatus = std::process::ExitStatus::from_raw(0);
-
-        #[cfg(unix)]
-        let graceful_exit_code: ExitStatus = ExitStatus::from_raw(0 << 8); // exit code 0
-
-        #[cfg(windows)]
-        let still_active_exit_code: ExitStatus = std::process::ExitStatus::from_raw(259);
-
-        // it's clear that CHECK_INTERVAL is never 0 by the const value
-        #[allow(clippy::arithmetic_side_effects)]
-        for _ in 0..(WAIT_TIMEOUT.as_millis() / CHECK_INTERVAL.as_millis()) {
-            if let Some(exit_status) = child.try_wait()? {
-                if exit_status == graceful_exit_code {
-                    return Ok(());
-                }
-
-                #[cfg(windows)]
-                if exit_status == still_active_exit_code {
-                    break;
-                }
-
-                return Err(anyhow!(
-                    "Child process died shorly after launch with code: {}",
-                    exit_status
-                ));
-            }
-
-            thread::sleep(CHECK_INTERVAL);
-        }
-
-        Ok(())
+            })
     }
 }

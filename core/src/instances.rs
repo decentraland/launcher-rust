@@ -19,6 +19,7 @@ struct Storage {
 }
 
 impl RunningInstances {
+    #[cfg(target_os = "windows")]
     pub fn register_instance(&self, pid_raw: u32) {
         let system = sysinfo::System::new_all();
         let pid = Pid::from_u32(pid_raw);
@@ -33,6 +34,50 @@ impl RunningInstances {
         if let Err(e) = self.write_to_json_file(pid_raw, name) {
             log::error!("Cannot register running instance: {:#?}", e);
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn register_new_opened_instances_by_fuzzy_path(&self, app_path: &Path) -> bool {
+        use std::collections::hash_map::Entry;
+
+        let system = sysinfo::System::new_all();
+        let mut content: Storage = Self::file_content(self.path.as_path());
+        let initial_count = content.processes.len();
+
+        for (pid, candidate) in system.processes() {
+            let Some(exe_path) = candidate.exe() else {
+                continue;
+            };
+            if !exe_path.starts_with(app_path) {
+                continue;
+            }
+
+            let raw_pid = pid.as_u32();
+            if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
+                let name = candidate
+                    .name()
+                    .to_str()
+                    .unwrap_or("cannot parse os string");
+                e.insert(name.to_owned());
+                log::info!(
+                    "Accepted and registered process pid {} name {} exe {}",
+                    raw_pid,
+                    name,
+                    exe_path.display()
+                );
+            }
+        }
+
+        let found = content.processes.len() > initial_count;
+        if !found {
+            log::info!(
+                "No new Explorer instances found this poll under {}",
+                app_path.display()
+            );
+        } else if let Err(e) = Self::write_content(&self.path, &content) {
+            log::error!("Cannot persist running instance(s): {:#?}", e);
+        }
+        found
     }
 
     pub fn any_is_running(&self) -> Result<bool> {
@@ -101,6 +146,7 @@ impl RunningInstances {
         Ok(())
     }
 
+    #[cfg(target_os = "windows")]
     fn write_to_json_file(&self, pid: u32, name: &str) -> Result<()> {
         let path = self.path.as_path();
         let mut content: Storage = Self::file_content(path);

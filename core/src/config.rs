@@ -51,12 +51,11 @@ pub fn user_id_or_none() -> String {
     })
 }
 
-pub fn cmd_arguments() -> Vec<String> {
-    const KEY: &str = "cmd-arguments";
-    let config = config_content().ok();
+pub fn arguments_from_key(key: &str) -> Vec<String> {
+    let config = config_content();
     match config {
-        Some(config) => {
-            if let Some(raw) = config.get(KEY) {
+        Ok(config) => {
+            if let Some(raw) = config.get(key) {
                 let raw = raw.as_str();
                 match raw {
                     Some(value) => value.split(' ').map(ToOwned::to_owned).collect(),
@@ -66,6 +65,19 @@ pub fn cmd_arguments() -> Vec<String> {
                 Vec::new()
             }
         }
-        None => Vec::new(),
+        Err(e) => {
+            log::error!("Error on reading config content: {}", e);
+            Vec::new()
+        }
     }
+}
+
+pub fn cmd_arguments() -> Vec<String> {
+    const KEY: &str = "cmd-arguments";
+    arguments_from_key(KEY)
+}
+
+pub fn client_additional_arguments() -> Vec<String> {
+    const KEY: &str = "client-additional-arguments";
+    arguments_from_key(KEY)
 }

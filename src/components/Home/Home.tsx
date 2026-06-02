@@ -76,11 +76,14 @@ const channel = newChannelProxy();
 export const Home: React.FC = memo(() => {
   const currentStatus = useChannelUpdates(channel);
 
-  const launchFlow = async () => {
+  const rustCall = async (functionName: string) => {
     const newChannel = new Channel<Status>();
     channel.assignNewChannel(newChannel);
-    await invoke("launch", { channel: newChannel }).catch(console.error);
+    await invoke(functionName, { channel: newChannel }).catch(console.error);
   };
+
+  const launchFlow = async () => await rustCall("launch");
+  const retryFlow = async () => await rustCall("retry");
 
   useEffect(() => {
     launchFlow();
@@ -189,7 +192,7 @@ export const Home: React.FC = memo(() => {
           >
             EXIT
           </ErrorDialogButton>
-          <ErrorDialogButton variant="contained" onClick={launchFlow}>
+          <ErrorDialogButton variant="contained" onClick={retryFlow}>
             RETRY
           </ErrorDialogButton>
         </Box>

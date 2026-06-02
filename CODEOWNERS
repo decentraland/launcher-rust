@@ -1,0 +1,2 @@
+# Require approvals from the workflow-reviewers team for any file under .github/
+.github/ @decentraland/workflow-reviewers

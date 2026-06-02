@@ -1,0 +1,31 @@
+[package]
+name = "src-auto-auth"
+version = "1.16.2"
+edition = "2024"
+
+[profile.dev]
+overflow-checks = true
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+overflow-checks = true
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = "symbols" # Ensures debug symbols are removed.
+
+[dependencies]
+regex = "1.11.1"
+rstest = "0.26.1"
+
+[dependencies.dcl-launcher-core]
+path = "../core"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_System_Threading",
+  "Win32_Storage_FileSystem", 
+  "Win32_Foundation"
+] }
+

@@ -10,11 +10,13 @@
 )]
 #![allow(clippy::uninlined_format_args, clippy::used_underscore_binding)]
 
-use dcl_launcher_core::environment::AppEnvironment;
+use dcl_launcher_core::analytics::event::Event;
+use dcl_launcher_core::environment::{AppEnvironment, Args};
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
 use dcl_launcher_core::protocols::Protocol;
 use dcl_launcher_core::types::LauncherUpdate;
+use dcl_launcher_core::utils;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::env;
 use std::sync::Arc;
@@ -51,7 +53,37 @@ trait EventChannelExt: EventChannel {
 impl<T: EventChannel + ?Sized> EventChannelExt for T {}
 
 #[tauri::command]
+async fn retry(
+    app: AppHandle,
+    state: State<'_, MutState>,
+    channel: Channel<types::Status>,
+) -> Result<(), String> {
+    info!("tauri command: retry");
+    let event = Event::RETRY_FLOW_BUTTON_CLICK {
+        version: utils::app_version().to_owned(),
+    };
+    state
+        .lock()
+        .await
+        .analytics
+        .lock()
+        .await
+        .track_and_flush_silent(event)
+        .await;
+    launch_internal(app, state, channel).await
+}
+
+#[tauri::command]
 async fn launch(
+    app: AppHandle,
+    state: State<'_, MutState>,
+    channel: Channel<types::Status>,
+) -> Result<(), String> {
+    info!("tauri command: launch");
+    launch_internal(app, state, channel).await
+}
+
+async fn launch_internal(
     app: AppHandle,
     state: State<'_, MutState>,
     channel: Channel<types::Status>,
@@ -83,48 +115,29 @@ async fn launch(
 }
 
 fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
-    const KEY_UPDATER_URL: &str = "--use-updater-url";
-    const KEY_ALWAYS_TRIGGER_UPDATER: &str = "--always-trigger-updater";
-    const KEY_NEVER_TRIGGER_UPDATER: &str = "--never-trigger-updater";
-
-    let args: Vec<String> = AppEnvironment::cmd_args().collect();
+    let args: Args = AppEnvironment::cmd_args();
 
     // comparison to support rollbacks
-    let compare_args = args.clone();
     let builder = app
         .updater_builder()
         .version_comparator(move |current_version, remote| {
-            if compare_args.iter().any(|a| a == KEY_NEVER_TRIGGER_UPDATER) {
-                info!("Never trigger updater by flag {}", KEY_UPDATER_URL);
+            if args.never_trigger_updater {
+                info!("Never trigger updater by flag");
                 return false;
             }
 
-            if compare_args.iter().any(|a| a == KEY_ALWAYS_TRIGGER_UPDATER) {
-                info!("Always trigger updater by flag {}", KEY_UPDATER_URL);
+            if args.always_trigger_updater {
+                info!("Always trigger updater by flag");
                 return true;
             }
 
             current_version != remote.version
         });
 
-    if let Some(pos) = args.iter().position(|a| a == KEY_UPDATER_URL) {
-        let url = args.get(pos.saturating_add(1));
-        match url {
-            Some(url) => {
-                info!(
-                    "Use custom updater by flag {} with its value {}",
-                    KEY_UPDATER_URL, url
-                );
-                let parsed_url: Url = Url::parse(url)?;
-                return builder.endpoints(vec![parsed_url])?.build();
-            }
-            None => {
-                error!(
-                    "Flag {} is provided but its value is missed",
-                    KEY_UPDATER_URL
-                );
-            }
-        }
+    if let Some(url) = args.use_updater_url {
+        info!("Use custom updater by flag with its value {}", url);
+        let parsed_url: Url = Url::parse(url.as_str())?;
+        return builder.endpoints(vec![parsed_url])?.build();
     }
 
     builder.build()
@@ -134,7 +147,23 @@ async fn update_if_needed_and_restart(
     app: &AppHandle,
     app_state: &AppState,
     channel: &StatusChannel,
-) -> tauri_plugin_updater::Result<()> {
+) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    match dcl_launcher_core::environment::macos::is_running_from_dmg() {
+        Ok(from_dmg) => {
+            if from_dmg {
+                info!("App is running from dmg, skipping update since mount is read-only");
+                return Ok(());
+            }
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Cannot define if dmg or not, skipping update: {}",
+                e
+            ));
+        }
+    }
+
     channel.send_silent(LauncherUpdate::CheckingForUpdate.into());
     if let Some(update) = current_updater(app)?.check().await? {
         let mut downloaded: usize = 0;
@@ -185,8 +214,18 @@ async fn update_if_needed_and_restart(
         info!("update installed");
 
         channel.send_silent(LauncherUpdate::RestartingApp.into());
+
+        let mut env = app.env();
+
         app_state.cleanup().await;
-        app.restart();
+        app.cleanup_before_exit();
+
+        // Preserve deeplink
+        if let Some(deeplink) = Protocol::value() {
+            env.args_os.push(deeplink.original().into());
+        }
+
+        tauri::process::restart(&env);
     }
 
     Ok(())
@@ -194,6 +233,10 @@ async fn update_if_needed_and_restart(
 
 #[cfg_attr(windows, allow(unused_variables))]
 fn setup_deeplink(a: &App, protocol: &Protocol) {
+    // Support reading from cmd args on both macOS and Windows
+    let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
+    protocol.try_assign_value_from_vec(&args);
+
     #[cfg(target_os = "macos")]
     {
         let protocol = protocol.clone();
@@ -208,12 +251,6 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
                 }
             }
         });
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let args: Vec<String> = AppEnvironment::cmd_args().collect();
-        protocol.try_assign_value_from_vec(&args);
     }
 }
 
@@ -242,7 +279,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .setup(setup)
-        .invoke_handler(tauri::generate_handler![launch])
+        .invoke_handler(tauri::generate_handler![launch, retry])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
