@@ -34,16 +34,23 @@ impl Monitoring {
                 let env = format!("{:?}", AppEnvironment::launcher_environment()).to_lowercase();
                 info!("sentry environment selected: {}", env);
 
-                let release = format!(
-                    "{}@{}+{}",
-                    env!("CARGO_PKG_NAME"),
-                    env!("CARGO_PKG_VERSION"),
-                    build_commit()
-                );
-                info!("sentry release: {}", release);
+                // Prod (PR_NUMBER=na) keeps `name@version` unchanged so existing
+                // Sentry release-health history and alerts continue to work.
+                // PR builds get a unique release per (pr, commit).
+                let release = if build_pr() == "na" {
+                    sentry::release_name!()
+                } else {
+                    Some(Cow::Owned(format!(
+                        "{}@{}-pr.{}+{}",
+                        env!("CARGO_PKG_NAME"),
+                        env!("CARGO_PKG_VERSION"),
+                        build_pr(),
+                        build_commit()
+                    )))
+                };
 
                 let opts = ClientOptions {
-                    release: Some(Cow::Owned(release)),
+                    release,
                     dsn: Some(dsn),
                     attach_stacktrace: true,
                     auto_session_tracking: true,
@@ -65,8 +72,10 @@ impl Monitoring {
                         id: Some(user_id),
                         ..Default::default()
                     }));
-                    scope.set_tag("git_commit", build_commit());
-                    scope.set_tag("pr_number", build_pr());
+                    if build_pr() != "na" {
+                        scope.set_tag("git_commit", build_commit());
+                        scope.set_tag("pr_number", build_pr());
+                    }
                 });
 
                 Ok(())
