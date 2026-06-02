@@ -7,7 +7,11 @@ use log::{error, info};
 use sentry::{ClientOptions, protocol::User};
 use sentry_types::Dsn;
 
-use crate::{config, environment::AppEnvironment};
+use crate::{
+    config,
+    environment::AppEnvironment,
+    utils::{build_commit, build_pr},
+};
 
 pub struct Monitoring {}
 
@@ -30,8 +34,16 @@ impl Monitoring {
                 let env = format!("{:?}", AppEnvironment::launcher_environment()).to_lowercase();
                 info!("sentry environment selected: {}", env);
 
+                let release = format!(
+                    "{}@{}+{}",
+                    env!("CARGO_PKG_NAME"),
+                    env!("CARGO_PKG_VERSION"),
+                    build_commit()
+                );
+                info!("sentry release: {}", release);
+
                 let opts = ClientOptions {
-                    release: sentry::release_name!(),
+                    release: Some(Cow::Owned(release)),
                     dsn: Some(dsn),
                     attach_stacktrace: true,
                     auto_session_tracking: true,
@@ -53,6 +65,8 @@ impl Monitoring {
                         id: Some(user_id),
                         ..Default::default()
                     }));
+                    scope.set_tag("git_commit", build_commit());
+                    scope.set_tag("pr_number", build_pr());
                 });
 
                 Ok(())

@@ -41,6 +41,16 @@ pub const fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+#[must_use]
+pub const fn build_commit() -> &'static str {
+    option_env!("GIT_COMMIT").unwrap_or("local")
+}
+
+#[must_use]
+pub const fn build_pr() -> &'static str {
+    option_env!("PR_NUMBER").unwrap_or("na")
+}
+
 /**
  * Determines if should run the dev version of the Explorer when passing the arguments --dev or --version=dev.
  * @returns A boolean value indicating if the Explorer should run the explorer from the dev path.

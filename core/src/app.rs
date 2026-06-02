@@ -15,7 +15,7 @@ use crate::auto_auth::AutoAuth;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use utils::app_version;
+use utils::{app_version, build_commit, build_pr};
 
 pub struct AppState {
     pub flow: LaunchFlow,
@@ -28,7 +28,12 @@ impl AppState {
     pub async fn setup() -> Result<Self> {
         logs::dispath_logs()?;
 
-        info!("Application setup start. Version: {}", app_version());
+        info!(
+            "Application setup start. Version: {} commit: {} pr: {}",
+            app_version(),
+            build_commit(),
+            build_pr()
+        );
 
         std::panic::set_hook(Box::new(|info| error!("Panic occurred: {:?}", info)));
 
