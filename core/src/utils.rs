@@ -43,12 +43,18 @@ pub const fn app_version() -> &'static str {
 
 #[must_use]
 pub const fn build_commit() -> &'static str {
-    option_env!("GIT_COMMIT").unwrap_or("local")
+    match option_env!("GIT_COMMIT") {
+        Some(s) => s,
+        None => "local",
+    }
 }
 
 #[must_use]
 pub const fn build_pr() -> &'static str {
-    option_env!("PR_NUMBER").unwrap_or("na")
+    match option_env!("PR_NUMBER") {
+        Some(s) => s,
+        None => "na",
+    }
 }
 
 /**
