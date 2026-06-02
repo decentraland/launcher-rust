@@ -107,6 +107,22 @@ pub enum StepError {
     E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
     E3001_OPEN_DEEPLINK_TIMEOUT,
     E3002_PLACE_DEEPLINK_ERROR(#[from] PlaceDeeplinkError),
+    E3003_CANT_GET_VERSION,
+    E3004_CANT_RENAME_LATEST,
+    E3005_STALE_BUILD_CLEANUP_FAILED {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    E3006_RENAME_BACK_FAILED {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    E3007_VERSION_DATA_WRITE_FAILED {
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl StepError {
@@ -187,6 +203,21 @@ impl StepError {
             }
             Self::E3002_PLACE_DEEPLINK_ERROR { .. } => {
                 "There was an error while passing the deeplink. Please restart client and try again."
+            }
+            Self::E3003_CANT_GET_VERSION => {
+                "Version data could not be read. Please delete launcher's data folder."
+            }
+            Self::E3004_CANT_RENAME_LATEST => {
+                "Could not rename \"latest\" folder. Delete everything and start over."
+            }
+            Self::E3005_STALE_BUILD_CLEANUP_FAILED { .. } => {
+                "We couldn't clean up a previous build folder. Please close the Decentraland client if it's running and try again."
+            }
+            Self::E3006_RENAME_BACK_FAILED { .. } => {
+                "We couldn't move the current build aside before installing the update. Please close the Decentraland client if it's running and try again."
+            }
+            Self::E3007_VERSION_DATA_WRITE_FAILED { .. } => {
+                "We couldn't save the updated version information. Please close the Decentraland client if it's running and try again."
             }
         }
     }

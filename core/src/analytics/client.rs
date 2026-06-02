@@ -18,6 +18,7 @@ use crate::analytics::network_info::network_context;
 use crate::environment::AppEnvironment;
 
 use super::event::Event;
+use super::fingerprint::ClientFingerprint;
 use super::session::SessionId;
 
 const APP_ID: &str = "decentraland-launcher-rust";
@@ -26,7 +27,9 @@ pub struct AnalyticsClient {
     anonymous_id: String,
     os: String,
     launcher_version: String,
+    campaign_anon_user_id: Option<String>,
     session_id: SessionId,
+    fingerprint_props: Map<String, Value>,
     batcher: QueuedBatcher,
     send_daemon: AnalyticsEventSendDaemon<HttpClient>,
 }
@@ -54,10 +57,17 @@ impl AnalyticsClient {
             anonymous_id,
             os,
             launcher_version,
+            campaign_anon_user_id: None,
             session_id,
+            fingerprint_props: ClientFingerprint::current().into(),
             batcher,
             send_daemon,
         }
+    }
+
+    pub fn with_campaign_anon_user_id(mut self, id: String) -> Self {
+        self.campaign_anon_user_id = Some(id);
+        self
     }
 
     async fn track(&mut self, event: String, mut properties: Map<String, Value>) -> Result<()> {
@@ -71,6 +81,15 @@ impl AnalyticsClient {
             Value::String(self.session_id.value().to_owned()),
         );
         properties.insert("appId".to_owned(), Value::String(APP_ID.to_owned()));
+
+        if let Some(anon_id) = &self.campaign_anon_user_id {
+            properties.insert(
+                "campaign_anon_user_id".to_owned(),
+                Value::String(anon_id.clone()),
+            );
+        }
+
+        merge_static_defaults(&mut properties, &self.fingerprint_props);
 
         let user = User::AnonymousId {
             anonymous_id: self.anonymous_id.clone(),
@@ -132,6 +151,15 @@ impl AnalyticsClient {
         self.send_daemon
             .wait_until_empty_queue_or_abandon(None)
             .await;
+    }
+}
+
+// Per-event properties win over the static defaults so a caller that wants
+// to override an individual field (e.g. for a synthetic event) keeps that
+// override without having to repeat the rest of the fingerprint.
+fn merge_static_defaults(properties: &mut Map<String, Value>, defaults: &Map<String, Value>) {
+    for (k, v) in defaults {
+        properties.entry(k.clone()).or_insert_with(|| v.clone());
     }
 }
 
@@ -198,6 +226,32 @@ fn new_event_queue() -> CombinedAnalyticsEventQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_static_defaults_preserves_per_event_properties() {
+        let mut properties = Map::new();
+        properties.insert("fp_platform".to_owned(), Value::String("override".to_owned()));
+
+        let mut defaults = Map::new();
+        defaults.insert(
+            "fp_platform".to_owned(),
+            Value::String("macos/aarch64".to_owned()),
+        );
+        defaults.insert("fp_hardware_concurrency".to_owned(), Value::from(8u32));
+
+        merge_static_defaults(&mut properties, &defaults);
+
+        // Caller-supplied value wins.
+        assert_eq!(
+            properties.get("fp_platform"),
+            Some(&Value::String("override".to_owned()))
+        );
+        // Missing keys are filled in from the defaults.
+        assert_eq!(
+            properties.get("fp_hardware_concurrency"),
+            Some(&Value::from(8u32))
+        );
+    }
 
     #[test]
     fn context_attachments() -> Result<()> {

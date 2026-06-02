@@ -107,7 +107,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -118,7 +118,7 @@ jobs:
           cache-targets: true
           cache-provider: github
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: lts/*
           cache: 'npm'
@@ -134,7 +134,7 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
-      - run: npm run build
+      - run: npm run build-ui
         env:
           MODE: production
           DRY_RUN: ${{ inputs.dry-run }}
@@ -194,6 +194,14 @@ jobs:
           Write-Host "Set CODESIGN_JAR to $($jarPath.FullName)"
           Write-Host "Set CODESIGN_JAVA to $($javaExe.FullName)"
           
+      - name: Patch sign command in tauri.conf.json
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          cd src-tauri\scripts
+          .\patch-config-sign-command.ps1
+          cd -
+
       - name: Patch sign.ps1 path in tauri.conf.json
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
