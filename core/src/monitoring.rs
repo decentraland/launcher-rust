@@ -34,9 +34,6 @@ impl Monitoring {
                 let env = format!("{:?}", AppEnvironment::launcher_environment()).to_lowercase();
                 info!("sentry environment selected: {}", env);
 
-                // Prod (PR_NUMBER=na) keeps `name@version` unchanged so existing
-                // Sentry release-health history and alerts continue to work.
-                // PR builds get a unique release per (pr, commit).
                 let release = if build_pr() == "na" {
                     sentry::release_name!()
                 } else {
