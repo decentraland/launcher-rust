@@ -10,7 +10,7 @@ use sentry_types::Dsn;
 use crate::{
     config,
     environment::AppEnvironment,
-    utils::{build_commit, build_pr},
+    utils::{BUILD_COMMIT, BUILD_PR},
 };
 
 pub struct Monitoring {}
@@ -34,16 +34,18 @@ impl Monitoring {
                 let env = format!("{:?}", AppEnvironment::launcher_environment()).to_lowercase();
                 info!("sentry environment selected: {}", env);
 
-                let release = if build_pr() == "na" {
-                    sentry::release_name!()
-                } else {
+                let is_pr_build = BUILD_PR != "na";
+
+                let release = if is_pr_build {
                     Some(Cow::Owned(format!(
                         "{}@{}-pr.{}+{}",
                         env!("CARGO_PKG_NAME"),
                         env!("CARGO_PKG_VERSION"),
-                        build_pr(),
-                        build_commit()
+                        BUILD_PR,
+                        BUILD_COMMIT
                     )))
+                } else {
+                    sentry::release_name!()
                 };
 
                 let opts = ClientOptions {
@@ -69,9 +71,9 @@ impl Monitoring {
                         id: Some(user_id),
                         ..Default::default()
                     }));
-                    if build_pr() != "na" {
-                        scope.set_tag("git_commit", build_commit());
-                        scope.set_tag("pr_number", build_pr());
+                    if is_pr_build {
+                        scope.set_tag("git_commit", BUILD_COMMIT);
+                        scope.set_tag("pr_number", BUILD_PR);
                     }
                 });
 
