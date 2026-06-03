@@ -190,7 +190,7 @@ impl AutoAuth {
 
         let dmg_file_path = dmg_backing_file(&dmg_mount_path.to_string_lossy())
             .with_context(|| format!("Cannot resolve mount path: {}", dmg_mount_path.display()))?
-            .ok_or_else(|| anyhow!("Dmg original file not found: {dmg_mount_path:?}"))?;
+            .ok_or_else(|| anyhow!("Dmg original file not found: {}", dmg_mount_path.display()))?;
         let where_from = where_from_attr(dmg_file_path.as_path())
             .with_context(|| "Cannot read where from attr: {dmg_file_path}")?;
 

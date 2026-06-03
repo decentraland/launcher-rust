@@ -1,6 +1,6 @@
 [package]
 name = "dcl-launcher-core"
-version = "1.17.0"
+version = "1.17.1"
 edition = "2024"
 
 [lib]
@@ -50,7 +50,7 @@ tar = "0.4.44"
 zip = "3.0.0"
 flate2 = "1.1.0"
 
-time = "0.3.41"
+time = "0.3.47"
 
 log = "0.4"
 fern = "0.7.1"
