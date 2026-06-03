@@ -363,13 +363,13 @@ impl InstallStep {
             .await
             .explorer_processes_by_path();
         if running.is_empty() {
-            return StepResult::Ok(());
+            return Ok(());
         }
         log::warn!(
             "Explorer is still running; refusing to install. Blocking processes: {:?}",
             running
         );
-        StepResult::Err(StepError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
+        Err(StepError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
     }
 
     async fn recent_download_and_update_state(
