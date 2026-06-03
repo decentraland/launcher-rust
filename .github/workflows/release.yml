@@ -240,6 +240,8 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           LAUNCHER_ENVIRONMENT: prod
+          GIT_COMMIT: ${{ github.sha }}
+          PR_NUMBER: ${{ inputs.pr-number || 'na' }}
           ES_USERNAME: ${{ secrets.ES_USERNAME }}
           ES_PASSWORD: ${{ secrets.ES_PASSWORD }}
           WINDOWS_CREDENTIAL_ID_SIGNER: ${{ secrets.WINDOWS_CREDENTIAL_ID_SIGNER }}
@@ -270,6 +272,8 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           LAUNCHER_ENVIRONMENT: dev
+          GIT_COMMIT: ${{ github.sha }}
+          PR_NUMBER: ${{ inputs.pr-number || 'na' }}
         with:
           args: ${{ secrets.args }}
           projectPath: ${{ env.PROJECT_PATH }}
