@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use std::{collections::HashMap, fmt::Display};
+use strum::IntoStaticStr;
 use thiserror::Error;
 
 use crate::installs::downloads::{DownloadFileError, FileIncompleteError};
@@ -48,7 +49,7 @@ impl<T> From<StepError> for StepResultTyped<T> {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Error, Debug)]
+#[derive(Error, Debug, IntoStaticStr)]
 pub enum StepError {
     E0000_GENERIC_ERROR {
         #[source]
@@ -132,33 +133,9 @@ impl StepError {
     /// Stable identifier for Sentry grouping. Must not include any variable
     /// data (paths, OS messages) — only the variant name. Sentry fingerprints
     /// off this so all occurrences of the same failure cluster into one issue.
-    pub const fn code(&self) -> &'static str {
-        match self {
-            Self::E0000_GENERIC_ERROR { .. } => "E0000_GENERIC_ERROR",
-            Self::E1001_FILE_NOT_FOUND { .. } => "E1001_FILE_NOT_FOUND",
-            Self::E1002_CORRUPTED_ARCHIVE { .. } => "E1002_CORRUPTED_ARCHIVE",
-            Self::E1003_DECOMPRESS_ACCESS_DENIED { .. } => "E1003_DECOMPRESS_ACCESS_DENIED",
-            Self::E1004_DISK_FULL { .. } => "E1004_DISK_FULL",
-            Self::E1005_DECOMPRESS_OUT_OF_MEMORY { .. } => "E1005_DECOMPRESS_OUT_OF_MEMORY",
-            Self::E1006_FILE_DELETE_FAILED { .. } => "E1006_FILE_DELETE_FAILED",
-            Self::E1007_FILE_CREATE_FAILED { .. } => "E1007_FILE_CREATE_FAILED",
-            Self::E2001_DOWNLOAD_FAILED { .. } => "E2001_DOWNLOAD_FAILED",
-            Self::E2002_MISSING_CONTENT_LENGTH { .. } => "E2002_MISSING_CONTENT_LENGTH",
-            Self::E2003_NETWORK_WRITE_ERROR { .. } => "E2003_NETWORK_WRITE_ERROR",
-            Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => "E2004_DOWNLOAD_FAILED_HTTP_CODE",
-            Self::E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE { .. } => {
-                "E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE"
-            }
-            Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT => "E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT",
-            Self::E3001_OPEN_DEEPLINK_TIMEOUT => "E3001_OPEN_DEEPLINK_TIMEOUT",
-            Self::E3002_PLACE_DEEPLINK_ERROR { .. } => "E3002_PLACE_DEEPLINK_ERROR",
-            Self::E3003_CANT_GET_VERSION => "E3003_CANT_GET_VERSION",
-            Self::E3004_CANT_RENAME_LATEST => "E3004_CANT_RENAME_LATEST",
-            Self::E3005_STALE_BUILD_CLEANUP_FAILED { .. } => "E3005_STALE_BUILD_CLEANUP_FAILED",
-            Self::E3006_RENAME_BACK_FAILED { .. } => "E3006_RENAME_BACK_FAILED",
-            Self::E3007_VERSION_DATA_WRITE_FAILED { .. } => "E3007_VERSION_DATA_WRITE_FAILED",
-            Self::E3008_EXPLORER_ALREADY_RUNNING { .. } => "E3008_EXPLORER_ALREADY_RUNNING",
-        }
+    /// Derived from the variant name via `strum::IntoStaticStr`.
+    pub fn code(&self) -> &'static str {
+        self.into()
     }
 
     #[must_use]

@@ -348,7 +348,8 @@ struct InstallStep {
 }
 
 impl InstallStep {
-    fn execute_internal(recent_download: RecentDownload) -> StepResult {
+    async fn execute_internal(&self, recent_download: RecentDownload) -> StepResult {
+        self.check_explorer_not_running().await?;
         installs::install_explorer(
             &recent_download.version,
             Some(recent_download.downloaded_path),
@@ -417,10 +418,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                     version: version.clone(),
                 })
                 .await;
-            let result = self
-                .check_explorer_not_running()
-                .await
-                .and_then(|()| Self::execute_internal(download));
+            let result = self.execute_internal(download).await;
             if let Err(e) = &result {
                 self.analytics
                     .lock()
