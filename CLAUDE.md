@@ -36,6 +36,8 @@ When a `decentraland://` link arrives while the Explorer is already running, the
 
 - Extract complex if/else branches into named functions for readability. Prefer named free functions (`fn as_rename_back_err(...)`) over closures for error mapping.
 - Public functions that take user-influenced strings for path construction should validate inputs locally (e.g. reject `/` or `\` in version strings) even if upstream code already constrains them — keeps the safety invariant self-documenting.
+- Compile-time values belong in `const` items, not `const fn` getters: `pub const BUILD_COMMIT: &str = match option_env!("GIT_COMMIT") { ... }` rather than a zero-arg `const fn build_commit()`.
+- Don't repeat the same expression/comparison twice in a function — extract it into a named local (e.g. `let is_pr_build = BUILD_PR != "na";`).
 
 ### Install edge cases
 
