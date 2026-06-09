@@ -40,31 +40,18 @@ impl RunningInstances {
     pub fn register_new_opened_instances_by_fuzzy_path(&self, app_path: &Path) -> bool {
         use std::collections::hash_map::Entry;
 
-        let system = sysinfo::System::new_all();
         let mut content: Storage = Self::file_content(self.path.as_path());
         let initial_count = content.processes.len();
 
-        for (pid, candidate) in system.processes() {
-            let Some(exe_path) = candidate.exe() else {
-                continue;
-            };
-            if !exe_path.starts_with(app_path) {
-                continue;
-            }
-
-            let raw_pid = pid.as_u32();
+        for (raw_pid, name, exe_path) in Self::processes_under_path(app_path) {
             if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
-                let name = candidate
-                    .name()
-                    .to_str()
-                    .unwrap_or("cannot parse os string");
-                e.insert(name.to_owned());
                 log::info!(
                     "Accepted and registered process pid {} name {} exe {}",
                     raw_pid,
                     name,
                     exe_path.display()
                 );
+                e.insert(name);
             }
         }
 
@@ -78,6 +65,44 @@ impl RunningInstances {
             log::error!("Cannot persist running instance(s): {:#?}", e);
         }
         found
+    }
+
+    /// Scans the OS process list for every process whose executable lives under
+    /// `path`, yielding `(raw_pid, name, exe_path)` for each match. Shared OS
+    /// scan backing both the macOS instance tracker and the pre-install
+    /// running-Explorer check.
+    fn processes_under_path(path: &Path) -> Vec<(u32, String, PathBuf)> {
+        let system = sysinfo::System::new_all();
+        let mut found = Vec::new();
+
+        for (pid, process) in system.processes() {
+            let Some(exe_path) = process.exe() else {
+                continue;
+            };
+            if exe_path.starts_with(path) {
+                let name = process
+                    .name()
+                    .to_str()
+                    .unwrap_or("cannot parse os string")
+                    .to_owned();
+                found.push((pid.as_u32(), name, exe_path.to_path_buf()));
+            }
+        }
+        found
+    }
+
+    /// Scans the OS process list for any process whose executable lives under
+    /// the `latest/` Explorer directory. Returns "name (pid)" strings for each
+    /// match. Used to detect installs blocked by a still-running Explorer
+    /// before we attempt the rename that would fail with a sharing violation.
+    /// Authoritative — does not depend on the `running-instances.json` tracker,
+    /// which can hold stale PIDs across sessions.
+    pub fn explorer_processes_by_path(&self) -> Vec<String> {
+        let latest_path = installs::explorer_latest_version_path();
+        Self::processes_under_path(&latest_path)
+            .into_iter()
+            .map(|(pid, name, _)| format!("{name} (pid {pid})"))
+            .collect()
     }
 
     pub fn any_is_running(&self) -> Result<bool> {

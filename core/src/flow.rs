@@ -91,6 +91,7 @@ impl LaunchFlow {
             },
             install_step: InstallStep {
                 analytics: analytics.clone(),
+                running_instances: running_instances.clone(),
             },
             app_launch_step: AppLaunchStep {
                 installs_hub,
@@ -119,9 +120,18 @@ impl LaunchFlow {
                     e,
                     e
                 );
+                let code = e.code();
                 let e = AttemptError { error: e, attempt };
 
-                sentry::capture_error(&e);
+                sentry::with_scope(
+                    |scope| {
+                        scope.set_tag("error_code", code);
+                        scope.set_fingerprint(Some(&[code]));
+                    },
+                    || {
+                        sentry::capture_error(&e);
+                    },
+                );
                 self.analytics
                     .lock()
                     .await
@@ -334,15 +344,35 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
 
 struct InstallStep {
     analytics: Arc<Mutex<Analytics>>,
+    running_instances: Arc<Mutex<RunningInstances>>,
 }
 
 impl InstallStep {
-    fn execute_internal(recent_download: RecentDownload) -> StepResult {
+    async fn execute_internal(&self, recent_download: RecentDownload) -> StepResult {
+        self.check_explorer_not_running().await?;
         installs::install_explorer(
             &recent_download.version,
             Some(recent_download.downloaded_path),
         )
         .and_then(|()| installs::rename_explorer_to_latest())
+    }
+
+    async fn check_explorer_not_running(&self) -> StepResult {
+        let running = self
+            .running_instances
+            .lock()
+            .await
+            .explorer_processes_by_path();
+        if running.is_empty() {
+            // `Ok`/`Err` are shadowed by `anyhow::Ok` (imported at the top),
+            // so qualify with `StepResult` to stay on `StepError`.
+            return StepResult::Ok(());
+        }
+        log::warn!(
+            "Explorer is still running; refusing to install. Blocking processes: {:?}",
+            running
+        );
+        StepResult::Err(StepError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
     }
 
     async fn recent_download_and_update_state(
@@ -388,7 +418,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
                     version: version.clone(),
                 })
                 .await;
-            let result = Self::execute_internal(download);
+            let result = self.execute_internal(download).await;
             if let Err(e) = &result {
                 self.analytics
                     .lock()
