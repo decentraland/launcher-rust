@@ -220,7 +220,10 @@ async fn update_if_needed_and_restart(
         app_state.cleanup().await;
         app.cleanup_before_exit();
 
-        // Preserve deeplink
+        // Best-effort args passthrough: only reachable on macOS, since on
+        // Windows update.install() exits the process above. The file
+        // persisted by Protocol::try_assign_value is the authoritative
+        // carrier across the restart; this covers a failed file write.
         if let Some(deeplink) = Protocol::value() {
             env.args_os.push(deeplink.original().into());
         }
