@@ -1,6 +1,6 @@
 [package]
 name = "dcl-launcher-core"
-version = "1.12.19"
+version = "1.17.4"
 edition = "2024"
 
 [lib]
@@ -40,6 +40,7 @@ tokio = { version = "1.44.1", features = ["full"] }
 tokio-util = "0.7.15"
 
 thiserror = "2"
+strum = { version = "0.27", features = ["derive"] }
 
 semver = "1.0.26"
 
@@ -50,7 +51,7 @@ tar = "0.4.44"
 zip = "3.0.0"
 flate2 = "1.1.0"
 
-time = "0.3.41"
+time = "0.3.47"
 
 log = "0.4"
 fern = "0.7.1"
@@ -68,6 +69,12 @@ sentry-log = "0.37.0"
 sentry-types = "0.37.0"
 
 get_if_addrs = "0.5.3"
+
+# Stable device signals for the cross-source attribution join with
+# landing-site Segment events. See analytics/fingerprint.rs.
+display-info = "0.5"
+iana-time-zone = "0.1"
+sys-locale = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 system-configuration = "0.6.1"

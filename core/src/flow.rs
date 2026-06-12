@@ -91,6 +91,7 @@ impl LaunchFlow {
             },
             install_step: InstallStep {
                 analytics: analytics.clone(),
+                running_instances: running_instances.clone(),
             },
             app_launch_step: AppLaunchStep {
                 installs_hub,
@@ -119,9 +120,18 @@ impl LaunchFlow {
                     e,
                     e
                 );
+                let code = e.code();
                 let e = AttemptError { error: e, attempt };
 
-                sentry::capture_error(&e);
+                sentry::with_scope(
+                    |scope| {
+                        scope.set_tag("error_code", code);
+                        scope.set_fingerprint(Some(&[code]));
+                    },
+                    || {
+                        sentry::capture_error(&e);
+                    },
+                );
                 self.analytics
                     .lock()
                     .await
@@ -334,14 +344,35 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
 
 struct InstallStep {
     analytics: Arc<Mutex<Analytics>>,
+    running_instances: Arc<Mutex<RunningInstances>>,
 }
 
 impl InstallStep {
-    fn execute_internal(recent_download: RecentDownload) -> StepResult {
+    async fn execute_internal(&self, recent_download: RecentDownload) -> StepResult {
+        self.check_explorer_not_running().await?;
         installs::install_explorer(
             &recent_download.version,
             Some(recent_download.downloaded_path),
         )
+        .and_then(|()| installs::rename_explorer_to_latest())
+    }
+
+    async fn check_explorer_not_running(&self) -> StepResult {
+        let running = self
+            .running_instances
+            .lock()
+            .await
+            .explorer_processes_by_path();
+        if running.is_empty() {
+            // `Ok`/`Err` are shadowed by `anyhow::Ok` (imported at the top),
+            // so qualify with `StepResult` to stay on `StepError`.
+            return StepResult::Ok(());
+        }
+        log::warn!(
+            "Explorer is still running; refusing to install. Blocking processes: {:?}",
+            running
+        );
+        StepResult::Err(StepError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
     }
 
     async fn recent_download_and_update_state(
@@ -377,56 +408,37 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
-        match recent_download {
-            Some(download) => {
-                let version = download.version.clone();
+
+        if let Some(download) = recent_download {
+            let version = download.version.clone();
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::INSTALL_VERSION_START {
+                    version: version.clone(),
+                })
+                .await;
+            let result = self.execute_internal(download).await;
+            if let Err(e) = &result {
                 self.analytics
                     .lock()
                     .await
-                    .track_and_flush_silent(Event::INSTALL_VERSION_START {
-                        version: version.clone(),
+                    .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
+                        version: Some(version),
+                        error: e.to_string(),
                     })
                     .await;
-                let result = Self::execute_internal(download);
-                if let Err(e) = &result {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                            version: Some(version),
-                            error: e.to_string(),
-                        })
-                        .await;
-                } else {
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
-                        .await;
-                }
-                return result;
+            } else {
+                self.analytics
+                    .lock()
+                    .await
+                    .track_and_flush_silent(Event::INSTALL_VERSION_SUCCESS { version })
+                    .await;
             }
-            None => {
-                // `InstallStep` will also run when there is nothing to
-                // install, but when the newest version of the game needs to be
-                // renamed to "latest". In that case, it is not an error for
-                // the download archive to be missing.
-                if installs::explorer_latest_version_path().exists() {
-                    const ERROR_MESSAGE: &str = "Downloaded archive not found";
-                    self.analytics
-                        .lock()
-                        .await
-                        .track_and_flush_silent(Event::INSTALL_VERSION_ERROR {
-                            version: None,
-                            error: ERROR_MESSAGE.to_owned(),
-                        })
-                        .await;
-                    return StepResult::Err(anyhow!(ERROR_MESSAGE).into());
-                }
-            }
+            return result;
         }
 
-        installs::rename_explorer_to_latest()
+        StepResult::Ok(())
     }
 }
 

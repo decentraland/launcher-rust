@@ -1,66 +1,44 @@
-# CLAUDE.md
+# Launcher Rust — Agent Context
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Overview
-
-Decentraland Launcher — a cross-platform (macOS/Windows) desktop app built with **Tauri v2** that manages installation, updating, and launching of the Decentraland Explorer client. Rust backend, React/TypeScript frontend, Tauri IPC bridge.
-
-## Build & Development Commands
+## Build & Test
 
 ```bash
-npm install                  # Install all dependencies
-npm run tauri dev            # Run in development mode
-npm run tauri build          # Build for distribution
-npm run format               # Format JS/TS (Prettier) + check Rust formatting
-npm run analyze              # Run clippy on all three Rust crates with -D warnings
+cargo build
+cargo test
 ```
 
-**Rust-only commands** (run from `core/`, `src-tauri/`, or `src-auto-auth/`):
-```bash
-cargo fmt                    # Format Rust code
-cargo check                  # Type-check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test                   # Run tests for that crate
-```
-
-The pre-commit hook (`.githooks/pre-commit`) runs fmt, check, clippy, and test on all three Rust crates.
+CI runs tests on both Windows and macOS.
 
 ## Architecture
 
-```
-Frontend (React/TS)  ←—Tauri IPC Channel—→  Backend (Rust)
-    src/                                     core/src/
-    components/Home/Home.tsx                  flow.rs (orchestration)
-                                             installs.rs → downloads.rs → compression.rs
-                                             types.rs (Status/Step enums serialized to TS)
-```
+The launcher manages the download-install-launch funnel for the Decentraland Explorer. Key modules:
 
-**Three Rust crates** (no workspace — independent Cargo.toml files):
-- **`core/`** (`dcl-launcher-core`) — Main business logic: launch flow orchestration, downloads, installation, S3 version fetching, analytics, error handling, deep linking, auto-auth
-- **`src-tauri/`** (`Decentraland-Launcher`) — Tauri app shell: IPC command handlers (`launch`, `retry`), self-update logic, deep link setup
-- **`src-auto-auth/`** — Platform-specific token extraction (macOS DMG xattr, Windows PE tail)
+- `core/src/flow.rs` — orchestrates the step-based workflow (download → install → launch)
+- `core/src/installs.rs` — handles Explorer installation, version management, and directory layout
+- `core/src/errors.rs` — error types with user-facing messages and Sentry error codes
 
-**Frontend** (`src/`): React + Vite. Main UI in `components/Home/Home.tsx`. TypeScript types in `components/Home/types.ts` mirror Rust enums in `core/src/types.rs` — these must stay in sync.
+### Install flow
 
-**Core flow** (`core/src/flow.rs`): Fetch → Download → Install → Launch, with retry logic and status reporting over Tauri channels.
+`InstallStep::execute` calls `install_explorer` then `rename_explorer_to_latest`. Both must succeed before reporting `INSTALL_VERSION_SUCCESS` to analytics. Chain them into a single `Result` so a rename failure is reported as `INSTALL_VERSION_ERROR` — never fire SUCCESS before the full operation completes.
 
-## Rust Conventions
+### File-based deeplink bridge
 
-**Rust edition 2024** for `core` and `src-auto-auth`, **2021** for `src-tauri`. Minimum Rust version: **1.88.0**.
+When a `decentraland://` link arrives while the Explorer is already running, the launcher writes the deeplink to `deeplink-bridge.json` and polls for the Explorer to consume (delete) it within 3 seconds. If the Explorer's main thread is blocked (ANR), the file is never consumed and `E3001_OPEN_DEEPLINK_TIMEOUT` fires.
 
-**Strict clippy enforcement** (see `core/src/lib.rs`):
-- `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, clippy::arithmetic_side_effects, clippy::todo, clippy::dbg_macro)]`
-- `#![warn(clippy::all, clippy::pedantic, clippy::nursery)]`
-- Use `?` operator and proper error handling instead of unwrap/expect/panic
-- Use `.get()` for safe indexing instead of `[]`
+## Conventions
 
-**Error handling**: Custom `StepError` enum in `core/src/errors.rs` with error codes (E0000–E3002). Use `anyhow` for generic errors, `thiserror` for enum derives.
+### Error codes
 
-**Serde**: Use `#[serde(rename_all = "camelCase")]` for types crossing the IPC boundary to match JavaScript conventions.
+- Every distinct IO failure point should have its own Sentry error code (e.g. E3005, E3006, E3007) rather than falling through to `E0000_GENERIC_ERROR`. Specific codes let Sentry pivot on each failure independently.
+- User-facing messages for file-system errors on Windows should advise closing the Decentraland client before retrying — the most common cause of rename/cleanup failures is the Explorer holding file locks.
 
-**Platform-specific code**: Use `#[cfg(target_os = "macos")]` and `#[cfg(target_os = "windows")]` for platform-conditional logic.
+### Code style (Rust)
 
-## Commit Convention
+- Extract complex if/else branches into named functions for readability. Prefer named free functions (`fn as_rename_back_err(...)`) over closures for error mapping.
+- Public functions that take user-influenced strings for path construction should validate inputs locally (e.g. reject `/` or `\` in version strings) even if upstream code already constrains them — keeps the safety invariant self-documenting.
+- Compile-time values belong in `const` items, not `const fn` getters: `pub const BUILD_COMMIT: &str = match option_env!("GIT_COMMIT") { ... }` rather than a zero-arg `const fn build_commit()`.
+- Don't repeat the same expression/comparison twice in a function — extract it into a named local (e.g. `let is_pr_build = BUILD_PR != "na";`).
 
-Conventional Commits: `feat:`, `fix:`, `chore:` with optional scopes like `(release)`, `(windows)`, `(macos)`, `(auto-auth)`.
+### Install edge cases
+
+- Same-version reinstall is a valid scenario — it happens when `latest/Decentraland.exe` gets removed/corrupted or antivirus quarantines the binary. Install logic must handle `target == branch_path` (the rename-back target being the same as the decompress target).

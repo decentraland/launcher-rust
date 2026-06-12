@@ -24,7 +24,7 @@ pub mod analytics;
 pub mod app;
 pub mod auto_auth;
 pub mod channel;
-mod config;
+pub mod config;
 mod deeplink_bridge;
 pub mod environment;
 pub mod errors;

@@ -1,5 +1,6 @@
 mod client;
 pub mod event;
+mod fingerprint;
 mod network_info;
 mod null_client;
 mod session;
@@ -68,11 +69,23 @@ impl Analytics {
     pub fn new(args: Option<CreateArgs>) -> Self {
         match args {
             Some(a) => {
-                let client =
-                    AnalyticsClient::new(a.write_key, a.anonymous_id, a.os, a.launcher_version);
+                let client = AnalyticsClient::new(
+                    a.write_key,
+                    a.anonymous_id,
+                    a.os,
+                    a.launcher_version,
+                );
                 Self::Client(client)
             }
             None => Self::Null(NullClient::new()),
+        }
+    }
+
+    #[must_use]
+    pub fn with_campaign_anon_user_id(self, id: &str) -> Self {
+        match self {
+            Self::Client(client) => Self::Client(client.with_campaign_anon_user_id(id.to_owned())),
+            null @ Self::Null(_) => null,
         }
     }
 

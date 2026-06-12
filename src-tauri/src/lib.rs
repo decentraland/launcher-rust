@@ -41,7 +41,7 @@ impl EventChannel for StatusChannel {
 trait EventChannelExt: EventChannel {
     fn send_silent(&self, status: types::Status) {
         if let Err(e) = self.send(status) {
-            error!("Error during the message sending: {}", e.to_string());
+            error!("Error during the message sending: {}", e);
         }
     }
 
