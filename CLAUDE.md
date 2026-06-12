@@ -63,4 +63,4 @@ Frontend (React/TS)  ←—Tauri IPC Channel—→  Backend (Rust)
 
 ## Commit Convention
 
-Conventional Commits: `feat:`, `fix:`, `chore:`, `style:` with optional scopes like `(release)`, `(windows)`, `(macos)`, `(auto-auth)`.
+Conventional Commits: `feat:`, `fix:`, `chore:` with optional scopes like `(release)`, `(windows)`, `(macos)`, `(auto-auth)`.

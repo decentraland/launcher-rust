@@ -90,7 +90,7 @@ pub fn deeplink_bridge_path() -> PathBuf {
     explorer_path().join("deeplink-bridge.json")
 }
 
-pub fn deeplink_state_path() -> PathBuf {
+pub(crate) fn deeplink_state_path() -> PathBuf {
     explorer_path().join("deeplink-state.txt")
 }
 

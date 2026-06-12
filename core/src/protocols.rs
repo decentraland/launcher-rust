@@ -97,19 +97,32 @@ impl Protocol {
         }
     }
 
+    /// Returns the pending deep link and clears its persisted file so it
+    /// cannot be re-consumed by a future launch. Falls back to the file when
+    /// the in-memory state is empty (e.g. after a self-update restart).
+    pub fn consume_deeplink() -> Option<DeepLink> {
+        let deeplink = Self::value().or_else(|| {
+            let deeplink = Self::try_load_from_file()?;
+            // Keep it in memory so a retried launch still sees the deep link
+            Self::try_store_in_memory(deeplink.clone());
+            Some(deeplink)
+        });
+
+        if deeplink.is_some() {
+            Self::try_clear_file();
+        }
+
+        deeplink
+    }
+
     pub fn try_assign_value(&self, value: String) {
         match DeepLink::new(value) {
             Ok(deeplink) => {
-                let result = PROTOCOL_STATE.lock();
-                match result {
-                    Ok(guard) => {
-                        let mut guard = guard;
-                        *guard = Some(deeplink);
-                    }
-                    Err(e) => {
-                        error!("cannot acquire mutex of PROTOCOL_STATE: {}", e);
-                    }
-                }
+                // Persist so the deep link survives the self-update restart:
+                // update.install() exits the process on Windows before the
+                // in-memory state can be carried over
+                Self::try_save_to_file(&deeplink);
+                Self::try_store_in_memory(deeplink);
             }
             Err(error) => match error {
                 DeepLinkCreateError::WrongPrefix { original_content } => {
@@ -122,34 +135,74 @@ impl Protocol {
         }
     }
 
-    pub fn save_to_file(deeplink: &DeepLink) {
+    fn try_store_in_memory(deeplink: DeepLink) {
+        match PROTOCOL_STATE.lock() {
+            Ok(mut guard) => {
+                *guard = Some(deeplink);
+            }
+            Err(e) => {
+                error!("cannot acquire mutex of PROTOCOL_STATE: {}", e);
+            }
+        }
+    }
+
+    fn try_save_to_file(deeplink: &DeepLink) {
         let path = crate::installs::deeplink_state_path();
         if let Err(e) = std::fs::write(&path, deeplink.original()) {
-            error!("Failed to persist deep link to file: {}", e);
+            error!("Failed to persist deep link to {}: {}", path.display(), e);
         } else {
             info!("Persisted deep link to {}", path.display());
         }
     }
 
-    pub fn load_from_file() -> Option<String> {
+    fn try_load_from_file() -> Option<DeepLink> {
         let path = crate::installs::deeplink_state_path();
-        match std::fs::read_to_string(&path) {
-            Ok(content) if !content.is_empty() => {
-                info!("Loaded persisted deep link from {}", path.display());
-                Some(content)
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    error!(
+                        "Failed to read persisted deep link from {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+                return None;
             }
-            Ok(_) | Err(_) => None,
+        };
+
+        if content.is_empty() {
+            warn!("Persisted deep link file {} is empty", path.display());
+            return None;
+        }
+
+        match DeepLink::new(content) {
+            Ok(deeplink) => {
+                info!("Loaded persisted deep link from {}", path.display());
+                Some(deeplink)
+            }
+            Err(DeepLinkCreateError::WrongPrefix { original_content }) => {
+                error!(
+                    "persisted deep link doesn't start with prefix protocol {}: {}",
+                    PROTOCOL_PREFIX, original_content
+                );
+                None
+            }
         }
     }
 
-    pub fn clear_file() {
+    fn try_clear_file() {
         let path = crate::installs::deeplink_state_path();
-        if path.exists() {
-            if let Err(e) = std::fs::remove_file(&path) {
-                error!("Failed to remove persisted deep link file: {}", e);
-            } else {
-                info!("Cleared persisted deep link file");
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                error!(
+                    "Failed to remove persisted deep link file {}: {}",
+                    path.display(),
+                    e
+                );
             }
+        } else {
+            info!("Cleared persisted deep link file");
         }
     }
 
