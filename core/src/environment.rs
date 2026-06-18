@@ -19,6 +19,8 @@ const ARG_USE_UPDATER_URL: &str = "use-updater-url";
 const ARG_USE_LATEST_JSON_URL: &str = "use-latest-json-url";
 
 pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
+// Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
+pub const ARG_MULTI_INSTANCE: &str = "multi-instance";
 pub const ARG_LOCAL_SCENE: &str = "local-scene";
 
 #[derive(Debug)]
@@ -82,7 +84,7 @@ impl Args {
             open_deeplink_in_new_instance: Self::has_flag(
                 ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
                 &vector,
-            ),
+            ) || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
             always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
@@ -204,6 +206,24 @@ mod tests {
         assert!(!args.always_trigger_updater);
         assert!(args.never_trigger_updater);
         assert!(args.use_updater_url.is_none());
+    }
+
+    #[test]
+    fn test_multi_instance_is_alias_of_open_deeplink_in_new_instance() {
+        let args = Args::parse(["app", "--multi-instance"].map(ToOwned::to_owned).into_iter());
+        assert!(args.open_deeplink_in_new_instance);
+
+        // The original flag still works on its own.
+        let args = Args::parse(
+            ["app", "--open-deeplink-in-new-instance"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
+        assert!(args.open_deeplink_in_new_instance);
+
+        // Neither flag => false.
+        let args = Args::parse(["app"].map(ToOwned::to_owned).into_iter());
+        assert!(!args.open_deeplink_in_new_instance);
     }
 
     #[test]
