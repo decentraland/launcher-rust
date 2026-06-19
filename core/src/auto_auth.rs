@@ -108,7 +108,7 @@ impl AutoAuth {
         match Self::obtain_token_internal() {
             Ok(origin) => {
                 if !has_token {
-                    match origin.auth_token {
+                    match origin.auth_token.as_ref() {
                         Some(token) => {
                             log::info!("Token obtained");
                             if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
@@ -131,14 +131,8 @@ impl AutoAuth {
                 }
 
                 if !StartupDeeplinkStorage::has() {
-                    if let Some(ref pos) = origin.startup_position {
-                        let realm_seg = origin
-                            .startup_realm
-                            .as_deref()
-                            .map(|r| format!("&realm={}", r))
-                            .unwrap_or_default();
-                        let deeplink = format!("decentraland://position={}{}", pos, realm_seg);
-                        log::info!("Writing startup deeplink: {}", deeplink);
+                    if let Some(deeplink) = build_startup_deeplink(&origin) {
+                        log::info!("Writing startup deeplink: {deeplink}");
                         if let Err(e) = StartupDeeplinkStorage::write(&deeplink) {
                             log::error!("Cannot write startup deeplink: {e}");
                         }
@@ -257,6 +251,24 @@ impl AutoAuth {
     }
 }
 
+/// Builds a `decentraland://` startup deeplink from whichever of `position`/`realm`
+/// are present in the download origin. Returns `None` when neither is set, so a
+/// missing field never produces an empty or malformed deeplink.
+#[cfg(target_os = "macos")]
+fn build_startup_deeplink(origin: &DownloadOriginData) -> Option<String> {
+    let mut segments: Vec<String> = Vec::new();
+    if let Some(ref position) = origin.startup_position {
+        segments.push(format!("position={position}"));
+    }
+    if let Some(ref realm) = origin.startup_realm {
+        segments.push(format!("realm={realm}"));
+    }
+    if segments.is_empty() {
+        return None;
+    }
+    Some(format!("decentraland://{}", segments.join("&")))
+}
+
 #[cfg(target_os = "macos")]
 fn app_bundle_from_exe_path(exe_path: &Path) -> std::io::Result<PathBuf> {
     let mut path = exe_path.to_path_buf();
@@ -352,5 +364,48 @@ mod tests {
         assert!(origin.startup_position.is_none());
         assert!(origin.startup_realm.is_none());
         Ok(())
+    }
+
+    #[test]
+    fn test_build_deeplink_position_and_realm() {
+        let origin = DownloadOriginData {
+            startup_position: Some("42,-5".to_owned()),
+            startup_realm: Some("myworld.dcl.eth".to_owned()),
+            ..DownloadOriginData::default()
+        };
+        assert_eq!(
+            build_startup_deeplink(&origin).as_deref(),
+            Some("decentraland://position=42,-5&realm=myworld.dcl.eth")
+        );
+    }
+
+    #[test]
+    fn test_build_deeplink_position_only() {
+        let origin = DownloadOriginData {
+            startup_position: Some("100,100".to_owned()),
+            ..DownloadOriginData::default()
+        };
+        assert_eq!(
+            build_startup_deeplink(&origin).as_deref(),
+            Some("decentraland://position=100,100")
+        );
+    }
+
+    #[test]
+    fn test_build_deeplink_realm_only() {
+        let origin = DownloadOriginData {
+            startup_realm: Some("eax.dcl.eth".to_owned()),
+            ..DownloadOriginData::default()
+        };
+        assert_eq!(
+            build_startup_deeplink(&origin).as_deref(),
+            Some("decentraland://realm=eax.dcl.eth")
+        );
+    }
+
+    #[test]
+    fn test_build_deeplink_neither() {
+        let origin = DownloadOriginData::default();
+        assert!(build_startup_deeplink(&origin).is_none());
     }
 }
