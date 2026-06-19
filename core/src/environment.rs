@@ -37,7 +37,7 @@ pub struct AppEnvironment {}
 pub struct Args {
     pub skip_analytics: bool,
     pub force_in_memory_analytics_queue: bool,
-    pub open_deeplink_in_new_instance: bool,
+    pub open_new_client_instance: bool,
 
     pub always_trigger_updater: bool,
     pub never_trigger_updater: bool,
@@ -56,8 +56,8 @@ impl Args {
             skip_analytics: self.skip_analytics || other.skip_analytics,
             force_in_memory_analytics_queue: self.force_in_memory_analytics_queue
                 || other.force_in_memory_analytics_queue,
-            open_deeplink_in_new_instance: self.open_deeplink_in_new_instance
-                || other.open_deeplink_in_new_instance,
+            open_new_client_instance: self.open_new_client_instance
+                || other.open_new_client_instance,
             always_trigger_updater: self.always_trigger_updater || other.always_trigger_updater,
             never_trigger_updater: self.never_trigger_updater || other.never_trigger_updater,
             use_updater_url: self
@@ -81,7 +81,7 @@ impl Args {
                 ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE,
                 &vector,
             ),
-            open_deeplink_in_new_instance: Self::has_flag(
+            open_new_client_instance: Self::has_flag(
                 ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
                 &vector,
             ) || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
@@ -249,7 +249,7 @@ mod tests {
         let a = Args {
             skip_analytics: true,
             force_in_memory_analytics_queue: false,
-            open_deeplink_in_new_instance: false,
+            open_new_client_instance: false,
             always_trigger_updater: true,
             never_trigger_updater: false,
             use_updater_url: Some("https://one.com".into()),
@@ -260,7 +260,7 @@ mod tests {
         let b = Args {
             skip_analytics: false,
             force_in_memory_analytics_queue: false,
-            open_deeplink_in_new_instance: true,
+            open_new_client_instance: true,
             always_trigger_updater: false,
             never_trigger_updater: true,
             use_updater_url: Some("https://two.com".into()),
