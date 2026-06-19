@@ -126,13 +126,9 @@ fn extract_startup_deeplink_from_zone(installer_path: &str) -> Option<String> {
         .into_iter()
         .flatten()
         .find_map(|url| {
-            let origin = dcl_launcher_core::auto_auth::DownloadOriginData::from_url(url).ok()?;
-            let pos = origin.startup_position?;
-            let realm_seg = origin
-                .startup_realm
-                .map(|r| format!("&realm={r}"))
-                .unwrap_or_default();
-            Some(format!("decentraland://position={pos}{realm_seg}"))
+            dcl_launcher_core::auto_auth::DownloadOriginData::from_url(url)
+                .ok()?
+                .to_startup_deeplink()
         })
 }
 
