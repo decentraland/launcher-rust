@@ -130,9 +130,9 @@ fn extract_startup_deeplink_from_zone(installer_path: &str) -> Option<String> {
             let pos = origin.startup_position?;
             let realm_seg = origin
                 .startup_realm
-                .map(|r| format!("&realm={}", r))
+                .map(|r| format!("&realm={r}"))
                 .unwrap_or_default();
-            Some(format!("decentraland://position={}{}", pos, realm_seg))
+            Some(format!("decentraland://position={pos}{realm_seg}"))
         })
 }
 
