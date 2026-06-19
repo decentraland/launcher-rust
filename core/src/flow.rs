@@ -2,7 +2,7 @@ use crate::channel::EventChannel;
 use crate::deeplink_bridge::{
     PlaceDeeplinkError, PlaceDeeplinkResult, place_deeplink_and_wait_until_consumed,
 };
-use crate::environment::{ARG_LOCAL_SCENE, ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE};
+use crate::environment::{ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE, ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE};
 use crate::errors::{AttemptError, StepError, StepResultTyped};
 use crate::instances::RunningInstances;
 use crate::protocols::Protocol;
@@ -480,7 +480,8 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                 let args = AppEnvironment::cmd_args();
 
                 let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
-                    || args.open_deeplink_in_new_instance;
+                    || deeplink.has_true_value(ARG_MULTI_INSTANCE)
+                    || args.open_new_client_instance;
                 let any_is_running = self.is_any_instance_running().await?;
                 let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
 

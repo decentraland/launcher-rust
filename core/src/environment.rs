@@ -19,6 +19,8 @@ const ARG_USE_UPDATER_URL: &str = "use-updater-url";
 const ARG_USE_LATEST_JSON_URL: &str = "use-latest-json-url";
 
 pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
+// Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
+pub const ARG_MULTI_INSTANCE: &str = "multi-instance";
 pub const ARG_LOCAL_SCENE: &str = "local-scene";
 
 #[derive(Debug)]
@@ -35,7 +37,7 @@ pub struct AppEnvironment {}
 pub struct Args {
     pub skip_analytics: bool,
     pub force_in_memory_analytics_queue: bool,
-    pub open_deeplink_in_new_instance: bool,
+    pub open_new_client_instance: bool,
 
     pub always_trigger_updater: bool,
     pub never_trigger_updater: bool,
@@ -54,8 +56,8 @@ impl Args {
             skip_analytics: self.skip_analytics || other.skip_analytics,
             force_in_memory_analytics_queue: self.force_in_memory_analytics_queue
                 || other.force_in_memory_analytics_queue,
-            open_deeplink_in_new_instance: self.open_deeplink_in_new_instance
-                || other.open_deeplink_in_new_instance,
+            open_new_client_instance: self.open_new_client_instance
+                || other.open_new_client_instance,
             always_trigger_updater: self.always_trigger_updater || other.always_trigger_updater,
             never_trigger_updater: self.never_trigger_updater || other.never_trigger_updater,
             use_updater_url: self
@@ -79,10 +81,10 @@ impl Args {
                 ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE,
                 &vector,
             ),
-            open_deeplink_in_new_instance: Self::has_flag(
+            open_new_client_instance: Self::has_flag(
                 ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
                 &vector,
-            ),
+            ) || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
             always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
@@ -185,7 +187,7 @@ mod tests {
         );
 
         assert!(args.skip_analytics);
-        assert!(args.open_deeplink_in_new_instance);
+        assert!(args.open_new_client_instance);
         assert!(!args.always_trigger_updater);
         assert!(args.never_trigger_updater);
         assert_eq!(args.use_updater_url.as_deref(), Some("https://example.com"));
@@ -200,10 +202,28 @@ mod tests {
         );
 
         assert!(!args.skip_analytics);
-        assert!(!args.open_deeplink_in_new_instance);
+        assert!(!args.open_new_client_instance);
         assert!(!args.always_trigger_updater);
         assert!(args.never_trigger_updater);
         assert!(args.use_updater_url.is_none());
+    }
+
+    #[test]
+    fn test_multi_instance_is_alias_of_open_deeplink_in_new_instance() {
+        let args = Args::parse(["app", "--multi-instance"].map(ToOwned::to_owned).into_iter());
+        assert!(args.open_new_client_instance);
+
+        // The original flag still works on its own.
+        let args = Args::parse(
+            ["app", "--open-deeplink-in-new-instance"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
+        assert!(args.open_new_client_instance);
+
+        // Neither flag => false.
+        let args = Args::parse(["app"].map(ToOwned::to_owned).into_iter());
+        assert!(!args.open_new_client_instance);
     }
 
     #[test]
@@ -229,7 +249,7 @@ mod tests {
         let a = Args {
             skip_analytics: true,
             force_in_memory_analytics_queue: false,
-            open_deeplink_in_new_instance: false,
+            open_new_client_instance: false,
             always_trigger_updater: true,
             never_trigger_updater: false,
             use_updater_url: Some("https://one.com".into()),
@@ -240,7 +260,7 @@ mod tests {
         let b = Args {
             skip_analytics: false,
             force_in_memory_analytics_queue: false,
-            open_deeplink_in_new_instance: true,
+            open_new_client_instance: true,
             always_trigger_updater: false,
             never_trigger_updater: true,
             use_updater_url: Some("https://two.com".into()),
@@ -251,7 +271,7 @@ mod tests {
         let merged = a.merge_with(&b);
 
         assert!(merged.skip_analytics);
-        assert!(merged.open_deeplink_in_new_instance);
+        assert!(merged.open_new_client_instance);
         assert!(merged.always_trigger_updater);
         assert!(merged.never_trigger_updater);
         assert!(!merged.local_scene);
