@@ -481,7 +481,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
 
                 let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
                     || deeplink.has_true_value(ARG_MULTI_INSTANCE)
-                    || args.open_deeplink_in_new_instance;
+                    || args.open_new_client_instance;
                 let any_is_running = self.is_any_instance_running().await?;
                 let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
 

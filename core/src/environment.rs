@@ -187,7 +187,7 @@ mod tests {
         );
 
         assert!(args.skip_analytics);
-        assert!(args.open_deeplink_in_new_instance);
+        assert!(args.open_new_client_instance);
         assert!(!args.always_trigger_updater);
         assert!(args.never_trigger_updater);
         assert_eq!(args.use_updater_url.as_deref(), Some("https://example.com"));
@@ -202,7 +202,7 @@ mod tests {
         );
 
         assert!(!args.skip_analytics);
-        assert!(!args.open_deeplink_in_new_instance);
+        assert!(!args.open_new_client_instance);
         assert!(!args.always_trigger_updater);
         assert!(args.never_trigger_updater);
         assert!(args.use_updater_url.is_none());
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn test_multi_instance_is_alias_of_open_deeplink_in_new_instance() {
         let args = Args::parse(["app", "--multi-instance"].map(ToOwned::to_owned).into_iter());
-        assert!(args.open_deeplink_in_new_instance);
+        assert!(args.open_new_client_instance);
 
         // The original flag still works on its own.
         let args = Args::parse(
@@ -219,11 +219,11 @@ mod tests {
                 .map(ToOwned::to_owned)
                 .into_iter(),
         );
-        assert!(args.open_deeplink_in_new_instance);
+        assert!(args.open_new_client_instance);
 
         // Neither flag => false.
         let args = Args::parse(["app"].map(ToOwned::to_owned).into_iter());
-        assert!(!args.open_deeplink_in_new_instance);
+        assert!(!args.open_new_client_instance);
     }
 
     #[test]
@@ -271,7 +271,7 @@ mod tests {
         let merged = a.merge_with(&b);
 
         assert!(merged.skip_analytics);
-        assert!(merged.open_deeplink_in_new_instance);
+        assert!(merged.open_new_client_instance);
         assert!(merged.always_trigger_updater);
         assert!(merged.never_trigger_updater);
         assert!(!merged.local_scene);
