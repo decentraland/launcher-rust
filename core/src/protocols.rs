@@ -140,14 +140,14 @@ impl Protocol {
     /// `startup-deeplink.txt` written during the download/install flow.
     /// Called once in `lib.rs` after `setup_deeplink()`.
     pub fn try_seed_from_startup_storage() {
-        if Protocol::value().is_some() {
+        if Self::value().is_some() {
             log::info!("URI deeplink already set; skipping startup deeplink seed");
             return;
         }
         match crate::auto_auth::startup_deeplink_storage::StartupDeeplinkStorage::consume() {
             Some(dl) => {
                 log::info!("Seeding Protocol from startup deeplink: {}", dl);
-                let p = Protocol::new();
+                let p = Self::new();
                 p.try_assign_value(dl);
             }
             None => log::info!("No startup deeplink found"),

@@ -50,7 +50,7 @@ impl DownloadOriginData {
 
         for (key, value) in url.query_pairs() {
             match key.as_ref() {
-                "anon_user_id" => continue,
+                "anon_user_id" => {}
                 "position" if !value.is_empty() => {
                     startup_position = Some(value.to_string());
                 }
@@ -244,6 +244,8 @@ impl AutoAuth {
                     result.auth_token = result.auth_token.or(parsed.auth_token);
                     result.campaign_anon_user_id =
                         result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+                    result.startup_position = result.startup_position.or(parsed.startup_position);
+                    result.startup_realm = result.startup_realm.or(parsed.startup_realm);
                 }
                 Err(e) => {
                     log::error!("Cannot parse url '{}': {}", attr, e);
