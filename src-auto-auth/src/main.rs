@@ -8,6 +8,7 @@ use dcl_launcher_core::{
     auto_auth::anon_user_id::AnonUserId,
     auto_auth::auth_token_storage::AuthTokenStorage,
     auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
+    auto_auth::startup_deeplink_storage::StartupDeeplinkStorage,
     log, logs,
 };
 use regex::Regex;
@@ -61,6 +62,17 @@ fn main_internal() -> Result<()> {
         log::info!("No campaign anon_user_id found in Zone.Identifier URLs or installer filename");
     }
 
+    if StartupDeeplinkStorage::has() {
+        log::info!("Startup deeplink already present in storage");
+    } else if let Some(deeplink) = extract_startup_deeplink_from_zone(installer_path) {
+        log::info!("Startup deeplink extracted from Zone.Identifier");
+        if let Err(e) = StartupDeeplinkStorage::write(&deeplink) {
+            log::error!("Cannot write startup deeplink: {e}");
+        }
+    } else {
+        log::info!("No startup deeplink found in Zone.Identifier URLs");
+    }
+
     if AuthTokenStorage::has_token() {
         log::info!("Token already installed");
         return Ok(());
@@ -91,6 +103,33 @@ fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
         .into_iter()
         .flatten()
         .find_map(AnonUserId::from_url)
+}
+
+/// Try to extract startup deeplink (position + realm) from Zone.Identifier URLs.
+fn extract_startup_deeplink_from_zone(installer_path: &str) -> Option<String> {
+    let content = match zone_identifier_content(installer_path).or_else(|e| {
+        log::error!(
+            "ADS read for startup deeplink failed via CAPI, fallback to PowerShell: {e:?}"
+        );
+        zone_identifier_content_powershell(installer_path)
+    }) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Cannot read Zone.Identifier for startup deeplink: {e:?}");
+            return None;
+        }
+    };
+
+    let zone_info = parsed_zone_identifier(&content);
+
+    [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
+        .into_iter()
+        .flatten()
+        .find_map(|url| {
+            dcl_launcher_core::auto_auth::DownloadOriginData::from_url(url)
+                .ok()?
+                .to_startup_deeplink()
+        })
 }
 
 /// Try to extract `anon_user_id` from the installer's filename.

@@ -97,6 +97,10 @@ pub fn campaign_anon_user_id_storage_path() -> PathBuf {
     explorer_path().join("campaign-anon-user-id.txt")
 }
 
+pub fn startup_deeplink_path() -> PathBuf {
+    explorer_path().join("startup-deeplink.txt")
+}
+
 pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
 }
