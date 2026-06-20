@@ -93,6 +93,10 @@ pub fn deeplink_bridge_path() -> PathBuf {
     explorer_path().join("deeplink-bridge.json")
 }
 
+pub(crate) fn deeplink_state_path() -> PathBuf {
+    explorer_path().join("deeplink-state.json")
+}
+
 pub fn campaign_anon_user_id_storage_path() -> PathBuf {
     explorer_path().join("campaign-anon-user-id.txt")
 }
@@ -669,7 +673,12 @@ impl InstallsHub {
 
             let poll = async {
                 loop {
-                    if self.running_instances.lock().await.register_new_opened_instances_by_fuzzy_path(&explorer_launch_path) {
+                    if self
+                        .running_instances
+                        .lock()
+                        .await
+                        .register_new_opened_instances_by_fuzzy_path(&explorer_launch_path)
+                    {
                         break;
                     }
                     tokio::time::sleep(POLL_INTERVAL).await;

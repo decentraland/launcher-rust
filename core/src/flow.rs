@@ -390,8 +390,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
 
-        Ok(guard.recent_download.is_none()
-            && installs::explorer_latest_version_path().exists())
+        Ok(guard.recent_download.is_none() && installs::explorer_latest_version_path().exists())
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -475,7 +474,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
         type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
 
-        match Protocol::value() {
+        match Protocol::consume_deeplink() {
             Some(deeplink) => {
                 let args = AppEnvironment::cmd_args();
 
@@ -485,7 +484,9 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                 let any_is_running = self.is_any_instance_running().await?;
                 let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
 
-                if !open_new_instance && any_is_running && !is_local_scene {
+                let consumed_url = deeplink.original().to_owned();
+
+                let result = if !open_new_instance && any_is_running && !is_local_scene {
                     channel.send(Status::State {
                         step: Step::DeeplinkOpening,
                     })?;
@@ -518,7 +519,16 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                         .launch_explorer(Some(deeplink), None)
                         .await?;
                     StepResult::Ok(())
+                };
+
+                if result.is_ok() {
+                    // Only a delivered deep link is done with its persisted
+                    // copy; a failed launch may still need it to survive an
+                    // update-triggered restart on retry
+                    Protocol::clear_persisted_deeplink(&consumed_url);
                 }
+
+                result
             }
             None => {
                 //TODO passed version if specified manually from upper flow
