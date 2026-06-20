@@ -39,12 +39,27 @@ pub fn dispath_logs() -> Result<()> {
     Ok(())
 }
 
+/// Opt-in log target for error logs that must NOT become standalone Sentry
+/// events. Use it only on `log::error!` lines that duplicate an error already
+/// reported via `sentry::capture_error` (which carries the grouping
+/// fingerprint) — the log line then rides along as a breadcrumb instead of
+/// creating a second, message-grouped issue.
+pub const SENTRY_BREADCRUMB_ONLY_TARGET: &str = "sentry_breadcrumb_only";
+
 fn new_sentry_log() -> SentryLogger<pretty_env_logger::env_logger::Logger> {
     // setup as in the guide: https://crates.io/crates/sentry-log
     let mut log_builder = pretty_env_logger::formatted_builder();
     log_builder.parse_filters("info");
     let log = log_builder.build();
-    sentry_log::SentryLogger::with_dest(log)
+    sentry_log::SentryLogger::with_dest(log).filter(breadcrumb_only_filter)
+}
+
+fn breadcrumb_only_filter(metadata: &Metadata) -> sentry_log::LogFilter {
+    if metadata.target() == SENTRY_BREADCRUMB_ONLY_TARGET {
+        sentry_log::LogFilter::Breadcrumb
+    } else {
+        sentry_log::default_filter(metadata)
+    }
 }
 
 struct CombinedLog {

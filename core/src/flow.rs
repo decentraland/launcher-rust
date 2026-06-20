@@ -114,7 +114,11 @@ impl LaunchFlow {
             let result = self.launch_internal(channel, state.clone()).await;
 
             if let Err(e) = result {
+                // Breadcrumb-only: the error itself is captured just below
+                // with a per-code fingerprint; a plain error log would create
+                // a second, message-grouped Sentry issue per attempt.
                 log::error!(
+                    target: crate::logs::SENTRY_BREADCRUMB_ONLY_TARGET,
                     "Error during the flow. Attempt: {}, Cause {} {:#?}",
                     attempt,
                     e,
