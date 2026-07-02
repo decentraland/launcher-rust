@@ -4,6 +4,7 @@ use crate::config;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
+#[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
 use anyhow::{Context, Result, anyhow};
@@ -38,7 +39,9 @@ const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 
 #[cfg(target_os = "macos")]
-const EXPLORER_MAC_APP_PATH: &str = "Decentraland.app";
+pub const EXPLORER_MAC_APP_NAME: &str = "Decentraland";
+#[cfg(target_os = "macos")]
+const EXPLORER_MAC_APP_PATH: &str = concat!("Decentraland", ".app");
 
 #[cfg(target_os = "windows")]
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
@@ -88,6 +91,14 @@ pub fn running_instances_path() -> PathBuf {
 
 pub fn deeplink_bridge_path() -> PathBuf {
     explorer_path().join("deeplink-bridge.json")
+}
+
+pub fn campaign_anon_user_id_storage_path() -> PathBuf {
+    explorer_path().join("campaign-anon-user-id.txt")
+}
+
+pub fn campaign_attribution_reported_marker_path() -> PathBuf {
+    explorer_path().join("campaign-attribution-reported-marker.txt")
 }
 
 // There is no point to recovery if the app failed to create working directory
@@ -142,10 +153,8 @@ fn get_version_data() -> Result<Map<String, Value>> {
 }
 
 fn get_version_data_or_empty() -> Map<String, Value> {
-    get_version_data().unwrap_or_else(|e| {
-        log::error!(
-            "Cannot get version data, fallback to new empty: File doesn't exist: version.json: {e}"
-        );
+    get_version_data().unwrap_or_else(|_e| {
+        log::error!("Cannot get version data, fallback to new empty");
 
         Map::new()
     })
@@ -158,7 +167,7 @@ fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
         .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
 }
 
-fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
+pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
     let base_path = match version {
         None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
@@ -363,6 +372,27 @@ pub fn target_download_path() -> PathBuf {
     explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
 }
 
+fn as_rename_back_err(path: &Path, source: std::io::Error) -> StepError {
+    StepError::E3006_RENAME_BACK_FAILED {
+        path: path.to_string_lossy().into_owned(),
+        source,
+    }
+}
+
+fn rename_latest_back_to_version(
+    latest_path: &Path,
+    target: &Path,
+    branch_path: &Path,
+) -> StepResult {
+    if target == branch_path {
+        return fs::remove_dir_all(latest_path).map_err(|e| as_rename_back_err(latest_path, e));
+    }
+    if target.exists() {
+        fs::remove_dir_all(target).map_err(|e| as_rename_back_err(target, e))?;
+    }
+    fs::rename(latest_path, target).map_err(|e| as_rename_back_err(latest_path, e))
+}
+
 pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
     let current_version: EntryVersion = EntryVersion::from_str(version)
         .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
@@ -378,6 +408,14 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         .into();
     }
 
+    if branch_path.exists() {
+        fs::remove_dir_all(&branch_path).map_err(|source| {
+            StepError::E3005_STALE_BUILD_CLEANUP_FAILED {
+                path: branch_path.to_string_lossy().into_owned(),
+                source,
+            }
+        })?;
+    }
     compression::decompress_file(&file_path, &branch_path)?;
 
     #[cfg(target_os = "macos")]
@@ -416,7 +454,8 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     if let Ok(v) = latest_version
         && latest_path.exists()
     {
-        fs::rename(latest_path, explorer_path.join(v))?;
+        let target = explorer_path.join(&v);
+        rename_latest_back_to_version(&latest_path, &target, &branch_path)?;
     }
 
     if version != "dev" {
@@ -432,7 +471,8 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     let version_data_str =
         serde_json::to_string(&version_data).context("Cannot serialize version_data")?;
     let version_path = explorer_version_path();
-    fs::write(version_path, version_data_str)?;
+    fs::write(version_path, version_data_str)
+        .map_err(|source| StepError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
     // Remove the downloaded file
     fs::remove_file(file_path)?;
@@ -491,6 +531,13 @@ impl InstallsHub {
 
         if let Some(value) = deeplink {
             output.insert(0, value.into());
+        }
+
+        if let Some(anon_id) =
+            crate::auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
+        {
+            output.push("--campaign_anon_user_id".to_string());
+            output.push(anon_id.as_str().to_owned());
         }
 
         let mut additionals = config::client_additional_arguments();
@@ -602,27 +649,38 @@ impl InstallsHub {
             ];
 
             macos_params.append(&mut explorer_params);
-            Self::launch_command("open", explorer_launch_dir, &macos_params)?;
+            Self::launch_open_blocking(explorer_launch_dir, &macos_params)?;
         }
 
         #[cfg(target_os = "windows")]
         let mut child =
             Self::launch_command(&explorer_launch_path, explorer_launch_dir, &explorer_params)?;
 
+        #[cfg(target_os = "windows")]
         {
             let guard = self.running_instances.lock().await;
+            guard.register_instance(child.id());
+        }
 
-            #[cfg(target_os = "windows")]
-            {
-                guard.register_instance(child.id());
-            }
+        #[cfg(target_os = "macos")]
+        {
+            const POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+            const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
-            #[cfg(target_os = "macos")]
-            {
-                // Default name of the Explorer client, won't conflict on macOS like it could on
-                // Windows with the default explorer.exe
-                const NAME: &str = "Explorer";
-                guard.register_new_opened_instance_by_name(NAME);
+            let poll = async {
+                loop {
+                    if self.running_instances.lock().await.register_new_opened_instances_by_fuzzy_path(&explorer_launch_path) {
+                        break;
+                    }
+                    tokio::time::sleep(POLL_INTERVAL).await;
+                }
+            };
+
+            if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
+                log::error!(
+                    "Timed out waiting for Explorer process under {} to appear",
+                    explorer_launch_path.display()
+                );
             }
         }
 
@@ -660,6 +718,23 @@ impl InstallsHub {
         Ok(())
     }
 
+    #[cfg(target_os = "macos")]
+    fn launch_open_blocking(dir: &Path, args: &[String]) -> Result<()> {
+        let status = Command::new("open")
+            .current_dir(dir)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .status()
+            .map_err(|e| anyhow!("Failed to run `open`: {}", e))?;
+
+        if !status.success() {
+            return Err(anyhow!("`open` exited with status {}", status));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
     fn launch_command<S: AsRef<std::ffi::OsStr> + std::fmt::Debug>(
         command: S,
         dir: &Path,

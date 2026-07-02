@@ -25,7 +25,7 @@ jobs:
       version: ${{ steps.check_skip.outputs.should_skip == 'true' && steps.check_skip.outputs.version || steps.bump.outputs.version }}
       should_run_tests_and_release: ${{ steps.eval_trigger.outputs.should_run_tests_and_release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
