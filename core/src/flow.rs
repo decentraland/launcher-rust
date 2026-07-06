@@ -4,8 +4,9 @@ use crate::deeplink_bridge::{
 };
 use crate::environment::{ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE, ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE};
 use crate::errors::{AttemptError, StepError, StepResultTyped};
+use crate::environment::Args;
 use crate::instances::RunningInstances;
-use crate::protocols::Protocol;
+use crate::protocols::{DeepLink, Protocol};
 use crate::{
     analytics::{Analytics, event::Event},
     environment::AppEnvironment,
@@ -73,6 +74,7 @@ pub struct LaunchFlow {
     fetch_step: FetchStep,
     download_step: DownloadStep,
     install_step: InstallStep,
+    deeplink_passthrough_step: DeeplinkPassthroughStep<AppLaunchStep>,
     app_launch_step: AppLaunchStep,
 
     analytics: Arc<Mutex<Analytics>>,
@@ -84,6 +86,11 @@ impl LaunchFlow {
         analytics: Arc<Mutex<Analytics>>,
         running_instances: Arc<Mutex<RunningInstances>>,
     ) -> Self {
+        let app_launch_step = AppLaunchStep {
+            installs_hub: installs_hub.clone(),
+            running_instances: running_instances.clone(),
+        };
+
         Self {
             fetch_step: FetchStep {},
             download_step: DownloadStep {
@@ -93,10 +100,10 @@ impl LaunchFlow {
                 analytics: analytics.clone(),
                 running_instances: running_instances.clone(),
             },
-            app_launch_step: AppLaunchStep {
-                installs_hub,
-                running_instances,
+            deeplink_passthrough_step: DeeplinkPassthroughStep {
+                handler: app_launch_step.clone(),
             },
+            app_launch_step,
             analytics,
         }
     }
@@ -160,6 +167,14 @@ impl LaunchFlow {
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
+        let handled_by_passthrough = self
+            .deeplink_passthrough_step
+            .execute_if_needed(channel, state.clone(), "launch")
+            .await?;
+        if handled_by_passthrough.unwrap_or(false) {
+            return StepResult::Ok(());
+        }
+
         self.fetch_step
             .execute_if_needed(channel, state.clone(), "fetch")
             .await?;
@@ -442,15 +457,133 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     }
 }
 
+trait DeeplinkPassthroughHandler {
+    async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool>;
+
+    async fn execute_passthrough<T: EventChannel>(
+        &self,
+        channel: &T,
+        deeplink: &DeepLink,
+    ) -> StepResult;
+}
+
+#[derive(Clone)]
 struct AppLaunchStep {
     installs_hub: Arc<Mutex<InstallsHub>>,
     running_instances: Arc<Mutex<RunningInstances>>,
+}
+
+struct DeeplinkPassthroughStep<THandler> {
+    handler: THandler,
+}
+
+impl<THandler> WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep<THandler>
+where
+    THandler: DeeplinkPassthroughHandler,
+{
+    async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
+        Ok(false)
+    }
+
+    fn start_label(&self) -> Result<Status> {
+        Ok(Status::State {
+            step: Step::Launching,
+        })
+    }
+
+    async fn execute<T: EventChannel>(
+        &self,
+        channel: &T,
+        _: Arc<Mutex<LaunchFlowState>>,
+    ) -> StepResultTyped<bool> {
+        let Some(deeplink) = Protocol::value() else {
+            return StepResultTyped::Ok(false);
+        };
+
+        if self.handler.should_use_deeplink_bridge_for(&deeplink).await? {
+            self.handler.execute_passthrough(channel, &deeplink).await?;
+            return StepResultTyped::Ok(true);
+        }
+
+        StepResultTyped::Ok(false)
+    }
+}
+
+/// Whether an incoming deeplink should be handed off to an already-running Explorer
+/// through the file bridge instead of launching a fresh client.
+///
+/// This is the exact condition that also puts the launcher into windowless pass-through
+/// mode: the user clicked a `decentraland://` link while a client is running, and they
+/// did not ask for a new instance or a local scene.
+fn should_use_deeplink_bridge(deeplink: &DeepLink, args: &Args, any_is_running: bool) -> bool {
+    let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
+        || deeplink.has_true_value(ARG_MULTI_INSTANCE)
+        || args.open_new_client_instance;
+    let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
+
+    !open_new_instance && any_is_running && !is_local_scene
 }
 
 impl AppLaunchStep {
     async fn is_any_instance_running(&self) -> anyhow::Result<bool> {
         let guard = self.running_instances.lock().await;
         guard.any_is_running()
+    }
+
+    async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
+        let args = AppEnvironment::cmd_args();
+        let any_is_running = self.is_any_instance_running().await?;
+        Ok(should_use_deeplink_bridge(deeplink, &args, any_is_running))
+    }
+
+    async fn execute_passthrough_internal<T: EventChannel>(
+        &self,
+        channel: &T,
+        deeplink: &DeepLink,
+    ) -> StepResult {
+        const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
+        type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
+
+        channel.send(Status::State {
+            step: Step::DeeplinkOpening,
+        })?;
+
+        let token = CancellationToken::new();
+
+        match tokio::time::timeout(
+            OPEN_DEEPLINK_TIMEOUT,
+            place_deeplink_and_wait_until_consumed(deeplink, token.child_token()),
+        )
+        .await
+        {
+            OpenResult::Ok(result) => match result {
+                PlaceDeeplinkResult::Ok(()) => StepResult::Ok(()),
+                PlaceDeeplinkResult::Err(error) => match error {
+                    PlaceDeeplinkError::SerializeError | PlaceDeeplinkError::IOError => {
+                        StepResult::Err(error.into())
+                    }
+                    PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
+                },
+            },
+            OpenResult::Err(_) => {
+                token.cancel();
+                StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
+            }
+        }
+    }
+}
+
+impl DeeplinkPassthroughHandler for AppLaunchStep {
+    async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
+        self.should_use_deeplink_bridge_for(deeplink).await
+    }
+
+    async fn execute_passthrough<T: EventChannel>(
+        &self,
+        channel: &T,
+        deeplink: &DeepLink,
+    ) -> StepResult {
+        self.execute_passthrough_internal(channel, deeplink).await
     }
 }
 
@@ -472,45 +605,10 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         channel: &T,
         _state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
-        const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
-        type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
-
         match Protocol::value() {
             Some(deeplink) => {
-                let args = AppEnvironment::cmd_args();
-
-                let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
-                    || deeplink.has_true_value(ARG_MULTI_INSTANCE)
-                    || args.open_new_client_instance;
-                let any_is_running = self.is_any_instance_running().await?;
-                let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
-
-                if !open_new_instance && any_is_running && !is_local_scene {
-                    channel.send(Status::State {
-                        step: Step::DeeplinkOpening,
-                    })?;
-
-                    let token = CancellationToken::new();
-
-                    match tokio::time::timeout(
-                        OPEN_DEEPLINK_TIMEOUT,
-                        place_deeplink_and_wait_until_consumed(deeplink, token.child_token()),
-                    )
-                    .await
-                    {
-                        OpenResult::Ok(result) => match result {
-                            PlaceDeeplinkResult::Ok(()) => StepResult::Ok(()),
-                            PlaceDeeplinkResult::Err(error) => match error {
-                                PlaceDeeplinkError::SerializeError
-                                | PlaceDeeplinkError::IOError => StepResult::Err(error.into()),
-                                PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
-                            },
-                        },
-                        OpenResult::Err(_) => {
-                            token.cancel();
-                            StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
-                        }
-                    }
+                if self.should_use_deeplink_bridge_for(&deeplink).await? {
+                    self.execute_passthrough_internal(channel, &deeplink).await
                 } else {
                     self.installs_hub
                         .lock()
@@ -566,3 +664,76 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
   const shouldRunDevVersion = getRunDevVersion();
   const customDownloadedFilePath = getDownloadedFilePath();
 */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn deeplink(flags: &[(&str, &str)]) -> DeepLink {
+        let mut map: HashMap<String, String> = HashMap::new();
+        for (key, value) in flags {
+            map.insert((*key).to_owned(), (*value).to_owned());
+        }
+        DeepLink::from_args(map)
+    }
+
+    fn args(argv: &[&str]) -> Args {
+        Args::parse(argv.iter().map(|s| (*s).to_owned()))
+    }
+
+    #[test]
+    fn uses_bridge_when_running_and_no_special_flags() {
+        assert!(should_use_deeplink_bridge(
+            &deeplink(&[]),
+            &args(&["app"]),
+            true
+        ));
+    }
+
+    #[test]
+    fn no_bridge_when_no_instance_running() {
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[]),
+            &args(&["app"]),
+            false
+        ));
+    }
+
+    #[test]
+    fn no_bridge_when_new_instance_requested_via_deeplink() {
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, "true")]),
+            &args(&["app"]),
+            true
+        ));
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[(ARG_MULTI_INSTANCE, "true")]),
+            &args(&["app"]),
+            true
+        ));
+    }
+
+    #[test]
+    fn no_bridge_when_new_instance_requested_via_args() {
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[]),
+            &args(&["app", "--open-deeplink-in-new-instance"]),
+            true
+        ));
+    }
+
+    #[test]
+    fn no_bridge_for_local_scene() {
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[(ARG_LOCAL_SCENE, "true")]),
+            &args(&["app"]),
+            true
+        ));
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[]),
+            &args(&["app", "--local-scene"]),
+            true
+        ));
+    }
+}

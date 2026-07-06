@@ -72,6 +72,14 @@ impl DeepLink {
     pub fn original(&self) -> &str {
         &self.original
     }
+
+    #[cfg(test)]
+    pub(crate) fn from_args(args: HashMap<String, String>) -> Self {
+        Self {
+            original: String::new(),
+            args,
+        }
+    }
 }
 
 impl From<DeepLink> for String {

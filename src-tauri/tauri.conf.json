@@ -13,11 +13,13 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Decentraland",
         "width": 600,
         "height": 156,
         "resizable": false,
-        "center": true
+        "center": true,
+        "visible": false
       }
     ],
     "security": {
