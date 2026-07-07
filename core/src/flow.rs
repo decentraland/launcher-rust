@@ -82,9 +82,9 @@ pub struct LaunchFlow {
 
 impl LaunchFlow {
     pub fn new(
-        installs_hub: Arc<Mutex<InstallsHub>>,
+        installs_hub: &Arc<Mutex<InstallsHub>>,
         analytics: Arc<Mutex<Analytics>>,
-        running_instances: Arc<Mutex<RunningInstances>>,
+        running_instances: &Arc<Mutex<RunningInstances>>,
     ) -> Self {
         let app_launch_step = AppLaunchStep {
             installs_hub: installs_hub.clone(),

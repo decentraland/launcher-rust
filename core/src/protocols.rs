@@ -74,7 +74,7 @@ impl DeepLink {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_args(args: HashMap<String, String>) -> Self {
+    pub(crate) const fn from_args(args: HashMap<String, String>) -> Self {
         Self {
             original: String::new(),
             args,
