@@ -74,7 +74,7 @@ pub struct LaunchFlow {
     fetch_step: FetchStep,
     download_step: DownloadStep,
     install_step: InstallStep,
-    deeplink_passthrough_step: DeeplinkPassthroughStep<AppLaunchStep>,
+    deeplink_passthrough_step: DeeplinkPassthroughStep,
     app_launch_step: AppLaunchStep,
 
     analytics: Arc<Mutex<Analytics>>,
@@ -101,7 +101,7 @@ impl LaunchFlow {
                 running_instances: running_instances.clone(),
             },
             deeplink_passthrough_step: DeeplinkPassthroughStep {
-                handler: app_launch_step.clone(),
+                app_launch_step: app_launch_step.clone(),
             },
             app_launch_step,
             analytics,
@@ -457,32 +457,27 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     }
 }
 
-trait DeeplinkPassthroughHandler {
-    async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool>;
-
-    async fn execute_passthrough<T: EventChannel>(
-        &self,
-        channel: &T,
-        deeplink: &DeepLink,
-    ) -> StepResult;
-}
-
 #[derive(Clone)]
 struct AppLaunchStep {
     installs_hub: Arc<Mutex<InstallsHub>>,
     running_instances: Arc<Mutex<RunningInstances>>,
 }
 
-struct DeeplinkPassthroughStep<THandler> {
-    handler: THandler,
+struct DeeplinkPassthroughStep {
+    app_launch_step: AppLaunchStep,
 }
 
-impl<THandler> WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep<THandler>
-where
-    THandler: DeeplinkPassthroughHandler,
-{
+impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
     async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
-        Ok(false)
+        let Some(deeplink) = Protocol::value() else {
+            return Ok(true);
+        };
+
+        let use_bridge = self
+            .app_launch_step
+            .should_use_deeplink_bridge_for(&deeplink)
+            .await?;
+        Ok(!use_bridge)
     }
 
     fn start_label(&self) -> Result<Status> {
@@ -500,12 +495,10 @@ where
             return StepResultTyped::Ok(false);
         };
 
-        if self.handler.should_use_deeplink_bridge_for(&deeplink).await? {
-            self.handler.execute_passthrough(channel, &deeplink).await?;
-            return StepResultTyped::Ok(true);
-        }
-
-        StepResultTyped::Ok(false)
+        self.app_launch_step
+            .execute_passthrough_internal(channel, &deeplink)
+            .await?;
+        StepResultTyped::Ok(true)
     }
 }
 
@@ -570,20 +563,6 @@ impl AppLaunchStep {
                 StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
             }
         }
-    }
-}
-
-impl DeeplinkPassthroughHandler for AppLaunchStep {
-    async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
-        self.should_use_deeplink_bridge_for(deeplink).await
-    }
-
-    async fn execute_passthrough<T: EventChannel>(
-        &self,
-        channel: &T,
-        deeplink: &DeepLink,
-    ) -> StepResult {
-        self.execute_passthrough_internal(channel, deeplink).await
     }
 }
 
