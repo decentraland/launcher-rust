@@ -171,6 +171,9 @@ impl LaunchFlow {
             .deeplink_passthrough_step
             .execute_if_needed(channel, state.clone(), "launch")
             .await?;
+        // If another Explorer instance is already running, treat this as a deeplink-only
+        // handoff: update the deeplink bridge file and stop here instead of running the
+        // fetch/download/install flow again.
         if handled_by_passthrough.unwrap_or(false) {
             return StepResult::Ok(());
         }
@@ -545,7 +548,7 @@ impl AppLaunchStep {
 
         match tokio::time::timeout(
             OPEN_DEEPLINK_TIMEOUT,
-            place_deeplink_and_wait_until_consumed(deeplink, token.child_token()),
+            place_deeplink_and_wait_until_consumed(deeplink.clone(), token.child_token()),
         )
         .await
         {
