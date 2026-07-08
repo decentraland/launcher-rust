@@ -2,7 +2,7 @@ use crate::channel::EventChannel;
 use crate::deeplink_bridge::{
     PlaceDeeplinkError, PlaceDeeplinkResult, place_deeplink_and_wait_until_consumed,
 };
-use crate::environment::{ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE, ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE};
+use crate::environment::{ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE, ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, ARG_BRIDGE_ONLY};
 use crate::errors::{AttemptError, StepError, StepResultTyped};
 use crate::environment::Args;
 use crate::instances::RunningInstances;
@@ -530,8 +530,9 @@ fn should_use_deeplink_bridge(deeplink: &DeepLink, args: &Args, any_is_running: 
         || deeplink.has_true_value(ARG_MULTI_INSTANCE)
         || args.open_new_client_instance;
     let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
+    let bridge_only = deeplink.has_true_value(ARG_BRIDGE_ONLY) || args.bridge_only;
 
-    !open_new_instance && any_is_running && !is_local_scene
+    !open_new_instance && (any_is_running || bridge_only) && !is_local_scene
 }
 
 impl AppLaunchStep {
