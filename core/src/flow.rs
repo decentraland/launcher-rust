@@ -478,7 +478,6 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     }
 }
 
-#[derive(Clone)]
 struct AppLaunchStep {
     installs_hub: Arc<Mutex<InstallsHub>>,
     running_instances: Arc<Mutex<RunningInstances>>,
@@ -568,12 +567,8 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
     }
 }
 
-/// Whether an incoming deeplink should be handed off to an already-running Explorer
-/// through the file bridge instead of launching a fresh client.
-///
-/// This is the exact condition that also puts the launcher into windowless pass-through
-/// mode: the user clicked a `decentraland://` link while a client is running, and they
-/// did not ask for a new instance or a local scene.
+/// Return whether an incoming deeplink should be handed off to an already-running
+/// Explorer through the file bridge instead of launching a fresh client.
 fn should_use_deeplink_bridge(deeplink: &DeepLink, args: &Args, any_is_running: bool) -> bool {
     let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
         || deeplink.has_true_value(ARG_MULTI_INSTANCE)
