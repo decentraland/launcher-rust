@@ -22,6 +22,8 @@ pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instan
 // Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
 pub const ARG_MULTI_INSTANCE: &str = "multi-instance";
 pub const ARG_LOCAL_SCENE: &str = "local-scene";
+/// When present, run in bridge-only mode (no client UI).
+/// Used for deeplink/file-bridge integrations and headless operations.
 pub const ARG_BRIDGE_ONLY: &str = "bridge-only";
 
 #[derive(Debug)]
