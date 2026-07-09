@@ -2,13 +2,23 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
+use serde::Serialize;
 use tokio::fs::remove_file;
+use tokio::time::error::Elapsed;
 use tokio::time::sleep;
-
 use tokio_util::sync::CancellationToken;
 
-use crate::{installs::deeplink_bridge_path, protocols::DeepLink};
-use serde::Serialize;
+use crate::{
+    channel::EventChannel,
+    environment::{
+        AppEnvironment, Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
+        ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
+    },
+    errors::{StepError, StepResult},
+    installs::deeplink_bridge_path,
+    protocols::DeepLink,
+    types::{Status, Step},
+};
 
 #[derive(Serialize)]
 struct DeepLinkBridgeDTO {
@@ -82,6 +92,63 @@ fn try_bring_explorer_to_front() {
     }
 }
 
+pub fn should_use_deeplink_bridge(
+    deeplink: &DeepLink,
+    args: &Args,
+    any_is_running: bool,
+) -> bool {
+    let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
+        || deeplink.has_true_value(ARG_MULTI_INSTANCE)
+        || args.open_new_client_instance;
+    let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
+    let bridge_only = deeplink.has_true_value(ARG_BRIDGE_ONLY) || args.bridge_only;
+
+    !open_new_instance && (any_is_running || bridge_only) && !is_local_scene
+}
+
+pub async fn should_use_deeplink_bridge_for(
+    deeplink: &DeepLink,
+    any_is_running: bool,
+) -> anyhow::Result<bool> {
+    let args = AppEnvironment::cmd_args();
+    Ok(should_use_deeplink_bridge(deeplink, &args, any_is_running))
+}
+
+pub async fn execute_passthrough<T: EventChannel>(
+    channel: &T,
+    deeplink: &DeepLink,
+) -> StepResult {
+    const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
+    type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
+
+    channel.send(Status::State {
+        step: Step::DeeplinkOpening,
+    })?;
+
+    let token = CancellationToken::new();
+
+    match tokio::time::timeout(
+        OPEN_DEEPLINK_TIMEOUT,
+        place_deeplink_and_wait_until_consumed(deeplink.clone(), token.child_token()),
+    )
+    .await
+    {
+        OpenResult::Ok(result) => match result {
+            PlaceDeeplinkResult::Ok(()) => StepResult::Ok(()),
+            PlaceDeeplinkResult::Err(error) => match error {
+                PlaceDeeplinkError::SerializeError | PlaceDeeplinkError::IOError => {
+                    StepResult::Err(error.into())
+                }
+                PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
+            },
+        },
+        OpenResult::Err(_) => {
+            token.cancel();
+            StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
+        }
+    }
+}
+
 pub async fn place_deeplink_and_wait_until_consumed(
     deeplink: DeepLink,
     token: CancellationToken,
@@ -119,4 +186,79 @@ pub async fn place_deeplink_and_wait_until_consumed(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::environment::Args;
+    use crate::protocols::DeepLink;
+    use std::collections::HashMap;
+
+    fn deeplink(flags: &[(&str, &str)]) -> DeepLink {
+        let mut map: HashMap<String, String> = HashMap::new();
+        for (key, value) in flags {
+            map.insert((*key).to_owned(), (*value).to_owned());
+        }
+        DeepLink::from_args(map)
+    }
+
+    fn args(argv: &[&str]) -> Args {
+        Args::parse(argv.iter().map(|s| (*s).to_owned()))
+    }
+
+    #[test]
+    fn uses_bridge_when_running_and_no_special_flags() {
+        assert!(should_use_deeplink_bridge(
+            &deeplink(&[]),
+            &args(&["app"]),
+            true
+        ));
+    }
+
+    #[test]
+    fn no_bridge_when_no_instance_running() {
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[]),
+            &args(&["app"]),
+            false
+        ));
+    }
+
+    #[test]
+    fn no_bridge_when_new_instance_requested_via_deeplink() {
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, "true")]),
+            &args(&["app"]),
+            true
+        ));
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[(ARG_MULTI_INSTANCE, "true")]),
+            &args(&["app"]),
+            true
+        ));
+    }
+
+    #[test]
+    fn no_bridge_when_new_instance_requested_via_args() {
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[]),
+            &args(&["app", "--open-deeplink-in-new-instance"]),
+            true
+        ));
+    }
+
+    #[test]
+    fn no_bridge_for_local_scene() {
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[(ARG_LOCAL_SCENE, "true")]),
+            &args(&["app"]),
+            true
+        ));
+        assert!(!should_use_deeplink_bridge(
+            &deeplink(&[]),
+            &args(&["app", "--local-scene"]),
+            true
+        ));
+    }
 }
