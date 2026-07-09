@@ -186,6 +186,9 @@ impl LaunchFlow {
         // handoff: update the deeplink bridge file and stop here instead of running the
         // fetch/download/install flow again.
         if handled_by_passthrough.unwrap_or(false) {
+            info!(
+                "Deeplink handled by passthrough (an Explorer instance is already running); skipping further steps"
+            );
             return StepResult::Ok(());
         }
 
