@@ -82,12 +82,12 @@ pub struct LaunchFlow {
 
 impl LaunchFlow {
     pub fn new(
-        installs_hub: &Arc<Mutex<InstallsHub>>,
+        installs_hub: Arc<Mutex<InstallsHub>>,
         analytics: Arc<Mutex<Analytics>>,
-        running_instances: &Arc<Mutex<RunningInstances>>,
+        running_instances: Arc<Mutex<RunningInstances>>,
     ) -> Self {
         let app_launch_step = AppLaunchStep {
-            installs_hub: installs_hub.clone(),
+            installs_hub,
             running_instances: running_instances.clone(),
         };
 
@@ -101,7 +101,7 @@ impl LaunchFlow {
                 running_instances: running_instances.clone(),
             },
             deeplink_passthrough_step: DeeplinkPassthroughStep {
-                app_launch_step: app_launch_step.clone(),
+                running_instances,
             },
             app_launch_step,
             analytics,
@@ -113,7 +113,11 @@ impl LaunchFlow {
             return false;
         };
 
-        match self.app_launch_step.should_use_deeplink_bridge_for(&deeplink).await {
+        match self
+            .deeplink_passthrough_step
+            .should_use_deeplink_bridge_for(&deeplink)
+            .await
+        {
             std::result::Result::Ok(should_use_bridge) => should_use_bridge,
             Err(error) => {
                 log::warn!("Cannot determine deeplink passthrough state: {error}");
@@ -481,7 +485,56 @@ struct AppLaunchStep {
 }
 
 struct DeeplinkPassthroughStep {
-    app_launch_step: AppLaunchStep,
+    running_instances: Arc<Mutex<RunningInstances>>,
+}
+
+impl DeeplinkPassthroughStep {
+    async fn is_any_instance_running(&self) -> anyhow::Result<bool> {
+        let guard = self.running_instances.lock().await;
+        guard.any_is_running()
+    }
+
+    async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
+        let args = AppEnvironment::cmd_args();
+        let any_is_running = self.is_any_instance_running().await?;
+        Ok(should_use_deeplink_bridge(deeplink, &args, any_is_running))
+    }
+
+    async fn execute_passthrough_internal<T: EventChannel>(
+        &self,
+        channel: &T,
+        deeplink: &DeepLink,
+    ) -> StepResult {
+        const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
+        type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
+
+        channel.send(Status::State {
+            step: Step::DeeplinkOpening,
+        })?;
+
+        let token = CancellationToken::new();
+
+        match tokio::time::timeout(
+            OPEN_DEEPLINK_TIMEOUT,
+            place_deeplink_and_wait_until_consumed(deeplink.clone(), token.child_token()),
+        )
+        .await
+        {
+            OpenResult::Ok(result) => match result {
+                PlaceDeeplinkResult::Ok(()) => StepResult::Ok(()),
+                PlaceDeeplinkResult::Err(error) => match error {
+                    PlaceDeeplinkError::SerializeError | PlaceDeeplinkError::IOError => {
+                        StepResult::Err(error.into())
+                    }
+                    PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
+                },
+            },
+            OpenResult::Err(_) => {
+                token.cancel();
+                StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
+            }
+        }
+    }
 }
 
 impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
@@ -490,10 +543,7 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
             return Ok(true);
         };
 
-        let use_bridge = self
-            .app_launch_step
-            .should_use_deeplink_bridge_for(&deeplink)
-            .await?;
+        let use_bridge = self.should_use_deeplink_bridge_for(&deeplink).await?;
         Ok(!use_bridge)
     }
 
@@ -512,8 +562,7 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
             return StepResultTyped::Ok(false);
         };
 
-        self.app_launch_step
-            .execute_passthrough_internal(channel, &deeplink)
+        self.execute_passthrough_internal(channel, &deeplink)
             .await?;
         StepResultTyped::Ok(true)
     }
