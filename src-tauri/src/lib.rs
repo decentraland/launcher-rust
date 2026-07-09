@@ -83,9 +83,6 @@ async fn launch(
     launch_internal(app, state, channel).await
 }
 
-/// Show and focus the launcher's main window. The window starts hidden (see
-/// `tauri.conf.json`) so that pure deeplink pass-throughs to a running Explorer stay
-/// windowless; every other path reveals it here.
 fn show_main_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         error!("Cannot find main window to show");
