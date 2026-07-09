@@ -190,17 +190,14 @@ pub async fn place_deeplink_and_wait_until_consumed(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
     use crate::environment::Args;
     use crate::protocols::DeepLink;
-    use std::collections::HashMap;
 
-    fn deeplink(flags: &[(&str, &str)]) -> DeepLink {
-        let mut map: HashMap<String, String> = HashMap::new();
-        for (key, value) in flags {
-            map.insert((*key).to_owned(), (*value).to_owned());
-        }
-        DeepLink::from_args(map)
+    fn deeplink(value: &str) -> DeepLink {
+        DeepLink::from_string(value.to_string()).unwrap()
     }
 
     fn args(argv: &[&str]) -> Args {
@@ -210,7 +207,7 @@ mod tests {
     #[test]
     fn uses_bridge_when_running_and_no_special_flags() {
         assert!(should_use_deeplink_bridge(
-            &deeplink(&[]),
+            &deeplink("decentraland://"),
             &args(&["app"]),
             true
         ));
@@ -219,7 +216,7 @@ mod tests {
     #[test]
     fn no_bridge_when_no_instance_running() {
         assert!(!should_use_deeplink_bridge(
-            &deeplink(&[]),
+            &deeplink("decentraland://"),
             &args(&["app"]),
             false
         ));
@@ -228,12 +225,12 @@ mod tests {
     #[test]
     fn no_bridge_when_new_instance_requested_via_deeplink() {
         assert!(!should_use_deeplink_bridge(
-            &deeplink(&[(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, "true")]),
+            &deeplink(&format!("decentraland://{}=true", ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)),
             &args(&["app"]),
             true
         ));
         assert!(!should_use_deeplink_bridge(
-            &deeplink(&[(ARG_MULTI_INSTANCE, "true")]),
+            &deeplink(&format!("decentraland://{}=true", ARG_MULTI_INSTANCE)),
             &args(&["app"]),
             true
         ));
@@ -242,7 +239,7 @@ mod tests {
     #[test]
     fn no_bridge_when_new_instance_requested_via_args() {
         assert!(!should_use_deeplink_bridge(
-            &deeplink(&[]),
+            &deeplink("decentraland://"),
             &args(&["app", "--open-deeplink-in-new-instance"]),
             true
         ));
@@ -251,12 +248,12 @@ mod tests {
     #[test]
     fn no_bridge_for_local_scene() {
         assert!(!should_use_deeplink_bridge(
-            &deeplink(&[(ARG_LOCAL_SCENE, "true")]),
+            &deeplink(&format!("decentraland://{}=true", ARG_LOCAL_SCENE)),
             &args(&["app"]),
             true
         ));
         assert!(!should_use_deeplink_bridge(
-            &deeplink(&[]),
+            &deeplink("decentraland://"),
             &args(&["app", "--local-scene"]),
             true
         ));

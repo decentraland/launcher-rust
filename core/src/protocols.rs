@@ -11,6 +11,7 @@ const PROTOCOL_PREFIX: &str = "decentraland://";
 #[derive(Default, Clone)]
 pub struct Protocol {}
 
+#[derive(Debug)]
 pub enum DeepLinkCreateError {
     WrongPrefix { original_content: String },
 }
@@ -74,11 +75,8 @@ impl DeepLink {
     }
 
     #[cfg(test)]
-    pub(crate) const fn from_args(args: HashMap<String, String>) -> Self {
-        Self {
-            original: String::new(),
-            args,
-        }
+    pub(crate) fn from_string(value: impl Into<String>) -> Result<Self, DeepLinkCreateError> {
+        Self::new(value.into())
     }
 }
 
