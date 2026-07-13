@@ -53,8 +53,6 @@ impl DeepLink {
                     map.insert(key.into_owned(), value.into_owned());
                 }
 
-                log::info!("[deeplink-debug] parsed query {query:?} -> args map {map:?}");
-
                 map
             }
             None => {
@@ -65,16 +63,11 @@ impl DeepLink {
     }
 
     pub fn has_true_value(&self, key: &str) -> bool {
-        let result = if let Some(value) = self.args.get(key) {
+        if let Some(value) = self.args.get(key) {
             value == "true"
         } else {
             false
-        };
-        log::info!(
-            "[deeplink-debug] has_true_value({key:?}) = {result} (stored value: {:?})",
-            self.args.get(key)
-        );
-        result
+        }
     }
 
     pub fn original(&self) -> &str {
