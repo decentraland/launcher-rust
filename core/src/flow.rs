@@ -558,8 +558,13 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         match Protocol::value() {
             Some(deeplink) => {
                 if self.should_use_deeplink_bridge_for(&deeplink).await? {
+                    log::info!("[deeplink-debug] AppLaunchStep: bridging deeplink to running instance (no new instance)");
                     execute_passthrough(channel, &deeplink).await
                 } else {
+                    log::info!(
+                        "[deeplink-debug] AppLaunchStep: launching NEW Explorer instance for deeplink {:?}",
+                        deeplink.original()
+                    );
                     self.installs_hub
                         .lock()
                         .await

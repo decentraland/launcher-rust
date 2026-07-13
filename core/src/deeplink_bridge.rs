@@ -112,7 +112,20 @@ pub fn should_use_deeplink_bridge(
     let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
     let bridge_only = deeplink.has_true_value(ARG_BRIDGE_ONLY) || args.bridge_only;
 
-    !open_new_instance && (any_is_running || bridge_only) && !is_local_scene
+    let use_bridge = !open_new_instance && (any_is_running || bridge_only) && !is_local_scene;
+
+    log::info!(
+        "[deeplink-debug] should_use_deeplink_bridge -> {use_bridge} | deeplink={:?} | \
+         open_new_instance={open_new_instance} (multi_instance_deeplink={}, arg_open_new={}) | \
+         bridge_only={bridge_only} | is_local_scene={is_local_scene} | any_is_running={any_is_running} \
+         => {}",
+        deeplink.original(),
+        deeplink.has_true_value(ARG_MULTI_INSTANCE),
+        args.open_new_client_instance,
+        if use_bridge { "BRIDGE to running instance" } else { "LAUNCH new instance" },
+    );
+
+    use_bridge
 }
 
 pub async fn should_use_deeplink_bridge_for(
