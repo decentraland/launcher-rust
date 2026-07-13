@@ -24,7 +24,7 @@ pub const ARG_MULTI_INSTANCE: &str = "multi-instance";
 pub const ARG_LOCAL_SCENE: &str = "local-scene";
 /// When present, run in bridge-only mode (no client UI).
 /// Used for deeplink/file-bridge integrations and headless operations.
-pub const ARG_BRIDGE_ONLY: &str = "bridge-only";
+pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
