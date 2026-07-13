@@ -145,11 +145,19 @@ pub async fn execute_passthrough<T: EventChannel>(
         step: Step::DeeplinkOpening,
     })?;
 
+    // In bridge-only mode the deeplink may be consumed by a process the launcher does not manage
+    // (e.g. an Explorer launched from the Unity editor). We must not activate the packaged app once
+    // the file is consumed, because `open <app>` would launch a spurious new instance when the
+    // packaged app is not the consumer. Bringing the window to front is only appropriate for the
+    // regular passthrough case, where the running instance is one the launcher itself started.
+    let bridge_only = deeplink.has_true_value(ARG_BRIDGE_ONLY) || AppEnvironment::cmd_args().bridge_only;
+    let bring_to_front = !bridge_only;
+
     let token = CancellationToken::new();
 
     match tokio::time::timeout(
         OPEN_DEEPLINK_TIMEOUT,
-        place_deeplink_and_wait_until_consumed(deeplink.clone(), token.child_token()),
+        place_deeplink_and_wait_until_consumed(deeplink.clone(), token.child_token(), bring_to_front),
     )
     .await
     {
@@ -176,6 +184,7 @@ pub async fn execute_passthrough<T: EventChannel>(
 pub async fn place_deeplink_and_wait_until_consumed(
     deeplink: DeepLink,
     token: CancellationToken,
+    bring_to_front: bool,
 ) -> PlaceDeeplinkResult {
     let path = deeplink_bridge_path();
 
@@ -213,9 +222,17 @@ pub async fn place_deeplink_and_wait_until_consumed(
             },
             () = sleep(Duration::from_millis(50)) => {
                 if !path.exists() {
+                    if !bring_to_front {
+                        log::info!(
+                            "place_deeplink_and_wait_until_consumed: bridge file consumed in bridge-only mode; \
+                             NOT activating the packaged Explorer (the consumer owns focus)"
+                        );
+                        break;
+                    }
+
                     log::info!(
                         "place_deeplink_and_wait_until_consumed: bridge file was removed (treated as consumed); \
-                         calling try_bring_explorer_to_front (WARNING: this may open a NEW instance if none is running)"
+                         calling try_bring_explorer_to_front"
                     );
 
                     // Bring the Explorer window to the front only in case if the deeplink was consumed
