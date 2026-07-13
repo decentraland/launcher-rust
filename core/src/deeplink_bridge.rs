@@ -55,7 +55,16 @@ impl From<std::io::Error> for PlaceDeeplinkError {
     }
 }
 
-pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
+/// How `place_deeplink_and_wait_until_consumed` finished waiting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeeplinkConsumeOutcome {
+    /// The bridge file disappeared, i.e. some process picked up the deeplink.
+    Consumed,
+    /// Waiting was cancelled before the file was consumed.
+    Cancelled,
+}
+
+pub type PlaceDeeplinkResult = Result<DeeplinkConsumeOutcome, PlaceDeeplinkError>;
 
 /// Uses `open <path-to-.app>` so Launch Services activates the already-running instance by bundle id.
 /// Since the function internally uses "open" command and if instance is not running then it may accidentally open new instance of the app.
@@ -157,12 +166,20 @@ pub async fn execute_passthrough<T: EventChannel>(
 
     match tokio::time::timeout(
         OPEN_DEEPLINK_TIMEOUT,
-        place_deeplink_and_wait_until_consumed(deeplink.clone(), token.child_token(), bring_to_front),
+        place_deeplink_and_wait_until_consumed(deeplink.clone(), token.child_token()),
     )
     .await
     {
         OpenResult::Ok(result) => match result {
-            PlaceDeeplinkResult::Ok(()) => StepResult::Ok(()),
+            PlaceDeeplinkResult::Ok(outcome) => {
+                // Once the deeplink is placed and consumed, activate the packaged Explorer window,
+                // but skip it in bridge-only mode (the consumer owns focus).
+                if outcome == DeeplinkConsumeOutcome::Consumed && bring_to_front {
+                    #[cfg(target_os = "macos")]
+                    try_bring_explorer_to_front();
+                }
+                StepResult::Ok(())
+            }
             PlaceDeeplinkResult::Err(error) => match error {
                 PlaceDeeplinkError::SerializeError | PlaceDeeplinkError::IOError => {
                     StepResult::Err(error.into())
@@ -184,7 +201,6 @@ pub async fn execute_passthrough<T: EventChannel>(
 pub async fn place_deeplink_and_wait_until_consumed(
     deeplink: DeepLink,
     token: CancellationToken,
-    bring_to_front: bool,
 ) -> PlaceDeeplinkResult {
     let path = deeplink_bridge_path();
 
@@ -207,7 +223,7 @@ pub async fn place_deeplink_and_wait_until_consumed(
         File::create(&path)?.write_all(json.as_bytes())?;
     }
     log::info!(
-        "place_deeplink_and_wait_until_consumed: wrote bridge file at {}, waiting for an Explorer to consume it",
+        "place_deeplink_and_wait_until_consumed: wrote bridge file at {}, waiting for it to be consumed",
         path.display()
     );
 
@@ -218,34 +234,16 @@ pub async fn place_deeplink_and_wait_until_consumed(
                 log::info!("place_deeplink_and_wait_until_consumed: cancelled before consumption, cleaning up bridge file");
                 // Clean up on cancel
                 let _ = remove_file(&path).await;
-                break;
+                return Ok(DeeplinkConsumeOutcome::Cancelled);
             },
             () = sleep(Duration::from_millis(50)) => {
                 if !path.exists() {
-                    if !bring_to_front {
-                        log::info!(
-                            "place_deeplink_and_wait_until_consumed: bridge file consumed in bridge-only mode; \
-                             NOT activating the packaged Explorer (the consumer owns focus)"
-                        );
-                        break;
-                    }
-
-                    log::info!(
-                        "place_deeplink_and_wait_until_consumed: bridge file was removed (treated as consumed); \
-                         calling try_bring_explorer_to_front"
-                    );
-
-                    // Bring the Explorer window to the front only in case if the deeplink was consumed
-                    #[cfg(target_os = "macos")]
-                    try_bring_explorer_to_front();
-
-                    break;
+                    log::info!("place_deeplink_and_wait_until_consumed: bridge file was removed (consumed)");
+                    return Ok(DeeplinkConsumeOutcome::Consumed);
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
