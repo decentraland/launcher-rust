@@ -62,6 +62,9 @@ pub type PlaceDeeplinkResult = Result<(), PlaceDeeplinkError>;
 /// Keep it in mind using this function.
 #[cfg(target_os = "macos")]
 fn try_bring_explorer_to_front() {
+    log::info!(
+        "try_bring_explorer_to_front: invoking `open <app>` — if no Explorer is currently running this will LAUNCH a new instance"
+    );
     let app_path = match crate::installs::get_explorer_launch_path(None) {
         Ok(p) => p,
         Err(e) => {
@@ -103,7 +106,24 @@ pub fn should_use_deeplink_bridge(
     let is_local_scene = deeplink.has_true_value(ARG_LOCAL_SCENE) || args.local_scene;
     let bridge_only = deeplink.has_true_value(ARG_BRIDGE_ONLY) || args.bridge_only;
 
-    !open_new_instance && (any_is_running || bridge_only) && !is_local_scene
+    let use_bridge = !open_new_instance && (any_is_running || bridge_only) && !is_local_scene;
+
+    log::info!(
+        "should_use_deeplink_bridge -> {use_bridge} | deeplink={:?} | open_new_instance={open_new_instance} \
+         (deeplink_new_instance={}, deeplink_multi_instance={}, arg_open_new={}) | \
+         is_local_scene={is_local_scene} (deeplink={}, arg={}) | \
+         bridge_only={bridge_only} (deeplink={}, arg={}) | any_is_running={any_is_running}",
+        deeplink.original(),
+        deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE),
+        deeplink.has_true_value(ARG_MULTI_INSTANCE),
+        args.open_new_client_instance,
+        deeplink.has_true_value(ARG_LOCAL_SCENE),
+        args.local_scene,
+        deeplink.has_true_value(ARG_BRIDGE_ONLY),
+        args.bridge_only,
+    );
+
+    use_bridge
 }
 
 pub async fn should_use_deeplink_bridge_for(
@@ -143,6 +163,10 @@ pub async fn execute_passthrough<T: EventChannel>(
             },
         },
         OpenResult::Err(_) => {
+            log::warn!(
+                "execute_passthrough: deeplink bridge timed out after {OPEN_DEEPLINK_TIMEOUT:?} \
+                 (no Explorer consumed the bridge file); returning E3001 and NOT launching a new instance"
+            );
             token.cancel();
             StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
         }
@@ -155,6 +179,16 @@ pub async fn place_deeplink_and_wait_until_consumed(
 ) -> PlaceDeeplinkResult {
     let path = deeplink_bridge_path();
 
+    // If a stale bridge file is left over from a previous run, its later disappearance could be
+    // misread as "consumed by a running Explorer". Log whether one already exists before we write.
+    if path.exists() {
+        log::warn!(
+            "place_deeplink_and_wait_until_consumed: a bridge file already exists at {} before writing \
+             (possible stale file from a previous run)",
+            path.display()
+        );
+    }
+
     // Write deeplink to file
     {
         let dto = DeepLinkBridgeDTO {
@@ -163,17 +197,26 @@ pub async fn place_deeplink_and_wait_until_consumed(
         let json = serde_json::to_string(&dto)?;
         File::create(&path)?.write_all(json.as_bytes())?;
     }
+    log::info!(
+        "place_deeplink_and_wait_until_consumed: wrote bridge file at {}, waiting for an Explorer to consume it",
+        path.display()
+    );
 
     // Wait until file is deleted or operation is cancelled
     loop {
         tokio::select! {
             () = token.cancelled() => {
+                log::info!("place_deeplink_and_wait_until_consumed: cancelled before consumption, cleaning up bridge file");
                 // Clean up on cancel
                 let _ = remove_file(&path).await;
                 break;
             },
             () = sleep(Duration::from_millis(50)) => {
                 if !path.exists() {
+                    log::info!(
+                        "place_deeplink_and_wait_until_consumed: bridge file was removed (treated as consumed); \
+                         calling try_bring_explorer_to_front (WARNING: this may open a NEW instance if none is running)"
+                    );
 
                     // Bring the Explorer window to the front only in case if the deeplink was consumed
                     #[cfg(target_os = "macos")]
