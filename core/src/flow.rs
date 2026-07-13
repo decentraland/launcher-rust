@@ -498,15 +498,10 @@ impl DeeplinkPassthroughStep {
 impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
     async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let Some(deeplink) = Protocol::value() else {
-            log::info!("DeeplinkPassthroughStep::is_complete: no deeplink present, step is complete (skipped)");
             return Ok(true);
         };
 
         let use_bridge = self.should_use_deeplink_bridge_for(&deeplink).await?;
-        log::info!(
-            "DeeplinkPassthroughStep::is_complete: use_bridge={use_bridge} -> step will {}",
-            if use_bridge { "RUN passthrough (bridge)" } else { "be SKIPPED (fall through to fetch/install/launch)" }
-        );
         Ok(!use_bridge)
     }
 
@@ -522,11 +517,9 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
         _: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResultTyped<bool> {
         let Some(deeplink) = Protocol::value() else {
-            log::info!("DeeplinkPassthroughStep::execute: no deeplink present, returning handled=false");
             return StepResultTyped::Ok(false);
         };
 
-        log::info!("DeeplinkPassthroughStep::execute: running bridge passthrough for deeplink {:?}", deeplink.original());
         execute_passthrough(channel, &deeplink).await?;
         StepResultTyped::Ok(true)
     }
@@ -565,13 +558,8 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         match Protocol::value() {
             Some(deeplink) => {
                 if self.should_use_deeplink_bridge_for(&deeplink).await? {
-                    log::info!("AppLaunchStep::execute: bridge path chosen, running passthrough (NOT launching a new instance)");
                     execute_passthrough(channel, &deeplink).await
                 } else {
-                    log::info!(
-                        "AppLaunchStep::execute: bridge NOT chosen -> LAUNCHING A NEW Explorer instance with deeplink {:?}",
-                        deeplink.original()
-                    );
                     self.installs_hub
                         .lock()
                         .await
@@ -581,7 +569,6 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                 }
             }
             None => {
-                log::info!("AppLaunchStep::execute: no deeplink present -> launching Explorer normally (new instance)");
                 //TODO passed version if specified manually from upper flow
                 self.installs_hub
                     .lock()
