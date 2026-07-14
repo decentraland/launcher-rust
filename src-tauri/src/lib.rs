@@ -299,6 +299,20 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
                 }
             }
         });
+
+        // Belt-and-suspenders: the plugin also buffers the URL the app was launched
+        // with. If `on_open_url` never fires on a cold relaunch, this tells us whether
+        // the OS handed the URL to the process at all (empty here == lost at the OS
+        // layer, before the launcher could see it).
+        match a.deep_link().get_current() {
+            Ok(Some(urls)) => info!(
+                "[deeplink-debug] get_current at startup: {} url(s): {:?}",
+                urls.len(),
+                urls
+            ),
+            Ok(None) => info!("[deeplink-debug] get_current at startup: None"),
+            Err(e) => error!("[deeplink-debug] get_current at startup failed: {}", e),
+        }
     }
 }
 
