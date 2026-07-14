@@ -278,6 +278,31 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
 
     #[cfg(target_os = "macos")]
     {
+        // The deep-link plugin buffers the URL the app was launched with. When the
+        // launch URL is delivered *before* `on_open_url` is registered (the reproducible
+        // second-login case), the plugin does not replay it through the callback — it is
+        // only retrievable here via `get_current`. Seed `Protocol` from it so the
+        // deeplink is not silently lost; the `on_open_url` handler below still covers
+        // URLs that arrive *after* registration.
+        match a.deep_link().get_current() {
+            Ok(Some(urls)) => {
+                info!(
+                    "[deeplink-debug] get_current at startup: {} url(s): {:?}",
+                    urls.len(),
+                    urls
+                );
+                if let Some(url) = urls.first() {
+                    protocol.try_assign_value(url.to_string());
+                    info!(
+                        "[deeplink-debug] get_current: seeded Protocol; present now: {}",
+                        Protocol::value().is_some()
+                    );
+                }
+            }
+            Ok(None) => info!("[deeplink-debug] get_current at startup: None"),
+            Err(e) => error!("[deeplink-debug] get_current at startup failed: {}", e),
+        }
+
         let protocol = protocol.clone();
         a.deep_link().on_open_url(move |event| {
             let urls = event.urls();
@@ -299,20 +324,6 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
                 }
             }
         });
-
-        // Belt-and-suspenders: the plugin also buffers the URL the app was launched
-        // with. If `on_open_url` never fires on a cold relaunch, this tells us whether
-        // the OS handed the URL to the process at all (empty here == lost at the OS
-        // layer, before the launcher could see it).
-        match a.deep_link().get_current() {
-            Ok(Some(urls)) => info!(
-                "[deeplink-debug] get_current at startup: {} url(s): {:?}",
-                urls.len(),
-                urls
-            ),
-            Ok(None) => info!("[deeplink-debug] get_current at startup: None"),
-            Err(e) => error!("[deeplink-debug] get_current at startup failed: {}", e),
-        }
     }
 }
 
