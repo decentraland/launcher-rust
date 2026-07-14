@@ -106,6 +106,11 @@ async fn launch_internal(
 
     let flow_state = guard.state.clone();
 
+    info!(
+        "[deeplink-debug] launch invoked; deeplink present at launch time: {}",
+        Protocol::value().is_some()
+    );
+
     // When a deeplink arrives while the Explorer is already running, run windowless:
     // don't show the launcher window and don't check for launcher updates — just pass
     // the deeplink through to the running client.
@@ -264,16 +269,30 @@ async fn update_if_needed_and_restart(
 fn setup_deeplink(a: &App, protocol: &Protocol) {
     // Support reading from cmd args on both macOS and Windows
     let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
+    info!("[deeplink-debug] setup_deeplink: raw cmd args: {:?}", args);
     protocol.try_assign_value_from_vec(&args);
+    info!(
+        "[deeplink-debug] setup_deeplink: deeplink present after argv parse: {}",
+        Protocol::value().is_some()
+    );
 
     #[cfg(target_os = "macos")]
     {
         let protocol = protocol.clone();
         a.deep_link().on_open_url(move |event| {
             let urls = event.urls();
+            info!(
+                "[deeplink-debug] on_open_url fired with {} url(s): {:?}",
+                urls.len(),
+                urls
+            );
             match urls.first() {
                 Some(url) => {
                     protocol.try_assign_value(url.to_string());
+                    info!(
+                        "[deeplink-debug] on_open_url: assigned deeplink; present now: {}",
+                        Protocol::value().is_some()
+                    );
                 }
                 None => {
                     error!("No values are provided in deep link");
@@ -303,12 +322,29 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
 #[allow(clippy::expect_used)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .setup(setup)
         .invoke_handler(tauri::generate_handler![launch, retry])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    app.run(move |_app_handle, event| {
+        // [deeplink-debug] macOS can also deliver deeplinks through the run loop
+        // (RunEvent::Opened), which the launcher currently does not consume. Log it
+        // so we can tell whether the second-login deeplink arrives here instead of
+        // (or in addition to) `on_open_url`.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Opened { urls } = &event {
+            info!(
+                "[deeplink-debug] RunEvent::Opened received with {} url(s): {:?}",
+                urls.len(),
+                urls
+            );
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = &event;
+    });
 }
