@@ -97,6 +97,10 @@ pub fn campaign_anon_user_id_storage_path() -> PathBuf {
     explorer_path().join("campaign-anon-user-id.txt")
 }
 
+pub fn startup_location_path() -> PathBuf {
+    explorer_path().join("startup-location.txt")
+}
+
 pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
 }
@@ -534,7 +538,7 @@ impl InstallsHub {
         }
 
         if let Some(anon_id) =
-            crate::auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
+            crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
         {
             output.push("--campaign_anon_user_id".to_string());
             output.push(anon_id.as_str().to_owned());
