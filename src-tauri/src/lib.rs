@@ -83,19 +83,6 @@ async fn launch(
     launch_internal(app, state, channel).await
 }
 
-fn show_main_window(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        error!("Cannot find main window to show");
-        return;
-    };
-    if let Err(e) = window.show() {
-        error!("Failed to show main window: {}", e);
-    }
-    if let Err(e) = window.set_focus() {
-        error!("Failed to focus main window: {}", e);
-    }
-}
-
 async fn launch_internal(
     app: AppHandle,
     state: State<'_, MutState>,
@@ -106,19 +93,8 @@ async fn launch_internal(
 
     let flow_state = guard.state.clone();
 
-    // When a deeplink arrives while the Explorer is already running, run windowless:
-    // don't show the launcher window and don't check for launcher updates — just pass
-    // the deeplink through to the running client.
-    let windowless = guard.flow.is_deeplink_passthrough().await;
-
-    if windowless {
-        info!("Deeplink pass-through to a running Explorer detected; running windowless (no window, skipping update check)");
-    } else {
-        show_main_window(&app);
-
-        if let Err(e) = update_if_needed_and_restart(&app, &guard, &status_channel).await {
-            error!("Cannot update the launcher: {}", e);
-        }
+    if let Err(e) = update_if_needed_and_restart(&app, &guard, &status_channel).await {
+        error!("Cannot update the launcher: {}", e);
     }
 
     guard
@@ -126,11 +102,6 @@ async fn launch_internal(
         .launch(&status_channel, flow_state)
         .await
         .map_err(|e| {
-            // The silent pass-through failed (e.g. the deeplink timed out): reveal the
-            // window so the user actually sees the error instead of nothing happening.
-            if windowless {
-                show_main_window(&app);
-            }
             status_channel.notify_error(&e);
             e.user_message
         })?;

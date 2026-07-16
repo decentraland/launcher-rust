@@ -101,24 +101,6 @@ impl LaunchFlow {
         }
     }
 
-    pub async fn is_deeplink_passthrough(&self) -> bool {
-        let Some(deeplink) = Protocol::value() else {
-            return false;
-        };
-
-        match self
-            .deeplink_passthrough_step
-            .should_use_deeplink_bridge_for(&deeplink)
-            .await
-        {
-            std::result::Result::Ok(should_use_bridge) => should_use_bridge,
-            Err(error) => {
-                log::warn!("Cannot determine deeplink passthrough state: {error}");
-                false
-            }
-        }
-    }
-
     pub async fn launch<T: EventChannel>(
         &self,
         channel: &T,
