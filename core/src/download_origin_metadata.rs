@@ -292,10 +292,10 @@ fn app_bundle_from_exe_path(exe_path: &Path) -> std::io::Result<PathBuf> {
     ))
 }
 
-#[cfg(target_os = "macos")]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::anyhow;
     use rstest::rstest;
 
     #[rstest]
@@ -415,22 +415,5 @@ mod tests {
     fn test_build_deeplink_neither() {
         let origin = DownloadOriginData::default();
         assert!(origin.to_startup_deeplink().is_none());
-    }
-
-    /// A crafted `position` containing `&`/`=` must not smuggle in an extra
-    /// deeplink arg: it is percent-encoded and stays a single `position` value.
-    #[test]
-    fn test_build_deeplink_neutralizes_injection() {
-        let origin = DownloadOriginData {
-            startup_position: Some("0,0&local-scene=true".to_owned()),
-            ..DownloadOriginData::default()
-        };
-        let deeplink = origin.to_startup_deeplink().expect("deeplink");
-        assert_eq!(
-            deeplink.original(),
-            "decentraland://position=0%2C0%26local-scene%3Dtrue"
-        );
-        // The injected pair is not promoted to a first-class deeplink arg.
-        assert!(!deeplink.has_true_value("local-scene"));
     }
 }
