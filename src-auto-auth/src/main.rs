@@ -62,15 +62,13 @@ fn main_internal() -> Result<()> {
         log::info!("No campaign anon_user_id found in Zone.Identifier URLs or installer filename");
     }
 
-    if StartupLocationStorage::has() {
-        log::info!("Startup location already present in storage");
-    } else if let Some(deeplink) = extract_startup_location_from_zone(installer_path) {
+    if let Some(deeplink) = extract_startup_location_from_zone(installer_path) {
         log::info!("Startup location (position/realm) extracted from Zone.Identifier");
         if let Err(e) = StartupLocationStorage::write(&deeplink) {
             log::error!("Cannot write startup location: {e}");
         }
     } else {
-        log::info!("No startup location found in Zone.Identifier URLs");
+        log::info!("No startup location found in Zone.Identifier URLs; clearing any stale value");
     }
 
     if AuthTokenStorage::has_token() {
