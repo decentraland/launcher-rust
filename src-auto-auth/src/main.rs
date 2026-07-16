@@ -132,6 +132,7 @@ fn extract_startup_location_from_zone(installer_path: &str) -> Option<String> {
             dcl_launcher_core::download_origin_metadata::DownloadOriginData::from_url(url)
                 .ok()?
                 .to_startup_deeplink()
+                .map(String::from)
         })
 }
 

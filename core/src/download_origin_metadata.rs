@@ -13,6 +13,12 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use auth_token_storage::AuthTokenStorage;
 
+use url::form_urlencoded;
+
+use crate::protocols::DeepLink;
+#[cfg(target_os = "macos")]
+use crate::protocols::Protocol;
+
 use anon_user_id::AnonUserId;
 #[cfg(target_os = "macos")]
 use campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
@@ -90,18 +96,19 @@ impl DownloadOriginData {
     ///
     /// Shared by the macOS (xattr) and Windows (`Zone.Identifier`) flows so both
     /// platforms handle position-only, realm-only, and both-present identically.
-    pub fn to_startup_deeplink(&self) -> Option<String> {
-        let mut segments: Vec<String> = Vec::new();
+    pub fn to_startup_deeplink(&self) -> Option<DeepLink> {
+        let mut serializer = form_urlencoded::Serializer::new(String::new());
         if let Some(ref position) = self.startup_position {
-            segments.push(format!("position={position}"));
+            serializer.append_pair("position", position);
         }
         if let Some(ref realm) = self.startup_realm {
-            segments.push(format!("realm={realm}"));
+            serializer.append_pair("realm", realm);
         }
-        if segments.is_empty() {
+        let query = serializer.finish();
+        if query.is_empty() {
             return None;
         }
-        Some(format!("decentraland://{}", segments.join("&")))
+        Some(DeepLink::from_query(&query))
     }
 }
 
@@ -153,10 +160,8 @@ impl DownloadOrigin {
 
                 if !StartupLocationStorage::has() {
                     if let Some(deeplink) = origin.to_startup_deeplink() {
-                        log::info!("Writing startup location: {deeplink}");
-                        if let Err(e) = StartupLocationStorage::write(&deeplink) {
-                            log::error!("Cannot write startup location: {e}");
-                        }
+                        log::info!("Seeding startup location deeplink: {}", deeplink.original());
+                        Protocol::store(deeplink);
                     }
                 }
             }
@@ -377,8 +382,8 @@ mod tests {
             ..DownloadOriginData::default()
         };
         assert_eq!(
-            origin.to_startup_deeplink().as_deref(),
-            Some("decentraland://position=42,-5&realm=myworld.dcl.eth")
+            origin.to_startup_deeplink().map(String::from).as_deref(),
+            Some("decentraland://position=42%2C-5&realm=myworld.dcl.eth")
         );
     }
 
@@ -389,8 +394,8 @@ mod tests {
             ..DownloadOriginData::default()
         };
         assert_eq!(
-            origin.to_startup_deeplink().as_deref(),
-            Some("decentraland://position=100,100")
+            origin.to_startup_deeplink().map(String::from).as_deref(),
+            Some("decentraland://position=100%2C100")
         );
     }
 
@@ -401,7 +406,7 @@ mod tests {
             ..DownloadOriginData::default()
         };
         assert_eq!(
-            origin.to_startup_deeplink().as_deref(),
+            origin.to_startup_deeplink().map(String::from).as_deref(),
             Some("decentraland://realm=eax.dcl.eth")
         );
     }
@@ -410,5 +415,22 @@ mod tests {
     fn test_build_deeplink_neither() {
         let origin = DownloadOriginData::default();
         assert!(origin.to_startup_deeplink().is_none());
+    }
+
+    /// A crafted `position` containing `&`/`=` must not smuggle in an extra
+    /// deeplink arg: it is percent-encoded and stays a single `position` value.
+    #[test]
+    fn test_build_deeplink_neutralizes_injection() {
+        let origin = DownloadOriginData {
+            startup_position: Some("0,0&local-scene=true".to_owned()),
+            ..DownloadOriginData::default()
+        };
+        let deeplink = origin.to_startup_deeplink().expect("deeplink");
+        assert_eq!(
+            deeplink.original(),
+            "decentraland://position=0%2C0%26local-scene%3Dtrue"
+        );
+        // The injected pair is not promoted to a first-class deeplink arg.
+        assert!(!deeplink.has_true_value("local-scene"));
     }
 }
