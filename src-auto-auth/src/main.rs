@@ -5,6 +5,7 @@ use std::path::Path;
 
 use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
+    download_origin_metadata::DownloadOriginData,
     download_origin_metadata::anon_user_id::AnonUserId,
     download_origin_metadata::auth_token_storage::AuthTokenStorage,
     download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
@@ -41,11 +42,17 @@ fn main_internal() -> Result<()> {
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
     log::info!("Installer path: {installer_path}");
 
+    let origin = read_zone_origin(installer_path);
+    if let Err(e) = &origin {
+        log::error!("Cannot read Zone.Identifier download-origin metadata: {e:?}");
+    }
+    let origin = origin.ok();
+
     if CampaignAnonUserIdStorage::has() {
         log::info!("Campaign anon_user_id already present in storage");
-    } else if let Some(anon_id) = extract_anon_user_id_from_zone(installer_path) {
+    } else if let Some(anon_id) = origin.as_ref().and_then(|o| o.campaign_anon_user_id.as_ref()) {
         log::info!("Campaign anon_user_id extracted from Zone.Identifier");
-        if let Err(e) = CampaignAnonUserIdStorage::write(&anon_id) {
+        if let Err(e) = CampaignAnonUserIdStorage::write(anon_id) {
             log::error!("Cannot write campaign anon user id: {e}");
         }
     } else if let Some(anon_id) = extract_anon_user_id_from_filename(installer_path) {
@@ -62,13 +69,14 @@ fn main_internal() -> Result<()> {
         log::info!("No campaign anon_user_id found in Zone.Identifier URLs or installer filename");
     }
 
-    if let Some(deeplink) = extract_startup_location_from_zone(installer_path) {
+    if let Some(deeplink) = origin.as_ref().and_then(DownloadOriginData::to_startup_deeplink) {
         log::info!("Startup location (position/realm) extracted from Zone.Identifier");
-        if let Err(e) = StartupLocationStorage::write(&deeplink) {
+        if let Err(e) = StartupLocationStorage::write(deeplink.original()) {
             log::error!("Cannot write startup location: {e}");
         }
     } else {
         log::info!("No startup location found in Zone.Identifier URLs; clearing any stale value");
+        StartupLocationStorage::clear();
     }
 
     if AuthTokenStorage::has_token() {
@@ -76,62 +84,46 @@ fn main_internal() -> Result<()> {
         return Ok(());
     }
 
-    let token = token_from_file_by_zone_attr(installer_path)?;
+    let token = origin
+        .and_then(|o| o.auth_token)
+        .ok_or_else(|| anyhow!("Token not found in Zone.Identifier download-origin metadata"))?;
     AuthTokenStorage::write_token(token.as_str())?;
     log::info!("Token write complete");
     Ok(())
 }
 
-/// Try to extract `anon_user_id` from Zone.Identifier URLs.
-fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
-    let content = match zone_identifier_content(installer_path).or_else(|e| {
-        log::error!("ADS read for anon_user_id failed via CAPI, fallback to PowerShell: {e:?}");
-        zone_identifier_content_powershell(installer_path)
-    }) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Cannot read Zone.Identifier for anon_user_id: {e:?}");
-            return None;
-        }
-    };
+fn read_zone_origin(installer_path: &str) -> Result<DownloadOriginData> {
+    let content = zone_identifier_content(installer_path)
+        .or_else(|e| {
+            log::error!("ADS read from direct CAPI failed, fallback to PowerShell: {e:?}");
+            zone_identifier_content_powershell(installer_path)
+        })
+        .with_context(|| {
+            anyhow!("Reading zone content from both CAPI and PowerShell failed for '{installer_path}'")
+        })?;
 
-    let zone_info = parsed_zone_identifier(&content);
-
-    [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
-        .into_iter()
-        .flatten()
-        .find_map(AnonUserId::from_url)
+    Ok(origin_from_zone_info(parsed_zone_identifier(&content)))
 }
 
-/// Try to extract the startup location (position + realm) from Zone.Identifier
-/// URLs, returning it encoded as a `decentraland://` deeplink.
-///
-/// Mirrors `extract_anon_user_id_from_zone` / `token_from_file_by_zone_attr`:
-/// each concern reads the ADS independently and pulls its value out of the same
-/// download-origin URLs.
-fn extract_startup_location_from_zone(installer_path: &str) -> Option<String> {
-    let content = match zone_identifier_content(installer_path).or_else(|e| {
-        log::error!("ADS read for startup location failed via CAPI, fallback to PowerShell: {e:?}");
-        zone_identifier_content_powershell(installer_path)
-    }) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Cannot read Zone.Identifier for startup location: {e:?}");
-            return None;
-        }
-    };
+/// Merge the download-origin data carried by the Zone.Identifier URLs, taking
+/// the first non-empty value for each field (host URL before referrer).
+fn origin_from_zone_info(zone_info: ZoneInfo) -> DownloadOriginData {
+    let mut result = DownloadOriginData::default();
 
-    let zone_info = parsed_zone_identifier(&content);
-
-    [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
+    for url in [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
         .into_iter()
         .flatten()
-        .find_map(|url| {
-            dcl_launcher_core::download_origin_metadata::DownloadOriginData::from_url(url)
-                .ok()?
-                .to_startup_deeplink()
-                .map(String::from)
-        })
+    {
+        if let Ok(parsed) = DownloadOriginData::from_url(url) {
+            result.auth_token = result.auth_token.or(parsed.auth_token);
+            result.campaign_anon_user_id =
+                result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+            result.startup_position = result.startup_position.or(parsed.startup_position);
+            result.startup_realm = result.startup_realm.or(parsed.startup_realm);
+        }
+    }
+
+    result
 }
 
 /// Try to extract `anon_user_id` from the installer's filename.
@@ -160,39 +152,6 @@ fn extract_anon_user_id_from_filename(installer_path: &str) -> Option<AnonUserId
 
     let m = re.find(file_name)?;
     AnonUserId::parse(m.as_str())
-}
-
-// Zone.Identifier
-fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
-    let content = zone_identifier_content(path)
-        .or_else(|e| {
-            log::error!("ADS read from direct CAPI failed, fallback to PowerShell: {e:?}");
-            zone_identifier_content_powershell(path)
-        })
-        .with_context(|| {
-            anyhow!("Reading zone content from both CAPI and PowerShell failed for file '{path}'")
-        })?;
-    let content = parsed_zone_identifier(&content);
-    token_from_zone_info(content)
-}
-
-fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
-    use dcl_launcher_core::download_origin_metadata::DownloadOriginData;
-
-    for url in [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
-        .into_iter()
-        .flatten()
-    {
-        if let Ok(origin) = DownloadOriginData::from_url(url) {
-            if let Some(token) = origin.auth_token {
-                return Ok(token);
-            }
-        }
-    }
-
-    Err(anyhow!(
-        "Token not found in Zone.Identifier attribute: {zone_info:?}"
-    ))
 }
 
 #[allow(unsafe_code)]
@@ -450,7 +409,10 @@ mod tests {
             return Ok(());
         };
 
-        let token = token_from_file_by_zone_attr(path)?;
+        let origin = read_zone_origin(path)?;
+        let token = origin
+            .auth_token
+            .ok_or_else(|| anyhow!("No token found"))?;
         println!("{token}");
         Ok(())
     }
@@ -486,7 +448,9 @@ mod tests {
             ..Default::default()
         };
 
-        let token = token_from_zone_info(zone)?;
+        let token = origin_from_zone_info(zone)
+            .auth_token
+            .ok_or_else(|| anyhow!("Token not found"))?;
         assert_eq!(expected_token, token.as_str());
         Ok(())
     }
