@@ -21,16 +21,19 @@ impl StartupLocationStorage {
         Ok(())
     }
 
-    /// Read and delete (one-time use). Returns None if file absent or empty.
-    pub fn consume() -> Option<String> {
-        let path = startup_location_path();
-        let value = fs::read_to_string(&path)
+    pub fn read() -> Option<String> {
+        fs::read_to_string(startup_location_path())
             .ok()
             .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())?;
-        if let Err(e) = fs::remove_file(&path) {
-            log::warn!("Cannot delete startup location file: {e}");
+            .filter(|s| !s.is_empty())
+    }
+
+    pub fn clear() {
+        let path = startup_location_path();
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("Cannot delete startup location file: {e}"),
         }
-        Some(value)
     }
 }
