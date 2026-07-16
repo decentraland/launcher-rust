@@ -4,7 +4,6 @@ use std::io::Write;
 use std::time::Duration;
 use serde::Serialize;
 use tokio::fs::remove_file;
-use tokio::time::error::Elapsed;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
@@ -115,12 +114,9 @@ pub fn should_use_deeplink_bridge(
     !open_new_instance && (any_is_running || bridge_only) && !is_local_scene
 }
 
-pub async fn should_use_deeplink_bridge_for(
-    deeplink: &DeepLink,
-    any_is_running: bool,
-) -> anyhow::Result<bool> {
+pub fn should_use_deeplink_bridge_for(deeplink: &DeepLink, any_is_running: bool) -> bool {
     let args = AppEnvironment::cmd_args();
-    Ok(should_use_deeplink_bridge(deeplink, &args, any_is_running))
+    should_use_deeplink_bridge(deeplink, &args, any_is_running)
 }
 
 pub async fn execute_passthrough<T: EventChannel>(
@@ -128,7 +124,6 @@ pub async fn execute_passthrough<T: EventChannel>(
     deeplink: &DeepLink,
 ) -> StepResult {
     const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
-    type OpenResult = std::result::Result<PlaceDeeplinkResult, Elapsed>;
 
     channel.send(Status::State {
         step: Step::DeeplinkOpening,
@@ -144,33 +139,40 @@ pub async fn execute_passthrough<T: EventChannel>(
 
     let token = CancellationToken::new();
 
-    match tokio::time::timeout(
-        OPEN_DEEPLINK_TIMEOUT,
-        place_deeplink_and_wait_until_consumed(deeplink.clone(), token.child_token()),
-    )
-    .await
-    {
-        OpenResult::Ok(result) => match result {
-            PlaceDeeplinkResult::Ok(outcome) => {
-                // Once the deeplink is placed and consumed, activate the packaged Explorer window,
-                // but skip it in bridge-only mode (the consumer owns focus).
-                if outcome == DeeplinkConsumeOutcome::Consumed && bring_to_front {
-                    #[cfg(target_os = "macos")]
-                    try_bring_explorer_to_front();
-                }
-                StepResult::Ok(())
-            }
-            PlaceDeeplinkResult::Err(error) => match error {
-                PlaceDeeplinkError::SerializeError | PlaceDeeplinkError::IOError => {
-                    StepResult::Err(error.into())
-                }
-                PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
-            },
-        },
-        OpenResult::Err(_) => {
+    // Pin the wait future locally so it is NOT dropped when the timer fires. That keeps its
+    // `select!` loop alive, so cancelling the token drives its own cancel branch (and cleanup).
+    let mut wait = std::pin::pin!(place_deeplink_and_wait_until_consumed(
+        deeplink.clone(),
+        token.child_token(),
+    ));
+
+    let result = tokio::select! {
+        r = &mut wait => r,
+        () = sleep(OPEN_DEEPLINK_TIMEOUT) => {
+            // Future is still alive: cancelling wakes its `token.cancelled()` arm, and awaiting it
+            // to completion lets that arm remove the bridge file before we report the timeout.
             token.cancel();
-            StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT)
+            let _ = (&mut wait).await;
+            return StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT);
         }
+    };
+
+    match result {
+        PlaceDeeplinkResult::Ok(outcome) => {
+            // Once the deeplink is placed and consumed, activate the packaged Explorer window,
+            // but skip it in bridge-only mode (the consumer owns focus).
+            if outcome == DeeplinkConsumeOutcome::Consumed && bring_to_front {
+                #[cfg(target_os = "macos")]
+                try_bring_explorer_to_front();
+            }
+            StepResult::Ok(())
+        }
+        PlaceDeeplinkResult::Err(error) => match error {
+            PlaceDeeplinkError::SerializeError | PlaceDeeplinkError::IOError => {
+                StepResult::Err(error.into())
+            }
+            PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
+        },
     }
 }
 
