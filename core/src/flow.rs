@@ -491,7 +491,7 @@ impl DeeplinkPassthroughStep {
 
     async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
         let any_is_running = self.is_any_instance_running().await?;
-        should_use_bridge_for_deeplink(deeplink, any_is_running).await
+        Ok(should_use_bridge_for_deeplink(deeplink, any_is_running))
     }
 }
 
@@ -520,6 +520,12 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
             return StepResultTyped::Ok(false);
         };
 
+        // Re-check the bridge policy against this snapshot: an open_url event may have
+        // reassigned the protocol since `is_complete`, so decide and act on one value.
+        if !self.should_use_deeplink_bridge_for(&deeplink).await? {
+            return StepResultTyped::Ok(false);
+        }
+
         execute_passthrough(channel, &deeplink).await?;
         StepResultTyped::Ok(true)
     }
@@ -533,7 +539,7 @@ impl AppLaunchStep {
 
     async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
         let any_is_running = self.is_any_instance_running().await?;
-        should_use_bridge_for_deeplink(deeplink, any_is_running).await
+        Ok(should_use_bridge_for_deeplink(deeplink, any_is_running))
     }
 }
 
