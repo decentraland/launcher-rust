@@ -1,6 +1,7 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::config;
+use crate::download_origin_metadata::startup_location_storage::StartupLocationStorage;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
@@ -595,6 +596,7 @@ impl InstallsHub {
             })
             .await;
         } else {
+            StartupLocationStorage::clear();
             self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS {
                 version: readable_version,
             })

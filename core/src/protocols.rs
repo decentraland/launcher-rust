@@ -142,15 +142,12 @@ impl Protocol {
         );
     }
 
-    /// If no URI-scheme deeplink was received, seed Protocol state from the
-    /// startup location (`startup-location.txt`) written during the
-    /// download/install flow. Called once in `lib.rs` after `setup_deeplink()`.
     pub fn try_seed_from_startup_location() {
         if Self::value().is_some() {
             log::info!("URI deeplink already set; skipping startup location seed");
             return;
         }
-        match crate::download_origin_metadata::startup_location_storage::StartupLocationStorage::consume() {
+        match crate::download_origin_metadata::startup_location_storage::StartupLocationStorage::read() {
             Some(deeplink) => {
                 log::info!("Seeding Protocol from startup location: {}", deeplink);
                 let p = Self::new();
