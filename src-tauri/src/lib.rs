@@ -239,11 +239,8 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
 
     #[cfg(target_os = "macos")]
     {
-        // The deep-link plugin buffers the URL the app was launched with. When the
-        // launch URL is delivered *before* `on_open_url` is registered, the plugin does not replay it through the callback — it is
-        // only retrievable here via `get_current`. Seed `Protocol` from it so the
-        // deeplink is not silently lost; the `on_open_url` handler below still covers
-        // URLs that arrive *after* registration.
+        // consume deeplink from current in case already exists
+        // which will provoke that on_open_url not be triggered
         match a.deep_link().get_current() {
             Ok(Some(urls)) => {
                 if let Some(url) = urls.first() {

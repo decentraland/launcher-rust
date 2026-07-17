@@ -1,5 +1,5 @@
 use crate::channel::EventChannel;
-use crate::deeplink_bridge::{execute_passthrough, should_use_deeplink_bridge_for as should_use_bridge_for_deeplink};
+use crate::deeplink_bridge::{execute_passthrough, should_use_deeplink_bridge_for};
 use crate::errors::{AttemptError, StepError, StepResultTyped};
 use crate::instances::RunningInstances;
 use crate::protocols::{DeepLink, Protocol};
@@ -162,7 +162,7 @@ impl LaunchFlow {
     ) -> StepResult {
         let handled_by_passthrough = self
             .deeplink_passthrough_step
-            .execute_if_needed(channel, state.clone(), "launch")
+            .execute_if_needed(channel, state.clone(), "deeplink_passthrough")
             .await?;
         // If another Explorer instance is already running, treat this as a deeplink-only
         // handoff: update the deeplink bridge file and stop here instead of running the
@@ -473,7 +473,7 @@ impl DeeplinkPassthroughStep {
 
     async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
         let any_is_running = self.is_any_instance_running().await?;
-        Ok(should_use_bridge_for_deeplink(deeplink, any_is_running))
+        Ok(should_use_deeplink_bridge_for(deeplink, any_is_running))
     }
 }
 
@@ -521,7 +521,7 @@ impl AppLaunchStep {
 
     async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
         let any_is_running = self.is_any_instance_running().await?;
-        Ok(should_use_bridge_for_deeplink(deeplink, any_is_running))
+        Ok(should_use_deeplink_bridge_for(deeplink, any_is_running))
     }
 }
 

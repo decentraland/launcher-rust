@@ -28,7 +28,6 @@ struct DeepLinkBridgeDTO {
 pub enum PlaceDeeplinkError {
     SerializeError,
     IOError,
-    Cancelled,
 }
 
 impl Display for PlaceDeeplinkError {
@@ -37,7 +36,6 @@ impl Display for PlaceDeeplinkError {
         match self {
             SerializeError => write!(f, "Failed to serialize deeplink data."),
             IOError => write!(f, "Failed to write deeplink to file."),
-            Cancelled => write!(f, "Operation was cancelled."),
         }
     }
 }
@@ -167,12 +165,7 @@ pub async fn execute_passthrough<T: EventChannel>(
             }
             StepResult::Ok(())
         }
-        PlaceDeeplinkResult::Err(error) => match error {
-            PlaceDeeplinkError::SerializeError | PlaceDeeplinkError::IOError => {
-                StepResult::Err(error.into())
-            }
-            PlaceDeeplinkError::Cancelled => StepResult::Ok(()),
-        },
+        PlaceDeeplinkResult::Err(error) => StepResult::Err(error.into()),
     }
 }
 
