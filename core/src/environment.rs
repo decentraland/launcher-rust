@@ -22,6 +22,9 @@ pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instan
 // Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
 pub const ARG_MULTI_INSTANCE: &str = "multi-instance";
 pub const ARG_LOCAL_SCENE: &str = "local-scene";
+/// When present, run in bridge-only mode (no client UI).
+/// Used for deeplink/file-bridge integrations and headless operations.
+pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
@@ -47,6 +50,7 @@ pub struct Args {
 
     // used by the client
     pub local_scene: bool,
+    pub bridge_only: bool,
 }
 
 impl Args {
@@ -69,6 +73,7 @@ impl Args {
                 .clone()
                 .or_else(|| other.use_latest_json_url.clone()),
             local_scene: self.local_scene || other.local_scene,
+            bridge_only: self.bridge_only || other.bridge_only,
         }
     }
 
@@ -90,6 +95,7 @@ impl Args {
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
             use_latest_json_url: Self::value_by_flag(ARG_USE_LATEST_JSON_URL, &vector),
             local_scene: Self::has_flag(ARG_LOCAL_SCENE, &vector),
+            bridge_only: Self::has_flag(ARG_BRIDGE_ONLY, &vector),
         }
     }
 
@@ -255,6 +261,7 @@ mod tests {
             use_updater_url: Some("https://one.com".into()),
             use_latest_json_url: None,
             local_scene: false,
+            bridge_only: false,
         };
 
         let b = Args {
@@ -266,6 +273,7 @@ mod tests {
             use_updater_url: Some("https://two.com".into()),
             use_latest_json_url: Some("https://one.com".into()),
             local_scene: false,
+            bridge_only: false,
         };
 
         let merged = a.merge_with(&b);

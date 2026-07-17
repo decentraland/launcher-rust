@@ -239,6 +239,18 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
 
     #[cfg(target_os = "macos")]
     {
+        // consume deeplink from current in case already exists
+        // which will provoke that on_open_url not be triggered
+        match a.deep_link().get_current() {
+            Ok(Some(urls)) => {
+                if let Some(url) = urls.first() {
+                    protocol.try_assign_value(url.to_string());
+                }
+            }
+            Ok(None) => {}
+            Err(e) => error!("Failed to read launch deeplink via get_current: {}", e),
+        }
+
         let protocol = protocol.clone();
         a.deep_link().on_open_url(move |event| {
             let urls = event.urls();
