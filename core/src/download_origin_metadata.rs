@@ -23,7 +23,7 @@ use anon_user_id::AnonUserId;
 #[cfg(target_os = "macos")]
 use campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
 #[cfg(target_os = "macos")]
-use startup_location_storage::StartupLocationStorage;
+use startup_location_storage::StartupDeeplinkStorage;
 
 /// Data extracted from a download URL — auth token, campaign anonymous user ID,
 /// and optional startup deeplink position/realm.
@@ -158,7 +158,7 @@ impl DownloadOrigin {
                     }
                 }
 
-                if !StartupLocationStorage::has() {
+                if !StartupDeeplinkStorage::has() {
                     if let Some(deeplink) = origin.to_startup_deeplink() {
                         log::info!("Seeding startup location deeplink: {}", deeplink.original());
                         Protocol::store(deeplink);

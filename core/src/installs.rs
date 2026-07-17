@@ -1,7 +1,7 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::config;
-use crate::download_origin_metadata::startup_location_storage::StartupLocationStorage;
+use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
@@ -98,8 +98,8 @@ pub fn campaign_anon_user_id_storage_path() -> PathBuf {
     explorer_path().join("campaign-anon-user-id.txt")
 }
 
-pub fn startup_location_path() -> PathBuf {
-    explorer_path().join("startup-location.txt")
+pub fn startup_deeplink_path() -> PathBuf {
+    explorer_path().join("startup-deeplink.txt")
 }
 
 pub fn campaign_attribution_reported_marker_path() -> PathBuf {
@@ -596,7 +596,7 @@ impl InstallsHub {
             })
             .await;
         } else {
-            StartupLocationStorage::clear();
+            StartupDeeplinkStorage::clear();
             self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS {
                 version: readable_version,
             })

@@ -147,7 +147,7 @@ impl Protocol {
             log::info!("URI deeplink already set; skipping startup location seed");
             return;
         }
-        match crate::download_origin_metadata::startup_location_storage::StartupLocationStorage::read() {
+        match crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage::read() {
             Some(deeplink) => {
                 log::info!("Seeding Protocol from startup location: {}", deeplink);
                 let p = Self::new();

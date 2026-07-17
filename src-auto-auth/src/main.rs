@@ -9,7 +9,6 @@ use dcl_launcher_core::{
     download_origin_metadata::anon_user_id::AnonUserId,
     download_origin_metadata::auth_token_storage::AuthTokenStorage,
     download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
-    download_origin_metadata::startup_location_storage::StartupLocationStorage,
     log, logs,
 };
 use regex::Regex;
@@ -67,16 +66,6 @@ fn main_internal() -> Result<()> {
         }
     } else {
         log::info!("No campaign anon_user_id found in Zone.Identifier URLs or installer filename");
-    }
-
-    if let Some(deeplink) = origin.as_ref().and_then(DownloadOriginData::to_startup_deeplink) {
-        log::info!("Startup location (position/realm) extracted from Zone.Identifier");
-        if let Err(e) = StartupLocationStorage::write(deeplink.original()) {
-            log::error!("Cannot write startup location: {e}");
-        }
-    } else {
-        log::info!("No startup location found in Zone.Identifier URLs; clearing any stale value");
-        StartupLocationStorage::clear();
     }
 
     if AuthTokenStorage::has_token() {
