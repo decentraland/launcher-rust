@@ -33,14 +33,14 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$PR" =~ ^[0-9]+$ ]] || { echo "invalid pr: $PR"; exit 1; }
-          [[ -z "$RUN" || "$RUN" =~ ^run-[0-9]+-[0-9]+$ ]] || { echo "invalid run: $RUN"; exit 1; }
           FILES="Decentraland_installer.exe Decentraland_installer.dmg dcl_launcher.exe"
           SRC="dry-run-${REPO}/pr-${PR}"
           if [ -z "$RUN" ]; then
             RUN=$(aws s3api list-objects-v2 --bucket "$S3_BUCKET" --prefix "$SRC/" \
-                    --query 'sort_by(Contents,&LastModified)[-1].Key' --output text | awk -F/ '{print $3}')
+                    --query 'sort_by(Contents || `[]`, &LastModified)[-1].Key' --output text | awk -F/ '{print $3}') || RUN=""
           fi
-          if [ -z "$RUN" ] || [ "$RUN" = "None" ]; then echo "No build found under $SRC/"; exit 1; fi
+          # Validate whether the run was provided or auto-discovered.
+          [[ "$RUN" =~ ^run-[0-9]+-[0-9]+$ ]] || { echo "invalid or undiscoverable run: '$RUN'"; exit 1; }
           SRC_PREFIX="$SRC/$RUN"
           DEST_PREFIX="zone-downloader-launcher-rust"
           ARCHIVE_PREFIX="$DEST_PREFIX/_prev/$(date -u +%Y%m%dT%H%M%SZ)"
@@ -52,9 +52,11 @@ jobs:
           done
 
           # Unversioned bucket: back up before overwrite; skip only on 404, fail on any other error.
+          BACKED_UP=""
           for f in $FILES; do
             if err=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$DEST_PREFIX/$f" 2>&1); then
               aws s3 cp "s3://$S3_BUCKET/$DEST_PREFIX/$f" "s3://$S3_BUCKET/$ARCHIVE_PREFIX/$f" --only-show-errors
+              BACKED_UP="$BACKED_UP $f"
             elif printf '%s' "$err" | grep -q '(404)'; then
               echo "no existing $f to back up"
             else
@@ -62,7 +64,27 @@ jobs:
             fi
           done
 
+          # Overwriting the live keys is not atomic; restore this run's archive on any publish/verify failure.
+          rollback() {
+            echo "Publish failed — restoring previous live keys."
+            for f in $FILES; do
+              case " $BACKED_UP " in
+                *" $f "*) aws s3 cp "s3://$S3_BUCKET/$ARCHIVE_PREFIX/$f" "s3://$S3_BUCKET/$DEST_PREFIX/$f" --only-show-errors || echo "rollback failed for $f" ;;
+                *)        aws s3 rm "s3://$S3_BUCKET/$DEST_PREFIX/$f" --only-show-errors || true ;;
+              esac
+            done
+          }
+          trap rollback ERR
+
           for f in $FILES; do
             aws s3 cp "s3://$S3_BUCKET/$SRC_PREFIX/$f" "s3://$S3_BUCKET/$DEST_PREFIX/$f" --only-show-errors
           done
+
+          for f in $FILES; do
+            src_size=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$SRC_PREFIX/$f" --query ContentLength --output text)
+            dest_size=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$DEST_PREFIX/$f" --query ContentLength --output text)
+            [ "$src_size" = "$dest_size" ] || { echo "size mismatch for $f: src=$src_size dest=$dest_size"; false; }
+          done
+
+          trap - ERR
           echo "Published run $RUN."
