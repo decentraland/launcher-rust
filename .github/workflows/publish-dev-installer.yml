@@ -1,0 +1,52 @@
+name: Publish DEV installer for client-download-gateway
+# Promotes a PR's dry-run build to the keys client-download-gateway serves on .zone.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "launcher-rust PR number (from the build comment)"
+        required: true
+      run:
+        description: "run-<num>-<id> folder; blank = latest for that PR"
+        required: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+      S3_BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
+    steps:
+      - name: Copy dry-run installer onto gateway serving keys
+        env:
+          PR: ${{ inputs.pr }}
+          RUN: ${{ inputs.run }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "invalid pr: $PR"; exit 1; }
+          [[ -z "$RUN" || "$RUN" =~ ^run-[0-9]+-[0-9]+$ ]] || { echo "invalid run: $RUN"; exit 1; }
+          FILES="Decentraland_installer.exe Decentraland_installer.dmg dcl_launcher.exe"
+          SRC="dry-run-${REPO}/pr-${PR}"
+          if [ -z "$RUN" ]; then
+            RUN=$(aws s3api list-objects-v2 --bucket "$S3_BUCKET" --prefix "$SRC/" \
+                    --query 'sort_by(Contents,&LastModified)[-1].Key' --output text | awk -F/ '{print $3}')
+          fi
+          if [ -z "$RUN" ] || [ "$RUN" = "None" ]; then echo "No build found under $SRC/"; exit 1; fi
+          FROM="s3://$S3_BUCKET/$SRC/$RUN"
+          TO="s3://$S3_BUCKET/zone-downloader-launcher-rust"
+
+          # Bucket is unversioned, so snapshot current objects before overwriting.
+          ARCHIVE="$TO/_prev/$(date -u +%Y%m%dT%H%M%SZ)"
+          for f in $FILES; do
+            aws s3 cp "$TO/$f" "$ARCHIVE/$f" --only-show-errors || echo "no existing $f to back up"
+          done
+
+          for f in $FILES; do
+            aws s3 cp "$FROM/$f" "$TO/$f" --only-show-errors
+          done
+          echo "Published run $RUN."
