@@ -13,8 +13,6 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use auth_token_storage::AuthTokenStorage;
 
-use url::form_urlencoded;
-
 use crate::protocols::DeepLink;
 #[cfg(target_os = "macos")]
 use crate::protocols::Protocol;
@@ -92,21 +90,24 @@ impl DownloadOriginData {
     /// `position`/`realm` are present. Returns `None` when neither is set, so a
     /// missing field never produces an empty or malformed deeplink.
     ///
-    /// Shared by the macOS (xattr) and Windows (`Zone.Identifier`) flows so both
+    /// Shared by the macOS and Windows flows so both
     /// platforms handle position-only, realm-only, and both-present identically.
+    ///
+    /// The query is assembled by plain concatenation so
+    /// the `position` coordinate reaches the Explorer as a literal `x,y` (e.g.
+    /// `position=42,-5`, not `position=42%2C-5`).
     pub fn to_startup_deeplink(&self) -> Option<DeepLink> {
-        let mut serializer = form_urlencoded::Serializer::new(String::new());
+        let mut params: Vec<String> = Vec::new();
         if let Some(ref position) = self.startup_position {
-            serializer.append_pair("position", position);
+            params.push(format!("position={position}"));
         }
         if let Some(ref realm) = self.startup_realm {
-            serializer.append_pair("realm", realm);
+            params.push(format!("realm={realm}"));
         }
-        let query = serializer.finish();
-        if query.is_empty() {
+        if params.is_empty() {
             return None;
         }
-        Some(DeepLink::from_query(&query))
+        Some(DeepLink::from_query(&params.join("&")))
     }
 }
 
@@ -381,7 +382,7 @@ mod tests {
         };
         assert_eq!(
             origin.to_startup_deeplink().map(String::from).as_deref(),
-            Some("decentraland://position=42%2C-5&realm=myworld.dcl.eth")
+            Some("decentraland://position=42,-5&realm=myworld.dcl.eth")
         );
     }
 
@@ -393,7 +394,7 @@ mod tests {
         };
         assert_eq!(
             origin.to_startup_deeplink().map(String::from).as_deref(),
-            Some("decentraland://position=100%2C100")
+            Some("decentraland://position=100,100")
         );
     }
 
