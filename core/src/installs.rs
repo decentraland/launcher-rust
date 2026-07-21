@@ -596,7 +596,9 @@ impl InstallsHub {
             })
             .await;
         } else {
+            // Consume the deeplink on success and prevent re-triggering it on every subsequent launch
             StartupDeeplinkStorage::clear();
+
             self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS {
                 version: readable_version,
             })
