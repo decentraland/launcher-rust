@@ -82,6 +82,14 @@ impl DownloadOriginData {
 
         let campaign_anon_user_id = AnonUserId::from_url(url_str);
 
+        log::info!(
+            "Parsed download origin url (auth_token: {}, anon_user_id: {}, position: {:?}, realm: {:?})",
+            auth_token.is_some(),
+            campaign_anon_user_id.is_some(),
+            startup_position,
+            startup_realm,
+        );
+
         Ok(Self {
             auth_token,
             campaign_anon_user_id,
@@ -158,10 +166,24 @@ impl DownloadOrigin {
                     }
                 }
 
-                if !StartupDeeplinkStorage::has() {
-                    if let Some(deeplink) = origin.to_startup_deeplink() {
-                        log::info!("Seeding startup location deeplink: {}", deeplink.original());
-                        Protocol::store(deeplink);
+                if StartupDeeplinkStorage::has() {
+                    log::info!(
+                        "Startup deeplink already stored; skipping startup location seed"
+                    );
+                } else {
+                    match origin.to_startup_deeplink() {
+                        Some(deeplink) => {
+                            log::info!(
+                                "Seeding startup location deeplink: {}",
+                                deeplink.original()
+                            );
+                            Protocol::store(deeplink);
+                        }
+                        None => {
+                            log::info!(
+                                "No position/realm in download origin; nothing to seed"
+                            );
+                        }
                     }
                 }
             }
@@ -272,6 +294,14 @@ impl DownloadOrigin {
                 }
             }
         }
+
+        log::info!(
+            "Merged download origin data (auth_token: {}, anon_user_id: {}, position: {:?}, realm: {:?})",
+            result.auth_token.is_some(),
+            result.campaign_anon_user_id.is_some(),
+            result.startup_position,
+            result.startup_realm,
+        );
 
         Ok(result)
     }
