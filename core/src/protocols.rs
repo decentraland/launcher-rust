@@ -143,17 +143,37 @@ impl Protocol {
     }
 
     pub fn try_seed_from_startup_location() {
-        if Self::value().is_some() {
-            log::info!("URI deeplink already set; skipping startup location seed");
+        let Some(raw) =
+            crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage::read()
+        else {
+            log::info!("No startup location found");
             return;
-        }
-        match crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage::read() {
-            Some(deeplink) => {
-                log::info!("Seeding Protocol from startup location: {}", deeplink);
-                let p = Self::new();
-                p.try_assign_value(deeplink);
+        };
+
+        let deeplink = match DeepLink::new(raw) {
+            Ok(deeplink) => deeplink,
+            Err(DeepLinkCreateError::WrongPrefix { original_content }) => {
+                error!(
+                    "startup location doesn't start with prefix protocol {}: {}",
+                    PROTOCOL_PREFIX, original_content
+                );
+                return;
             }
-            None => log::info!("No startup location found"),
+        };
+
+        match PROTOCOL_STATE.lock() {
+            Ok(mut guard) => {
+                if guard.is_some() {
+                    log::info!("URI deeplink already set; skipping startup location seed");
+                    return;
+                }
+                log::info!(
+                    "Seeding Protocol from startup location: {}",
+                    deeplink.original()
+                );
+                *guard = Some(deeplink);
+            }
+            Err(e) => error!("cannot acquire mutex of PROTOCOL_STATE: {}", e),
         }
     }
 }
