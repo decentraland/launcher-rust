@@ -4,6 +4,7 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
 use crate::auto_auth::campaign_attribution_marker::CampaignAttributionMarker;
+use crate::auto_auth::referrer_storage::ReferrerStorage;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
 use crate::instances::RunningInstances;
@@ -44,6 +45,10 @@ impl AppState {
             AutoAuth::try_obtain_auth_token();
             AutoAuth::try_install_to_app_dir_if_from_dmg();
         }
+
+        // Windows: pick up the referrer written by the download gateway's NSIS
+        // wrapper at install time. No-op on macOS (handled via DMG xattr above).
+        ReferrerStorage::ingest_bridge_file();
 
         let campaign_anon_user_id = CampaignAnonUserIdStorage::read();
 

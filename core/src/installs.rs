@@ -549,6 +549,11 @@ impl InstallsHub {
             output.push(anon_id.as_str().to_owned());
         }
 
+        if let Some(referrer) = crate::auto_auth::referrer_storage::ReferrerStorage::read() {
+            output.push("--referrer".to_string());
+            output.push(referrer.as_str().to_owned());
+        }
+
         let mut additionals = config::client_additional_arguments();
         output.append(&mut additionals);
 
