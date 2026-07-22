@@ -8,6 +8,8 @@ use dcl_launcher_core::{
     auto_auth::anon_user_id::AnonUserId,
     auto_auth::auth_token_storage::AuthTokenStorage,
     auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
+    auto_auth::referrer::Referrer,
+    auto_auth::referrer_storage::ReferrerStorage,
     log, logs,
 };
 use regex::Regex;
@@ -61,6 +63,19 @@ fn main_internal() -> Result<()> {
         log::info!("No campaign anon_user_id found in Zone.Identifier URLs or installer filename");
     }
 
+    // Referrer extraction must happen before the auth-token early return below:
+    // reinstalls on a machine that already has a token would otherwise skip it.
+    if ReferrerStorage::has() {
+        log::info!("Referrer already present in storage");
+    } else if let Some(referrer) = extract_referrer_from_zone(installer_path) {
+        log::info!("Referrer extracted from Zone.Identifier");
+        if let Err(e) = ReferrerStorage::write(&referrer) {
+            log::error!("Cannot write referrer: {e}");
+        }
+    } else {
+        log::info!("No referrer found in Zone.Identifier URLs");
+    }
+
     if AuthTokenStorage::has_token() {
         log::info!("Token already installed");
         return Ok(());
@@ -91,6 +106,32 @@ fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
         .into_iter()
         .flatten()
         .find_map(AnonUserId::from_url)
+}
+
+/// Try to extract the referral attribution address from Zone.Identifier URLs.
+///
+/// Best-effort only: Windows' silent-unblock handling strips the ADS for
+/// trusted signed binaries, so this covers the direct-CDN download path when
+/// the metadata survives. Gateway-wrapped installers don't rely on this —
+/// they write `referrer-bridge.txt` directly at install time.
+fn extract_referrer_from_zone(installer_path: &str) -> Option<Referrer> {
+    let content = match zone_identifier_content(installer_path).or_else(|e| {
+        log::error!("ADS read for referrer failed via CAPI, fallback to PowerShell: {e:?}");
+        zone_identifier_content_powershell(installer_path)
+    }) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("Cannot read Zone.Identifier for referrer: {e:?}");
+            return None;
+        }
+    };
+
+    let zone_info = parsed_zone_identifier(&content);
+
+    [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
+        .into_iter()
+        .flatten()
+        .find_map(Referrer::from_url)
 }
 
 /// Try to extract `anon_user_id` from the installer's filename.
