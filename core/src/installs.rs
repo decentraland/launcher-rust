@@ -97,6 +97,15 @@ pub fn campaign_anon_user_id_storage_path() -> PathBuf {
     explorer_path().join("campaign-anon-user-id.txt")
 }
 
+pub fn referrer_storage_path() -> PathBuf {
+    explorer_path().join("referrer.txt")
+}
+
+/// Written by the download gateway's NSIS wrapper at install time (Windows).
+pub fn referrer_bridge_path() -> PathBuf {
+    explorer_path().join("referrer-bridge.txt")
+}
+
 pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
 }

@@ -2,6 +2,8 @@ pub mod anon_user_id;
 pub mod auth_token_storage;
 pub mod campaign_anon_user_id_storage;
 pub mod campaign_attribution_marker;
+pub mod referrer;
+pub mod referrer_storage;
 
 #[cfg(target_os = "macos")]
 use anyhow::anyhow;
@@ -15,22 +17,28 @@ use auth_token_storage::AuthTokenStorage;
 use anon_user_id::AnonUserId;
 #[cfg(target_os = "macos")]
 use campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
+use referrer::Referrer;
+#[cfg(target_os = "macos")]
+use referrer_storage::ReferrerStorage;
 
-/// Data extracted from a download URL — auth token and campaign anonymous user ID.
+/// Data extracted from a download URL — auth token, campaign anonymous user ID
+/// and referral attribution address.
 ///
-/// Both fields are parsed independently from the same URL via `from_url()`,
-/// avoiding ordering or collision issues between the two.
+/// All fields are parsed independently from the same URL via `from_url()`,
+/// avoiding ordering or collision issues between them.
 #[derive(Default)]
 pub struct DownloadOriginData {
     pub auth_token: Option<String>,
     pub campaign_anon_user_id: Option<AnonUserId>,
+    pub referrer: Option<Referrer>,
 }
 
 impl DownloadOriginData {
-    /// Extract both auth token and `anon_user_id` from a single URL.
+    /// Extract auth token, `anon_user_id` and `referrer` from a single URL.
     ///
     /// The auth token is matched by UUID regex on any query param value (except
-    /// `anon_user_id`) or path segment. The `anon_user_id` is matched by key name.
+    /// `anon_user_id` and `referrer`) or path segment. The `anon_user_id` and
+    /// `referrer` are matched by key name.
     pub fn from_url(url_str: &str) -> Result<Self> {
         let url = url::Url::parse(url_str)?;
 
@@ -41,7 +49,7 @@ impl DownloadOriginData {
         let mut auth_token: Option<String> = None;
 
         for (key, value) in url.query_pairs() {
-            if key == "anon_user_id" {
+            if key == "anon_user_id" || key == "referrer" {
                 continue;
             }
             if re.is_match(&value) {
@@ -60,10 +68,12 @@ impl DownloadOriginData {
         }
 
         let campaign_anon_user_id = AnonUserId::from_url(url_str);
+        let referrer = Referrer::from_url(url_str);
 
         Ok(Self {
             auth_token,
             campaign_anon_user_id,
+            referrer,
         })
     }
 }
@@ -83,6 +93,7 @@ impl AutoAuth {
     fn try_extract_from_dmg() {
         let has_token = AuthTokenStorage::has_token();
         let has_anon_id = CampaignAnonUserIdStorage::has();
+        let has_referrer = ReferrerStorage::has();
 
         if has_token {
             log::info!("Token already obtained");
@@ -109,6 +120,15 @@ impl AutoAuth {
                         log::info!("Campaign anon_user_id obtained from DMG origin");
                         if let Err(e) = CampaignAnonUserIdStorage::write(anon_id) {
                             log::error!("Cannot write campaign anon user id: {e}");
+                        }
+                    }
+                }
+
+                if !has_referrer {
+                    if let Some(ref referrer) = origin.referrer {
+                        log::info!("Referrer obtained from DMG origin");
+                        if let Err(e) = ReferrerStorage::write(referrer) {
+                            log::error!("Cannot write referrer: {e}");
                         }
                     }
                 }
@@ -212,6 +232,7 @@ impl AutoAuth {
                     result.auth_token = result.auth_token.or(parsed.auth_token);
                     result.campaign_anon_user_id =
                         result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+                    result.referrer = result.referrer.or(parsed.referrer);
                 }
                 Err(e) => {
                     log::error!("Cannot parse url '{}': {}", attr, e);
@@ -273,6 +294,37 @@ mod tests {
             origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
             Some("abc-123".to_owned())
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_token_anon_id_and_referrer() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?anon_user_id=abc-123&referrer=0x24E5F44999C151F08609F8E27B2238C773C4D020";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(
+            origin.auth_token.as_deref(),
+            Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+        );
+        assert_eq!(
+            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            Some("abc-123".to_owned())
+        );
+        assert_eq!(
+            origin.referrer.map(|r| r.as_str().to_owned()),
+            Some("0x24e5f44999c151f08609f8e27b2238c773c4d020".to_owned())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_referrer_is_ignored() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?referrer=javascript:alert(1)";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(
+            origin.auth_token.as_deref(),
+            Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+        );
+        assert_eq!(origin.referrer, None);
         Ok(())
     }
 }
