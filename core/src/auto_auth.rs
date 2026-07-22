@@ -5,9 +5,9 @@ pub mod campaign_attribution_marker;
 pub mod referrer;
 pub mod referrer_storage;
 
+use anyhow::Result;
 #[cfg(target_os = "macos")]
 use anyhow::anyhow;
-use anyhow::Result;
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 
@@ -230,8 +230,9 @@ impl AutoAuth {
             match DownloadOriginData::from_url(attr) {
                 Ok(parsed) => {
                     result.auth_token = result.auth_token.or(parsed.auth_token);
-                    result.campaign_anon_user_id =
-                        result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+                    result.campaign_anon_user_id = result
+                        .campaign_anon_user_id
+                        .or(parsed.campaign_anon_user_id);
                     result.referrer = result.referrer.or(parsed.referrer);
                 }
                 Err(e) => {
@@ -291,7 +292,9 @@ mod tests {
         );
         assert!(origin.campaign_anon_user_id.is_some());
         assert_eq!(
-            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
             Some("abc-123".to_owned())
         );
         Ok(())
@@ -306,7 +309,9 @@ mod tests {
             Some("391a85da-a3bb-49e2-a45e-96c740c38424")
         );
         assert_eq!(
-            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
             Some("abc-123".to_owned())
         );
         assert_eq!(

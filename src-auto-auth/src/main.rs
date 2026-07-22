@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use dcl_launcher_core::{
-    anyhow::{Context, Result, anyhow},
+    anyhow::{anyhow, Context, Result},
     auto_auth::anon_user_id::AnonUserId,
     auto_auth::auth_token_storage::AuthTokenStorage,
     auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
@@ -102,10 +102,13 @@ fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
 
     let zone_info = parsed_zone_identifier(&content);
 
-    [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
-        .into_iter()
-        .flatten()
-        .find_map(AnonUserId::from_url)
+    [
+        zone_info.host_url.as_deref(),
+        zone_info.referrer_url.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(AnonUserId::from_url)
 }
 
 /// Try to extract the referral attribution address from Zone.Identifier URLs.
@@ -128,10 +131,13 @@ fn extract_referrer_from_zone(installer_path: &str) -> Option<Referrer> {
 
     let zone_info = parsed_zone_identifier(&content);
 
-    [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
-        .into_iter()
-        .flatten()
-        .find_map(Referrer::from_url)
+    [
+        zone_info.host_url.as_deref(),
+        zone_info.referrer_url.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(Referrer::from_url)
 }
 
 /// Try to extract `anon_user_id` from the installer's filename.
@@ -179,9 +185,12 @@ fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
 fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
     use dcl_launcher_core::auto_auth::DownloadOriginData;
 
-    for url in [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
-        .into_iter()
-        .flatten()
+    for url in [
+        zone_info.host_url.as_deref(),
+        zone_info.referrer_url.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
     {
         if let Ok(origin) = DownloadOriginData::from_url(url) {
             if let Some(token) = origin.auth_token {
@@ -198,8 +207,8 @@ fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
 #[allow(unsafe_code)]
 #[cfg(windows)]
 fn log_alternate_data_streams(path: &str) -> Result<()> {
-    use std::ffi::OsStr;
     use std::ffi::c_void;
+    use std::ffi::OsStr;
     use std::os::windows::prelude::*;
     use windows_sys::Win32::Foundation::*;
     use windows_sys::Win32::Storage::FileSystem::*;
