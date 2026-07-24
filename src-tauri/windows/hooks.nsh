@@ -1,3 +1,8 @@
+; Disable NSIS CRC integrity check because Tauri signs the installer
+; after NSIS compilation, which invalidates the CRC. The Authenticode
+; signature already provides integrity verification.
+CRCCheck off
+
 !macro NSIS_HOOK_POSTINSTALL
   ReadRegDWord $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" "Installed"
   ${If} $0 == 0
