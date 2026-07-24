@@ -38,6 +38,12 @@ impl DeepLink {
         }
     }
 
+    pub(crate) fn from_query(query: &str) -> Self {
+        let original = format!("{PROTOCOL_PREFIX}{query}");
+        let args = Self::parsed_args(&original);
+        Self { original, args }
+    }
+
     fn parsed_args(value: &str) -> HashMap<String, String> {
         let parts: Vec<&str> = value.splitn(2, "://").collect();
 
@@ -103,28 +109,22 @@ impl Protocol {
         }
     }
 
+    pub(crate) fn store(deeplink: DeepLink) {
+        match PROTOCOL_STATE.lock() {
+            Ok(mut guard) => *guard = Some(deeplink),
+            Err(e) => error!("cannot acquire mutex of PROTOCOL_STATE: {}", e),
+        }
+    }
+
     pub fn try_assign_value(&self, value: String) {
         match DeepLink::new(value) {
-            Ok(deeplink) => {
-                let result = PROTOCOL_STATE.lock();
-                match result {
-                    Ok(guard) => {
-                        let mut guard = guard;
-                        *guard = Some(deeplink);
-                    }
-                    Err(e) => {
-                        error!("cannot acquire mutex of PROTOCOL_STATE: {}", e);
-                    }
-                }
+            Ok(deeplink) => Self::store(deeplink),
+            Err(DeepLinkCreateError::WrongPrefix { original_content }) => {
+                error!(
+                    "trying assing value that doesn't start with prefix protocol {}: {}",
+                    PROTOCOL_PREFIX, original_content
+                );
             }
-            Err(error) => match error {
-                DeepLinkCreateError::WrongPrefix { original_content } => {
-                    error!(
-                        "trying assing value that doesn't start with prefix protocol {}: {}",
-                        PROTOCOL_PREFIX, original_content
-                    );
-                }
-            },
         }
     }
 
@@ -140,5 +140,40 @@ impl Protocol {
             "none of values starts with prefix protocol {}: {:?}",
             PROTOCOL_PREFIX, value
         );
+    }
+
+    pub fn try_seed_from_startup_location() {
+        let Some(raw) =
+            crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage::read()
+        else {
+            log::info!("No startup location found");
+            return;
+        };
+
+        let deeplink = match DeepLink::new(raw) {
+            Ok(deeplink) => deeplink,
+            Err(DeepLinkCreateError::WrongPrefix { original_content }) => {
+                error!(
+                    "startup location doesn't start with prefix protocol {}: {}",
+                    PROTOCOL_PREFIX, original_content
+                );
+                return;
+            }
+        };
+
+        match PROTOCOL_STATE.lock() {
+            Ok(mut guard) => {
+                if guard.is_some() {
+                    log::info!("URI deeplink already set; skipping startup location seed");
+                    return;
+                }
+                log::info!(
+                    "Seeding Protocol from startup location: {}",
+                    deeplink.original()
+                );
+                *guard = Some(deeplink);
+            }
+            Err(e) => error!("cannot acquire mutex of PROTOCOL_STATE: {}", e),
+        }
     }
 }
