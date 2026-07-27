@@ -101,8 +101,10 @@ jobs:
         include:
           - os: macos-latest
             bundles: [dmg, macos]
+            args: --target universal-apple-darwin
           - os: windows-latest
             bundles: [nsis]
+            args: ""
 
     runs-on: ${{ matrix.os }}
 
@@ -128,7 +130,7 @@ jobs:
         with:
           toolchain: 1.88.0
           components: clippy,rustfmt
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - run: npm ci
         env:
@@ -254,7 +256,7 @@ jobs:
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
-          args: ${{ secrets.args }}
+          args: ${{ matrix.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
       - name: Build Dry-Run
@@ -275,7 +277,7 @@ jobs:
           GIT_COMMIT: ${{ github.sha }}
           PR_NUMBER: ${{ inputs.pr-number || 'na' }}
         with:
-          args: ${{ secrets.args }}
+          args: ${{ matrix.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
       - name: Sign dcl_launcher.exe manually (Win)
