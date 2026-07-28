@@ -85,7 +85,9 @@ impl LaunchFlow {
         };
 
         Self {
-            fetch_step: FetchStep {},
+            fetch_step: FetchStep {
+                analytics: analytics.clone(),
+            },
             download_step: DownloadStep {
                 analytics: analytics.clone(),
             },
@@ -190,7 +192,9 @@ impl LaunchFlow {
     }
 }
 
-struct FetchStep {}
+struct FetchStep {
+    analytics: Arc<Mutex<Analytics>>,
+}
 
 impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
     async fn is_complete(&self, _state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
@@ -210,9 +214,22 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
         _channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
-        let mut guard = state.lock().await;
+        self.analytics
+            .lock()
+            .await
+            .track_and_flush_silent(Event::FETCH_VERSION_START)
+            .await;
+
         let latest_release = crate::s3::get_latest_explorer_release().await?;
-        guard.latest_release = Some(latest_release);
+        let version = latest_release.version.clone();
+        state.lock().await.latest_release = Some(latest_release);
+
+        self.analytics
+            .lock()
+            .await
+            .track_and_flush_silent(Event::FETCH_VERSION_SUCCESS { version })
+            .await;
+
         StepResult::Ok(())
     }
 }
