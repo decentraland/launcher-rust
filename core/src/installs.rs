@@ -685,10 +685,10 @@ impl InstallsHub {
             };
 
             if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
-                log::error!(
-                    "Timed out waiting for Explorer process under {} to appear",
+                return Err(anyhow!(
+                    "Explorer process under {} did not start",
                     explorer_launch_path.display()
-                );
+                ));
             }
         }
 

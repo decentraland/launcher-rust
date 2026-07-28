@@ -111,60 +111,94 @@ impl LaunchFlow {
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> std::result::Result<(), FlowError> {
+        let handled_by_passthrough = self.prepare_with_retries(channel, state.clone()).await?;
+        if handled_by_passthrough {
+            return std::result::Result::Ok(());
+        }
+
+        self.launch_once(channel, state).await
+    }
+
+    async fn prepare_with_retries<T: EventChannel>(
+        &self,
+        channel: &T,
+        state: Arc<Mutex<LaunchFlowState>>,
+    ) -> std::result::Result<bool, FlowError> {
         const SILENT_ATTEMPTS_COUNT: u8 = 3;
 
         let mut last_error: Option<AttemptError> = None;
 
         for attempt in 1..=SILENT_ATTEMPTS_COUNT {
-            let result = self.launch_internal(channel, state.clone()).await;
-
-            if let Err(e) = result {
-                log::error!(
-                    "Error during the flow. Attempt: {}, Cause {} {:#?}",
-                    attempt,
-                    e,
-                    e
-                );
-                let code = e.code();
-                let e = AttemptError { error: e, attempt };
-
-                sentry::with_scope(
-                    |scope| {
-                        scope.set_tag("error_code", code);
-                        scope.set_fingerprint(Some(&[code]));
-                    },
-                    || {
-                        sentry::capture_error(&e);
-                    },
-                );
-                self.analytics
-                    .lock()
-                    .await
-                    .track_and_flush_silent((&e).into())
-                    .await;
-
-                last_error = Some(e);
-                continue;
+            match self.prepare_internal(channel, state.clone()).await {
+                std::result::Result::Ok(handled_by_passthrough) => {
+                    return std::result::Result::Ok(handled_by_passthrough);
+                }
+                std::result::Result::Err(e) => {
+                    last_error = Some(self.report_attempt_error(e, attempt).await);
+                }
             }
-
-            return std::result::Result::Ok(());
         }
 
-        if let Some(e) = last_error {
-            let error = FlowError {
-                user_message: e.error.user_message().to_owned(),
-            };
-            std::result::Result::Err(error)
-        } else {
-            std::result::Result::Ok(())
-        }
+        std::result::Result::Err(FlowError {
+            user_message: last_error
+                .map(|e| e.error.user_message().to_owned())
+                .unwrap_or_default(),
+        })
     }
 
-    async fn launch_internal<T: EventChannel>(
+    async fn launch_once<T: EventChannel>(
         &self,
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
-    ) -> StepResult {
+    ) -> std::result::Result<(), FlowError> {
+        match self
+            .app_launch_step
+            .execute_if_needed(channel, state, "launch")
+            .await
+        {
+            std::result::Result::Ok(_) => std::result::Result::Ok(()),
+            std::result::Result::Err(e) => {
+                let e = self.report_attempt_error(e, 1).await;
+                std::result::Result::Err(FlowError {
+                    user_message: e.error.user_message().to_owned(),
+                })
+            }
+        }
+    }
+
+    async fn report_attempt_error(&self, error: StepError, attempt: u8) -> AttemptError {
+        log::error!(
+            "Error during the flow. Attempt: {}, Cause {} {:#?}",
+            attempt,
+            error,
+            error
+        );
+        let code = error.code();
+        let attempt_error = AttemptError { error, attempt };
+
+        sentry::with_scope(
+            |scope| {
+                scope.set_tag("error_code", code);
+                scope.set_fingerprint(Some(&[code]));
+            },
+            || {
+                sentry::capture_error(&attempt_error);
+            },
+        );
+        self.analytics
+            .lock()
+            .await
+            .track_and_flush_silent((&attempt_error).into())
+            .await;
+
+        attempt_error
+    }
+
+    async fn prepare_internal<T: EventChannel>(
+        &self,
+        channel: &T,
+        state: Arc<Mutex<LaunchFlowState>>,
+    ) -> StepResultTyped<bool> {
         let handled_by_passthrough = self
             .deeplink_passthrough_step
             .execute_if_needed(channel, state.clone(), "deeplink_passthrough")
@@ -176,7 +210,7 @@ impl LaunchFlow {
             info!(
                 "Deeplink handled by passthrough (an Explorer instance is already running); skipping further steps"
             );
-            return StepResult::Ok(());
+            return StepResultTyped::Ok(true);
         }
 
         self.fetch_step
@@ -188,10 +222,8 @@ impl LaunchFlow {
         self.install_step
             .execute_if_needed(channel, state.clone(), "install")
             .await?;
-        self.app_launch_step
-            .execute_if_needed(channel, state.clone(), "launch")
-            .await?;
-        StepResult::Ok(())
+
+        StepResultTyped::Ok(false)
     }
 }
 
