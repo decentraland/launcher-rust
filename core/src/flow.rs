@@ -28,6 +28,8 @@ trait WorkflowStep<TState, TOutput> {
         state: Arc<Mutex<TState>>,
     ) -> StepResultTyped<TOutput>;
 
+    async fn on_skipped(&self, _state: Arc<Mutex<TState>>) {}
+
     async fn execute_if_needed<T: EventChannel>(
         &self,
         channel: &T,
@@ -37,6 +39,7 @@ trait WorkflowStep<TState, TOutput> {
         let complete = self.is_complete(state.clone()).await?;
         if complete {
             info!("Step {} is already complete", label);
+            self.on_skipped(state).await;
             return StepResultTyped::Ok(None);
         }
 
@@ -291,6 +294,22 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         }
     }
 
+    async fn on_skipped(&self, state: Arc<Mutex<LaunchFlowState>>) {
+        let version = state
+            .lock()
+            .await
+            .latest_release
+            .as_ref()
+            .map(|r| r.version.clone());
+        if let Some(version) = version {
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::DOWNLOAD_VERSION_SKIPPED { version })
+                .await;
+        }
+    }
+
     fn start_label(&self) -> Result<Status> {
         let mode = Self::mode();
         let status = Status::State {
@@ -423,6 +442,22 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
 
         Ok(guard.recent_download.is_none()
             && installs::explorer_latest_version_path().exists())
+    }
+
+    async fn on_skipped(&self, state: Arc<Mutex<LaunchFlowState>>) {
+        let version = state
+            .lock()
+            .await
+            .latest_release
+            .as_ref()
+            .map(|r| r.version.clone());
+        if let Some(version) = version {
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::INSTALL_VERSION_SKIPPED { version })
+                .await;
+        }
     }
 
     fn start_label(&self) -> Result<Status> {
