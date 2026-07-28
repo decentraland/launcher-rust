@@ -2,6 +2,7 @@ pub mod anon_user_id;
 pub mod auth_token_storage;
 pub mod campaign_anon_user_id_storage;
 pub mod campaign_attribution_marker;
+pub mod startup_location_storage;
 
 #[cfg(target_os = "macos")]
 use anyhow::anyhow;
@@ -12,18 +13,27 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use auth_token_storage::AuthTokenStorage;
 
+use url::form_urlencoded;
+
+use crate::protocols::DeepLink;
+#[cfg(target_os = "macos")]
+use crate::protocols::Protocol;
+
 use anon_user_id::AnonUserId;
 #[cfg(target_os = "macos")]
 use campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
 
-/// Data extracted from a download URL — auth token and campaign anonymous user ID.
+/// Data extracted from a download URL — auth token, campaign anonymous user ID,
+/// and optional startup deeplink position/realm.
 ///
-/// Both fields are parsed independently from the same URL via `from_url()`,
-/// avoiding ordering or collision issues between the two.
+/// All fields are parsed independently from the same URL via `from_url()`,
+/// avoiding ordering or collision issues between them.
 #[derive(Default)]
 pub struct DownloadOriginData {
     pub auth_token: Option<String>,
     pub campaign_anon_user_id: Option<AnonUserId>,
+    pub startup_position: Option<String>,
+    pub startup_realm: Option<String>,
 }
 
 impl DownloadOriginData {
@@ -39,14 +49,23 @@ impl DownloadOriginData {
         )?;
 
         let mut auth_token: Option<String> = None;
+        let mut startup_position: Option<String> = None;
+        let mut startup_realm: Option<String> = None;
 
         for (key, value) in url.query_pairs() {
-            if key == "anon_user_id" {
-                continue;
-            }
-            if re.is_match(&value) {
-                auth_token = Some(value.to_string());
-                break;
+            match key.as_ref() {
+                "anon_user_id" => {}
+                "position" if !value.is_empty() => {
+                    startup_position = Some(value.to_string());
+                }
+                "realm" if !value.is_empty() => {
+                    startup_realm = Some(value.to_string());
+                }
+                _ => {
+                    if auth_token.is_none() && re.is_match(&value) {
+                        auth_token = Some(value.to_string());
+                    }
+                }
             }
         }
 
@@ -64,18 +83,42 @@ impl DownloadOriginData {
         Ok(Self {
             auth_token,
             campaign_anon_user_id,
+            startup_position,
+            startup_realm,
         })
+    }
+
+    /// Builds a `decentraland://` startup deeplink from whichever of
+    /// `position`/`realm` are present. Returns `None` when neither is set, so a
+    /// missing field never produces an empty or malformed deeplink.
+    ///
+    /// Shared by the macOS (xattr) and Windows (`Zone.Identifier`) flows so both
+    /// platforms handle position-only, realm-only, and both-present identically.
+    pub fn to_startup_deeplink(&self) -> Option<DeepLink> {
+        let mut serializer = form_urlencoded::Serializer::new(String::new());
+        if let Some(ref position) = self.startup_position {
+            serializer.append_pair("position", position);
+        }
+        if let Some(ref realm) = self.startup_realm {
+            serializer.append_pair("realm", realm);
+        }
+        let query = serializer.finish();
+        if query.is_empty() {
+            return None;
+        }
+        Some(DeepLink::from_query(&query))
     }
 }
 
-pub struct AutoAuth {}
+pub struct DownloadOrigin {}
 
-impl AutoAuth {
-    /// Extracts auth token + campaign `anon_user_id` from the DMG's xattr URLs.
+impl DownloadOrigin {
+    /// Extracts auth token, campaign `anon_user_id`, and startup deeplink
+    /// (position/realm) from the DMG's xattr URLs.
     ///
     /// Windows is handled by the `src-auto-auth` binary, so this is macOS-only.
     #[cfg(target_os = "macos")]
-    pub fn try_obtain_auth_token() {
+    pub fn try_extract_origin_data() {
         Self::try_extract_from_dmg();
     }
 
@@ -91,7 +134,7 @@ impl AutoAuth {
         match Self::obtain_token_internal() {
             Ok(origin) => {
                 if !has_token {
-                    match origin.auth_token {
+                    match origin.auth_token.as_ref() {
                         Some(token) => {
                             log::info!("Token obtained");
                             if let Err(e) = AuthTokenStorage::write_token(token.as_str()) {
@@ -110,6 +153,13 @@ impl AutoAuth {
                         if let Err(e) = CampaignAnonUserIdStorage::write(anon_id) {
                             log::error!("Cannot write campaign anon user id: {e}");
                         }
+                    }
+                }
+
+                if Protocol::value().is_none() {
+                    if let Some(deeplink) = origin.to_startup_deeplink() {
+                        log::info!("Seeding startup location deeplink: {}", deeplink.original());
+                        Protocol::store(deeplink);
                     }
                 }
             }
@@ -212,6 +262,8 @@ impl AutoAuth {
                     result.auth_token = result.auth_token.or(parsed.auth_token);
                     result.campaign_anon_user_id =
                         result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+                    result.startup_position = result.startup_position.or(parsed.startup_position);
+                    result.startup_realm = result.startup_realm.or(parsed.startup_realm);
                 }
                 Err(e) => {
                     log::error!("Cannot parse url '{}': {}", attr, e);
@@ -238,10 +290,10 @@ fn app_bundle_from_exe_path(exe_path: &Path) -> std::io::Result<PathBuf> {
     ))
 }
 
-#[cfg(target_os = "macos")]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::anyhow;
     use rstest::rstest;
 
     #[rstest]
@@ -274,5 +326,92 @@ mod tests {
             Some("abc-123".to_owned())
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_position_and_realm_extracted() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?position=42%2C-5&realm=myworld.dcl.eth";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(origin.startup_position.as_deref(), Some("42,-5"));
+        assert_eq!(origin.startup_realm.as_deref(), Some("myworld.dcl.eth"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_position_without_realm() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?position=10%2C20";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(origin.startup_position.as_deref(), Some("10,20"));
+        assert!(origin.startup_realm.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_all_fields_together() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?anon_user_id=abc-123&position=5%2C10&realm=dragon.dcl.eth";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(
+            origin.auth_token.as_deref(),
+            Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+        );
+        assert_eq!(
+            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            Some("abc-123".to_owned())
+        );
+        assert_eq!(origin.startup_position.as_deref(), Some("5,10"));
+        assert_eq!(origin.startup_realm.as_deref(), Some("dragon.dcl.eth"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_position_no_realm() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert!(origin.startup_position.is_none());
+        assert!(origin.startup_realm.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_deeplink_position_and_realm() {
+        let origin = DownloadOriginData {
+            startup_position: Some("42,-5".to_owned()),
+            startup_realm: Some("myworld.dcl.eth".to_owned()),
+            ..DownloadOriginData::default()
+        };
+        assert_eq!(
+            origin.to_startup_deeplink().map(String::from).as_deref(),
+            Some("decentraland://position=42%2C-5&realm=myworld.dcl.eth")
+        );
+    }
+
+    #[test]
+    fn test_build_deeplink_position_only() {
+        let origin = DownloadOriginData {
+            startup_position: Some("100,100".to_owned()),
+            ..DownloadOriginData::default()
+        };
+        assert_eq!(
+            origin.to_startup_deeplink().map(String::from).as_deref(),
+            Some("decentraland://position=100%2C100")
+        );
+    }
+
+    #[test]
+    fn test_build_deeplink_realm_only() {
+        let origin = DownloadOriginData {
+            startup_realm: Some("eax.dcl.eth".to_owned()),
+            ..DownloadOriginData::default()
+        };
+        assert_eq!(
+            origin.to_startup_deeplink().map(String::from).as_deref(),
+            Some("decentraland://realm=eax.dcl.eth")
+        );
+    }
+
+    #[test]
+    fn test_build_deeplink_neither() {
+        let origin = DownloadOriginData::default();
+        assert!(origin.to_startup_deeplink().is_none());
     }
 }

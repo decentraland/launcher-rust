@@ -22,7 +22,7 @@
 
 pub mod analytics;
 pub mod app;
-pub mod auto_auth;
+pub mod download_origin_metadata;
 pub mod channel;
 pub mod config;
 mod deeplink_bridge;

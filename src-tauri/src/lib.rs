@@ -271,6 +271,7 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
         .inspect_err(|e| error!("Error during setup: {:#}", e))?;
 
     setup_deeplink(a, &app_state.protocol);
+    Protocol::try_seed_from_startup_location();
 
     let mut_state: MutState = Arc::new(Mutex::new(app_state));
     a.manage(mut_state);

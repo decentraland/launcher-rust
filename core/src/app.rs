@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
-use crate::auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
-use crate::auto_auth::campaign_attribution_marker::CampaignAttributionMarker;
+use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
+use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttributionMarker;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
 use crate::instances::RunningInstances;
@@ -11,7 +11,7 @@ use crate::monitoring::Monitoring;
 use crate::protocols::Protocol;
 use crate::{analytics, logs, utils};
 #[cfg(target_os = "macos")]
-use crate::auto_auth::AutoAuth;
+use crate::download_origin_metadata::DownloadOrigin;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -41,8 +41,8 @@ impl AppState {
 
         #[cfg(target_os = "macos")]
         {
-            AutoAuth::try_obtain_auth_token();
-            AutoAuth::try_install_to_app_dir_if_from_dmg();
+            DownloadOrigin::try_extract_origin_data();
+            DownloadOrigin::try_install_to_app_dir_if_from_dmg();
         }
 
         let campaign_anon_user_id = CampaignAnonUserIdStorage::read();
