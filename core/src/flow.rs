@@ -257,7 +257,17 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
             .track_and_flush_silent(Event::FETCH_VERSION_START)
             .await;
 
-        let latest_release = crate::s3::get_latest_explorer_release().await?;
+        let fetch_result = crate::s3::get_latest_explorer_release().await;
+        if let Err(e) = &fetch_result {
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::FETCH_VERSION_ERROR {
+                    error: e.to_string(),
+                })
+                .await;
+        }
+        let latest_release = fetch_result?;
         let version = latest_release.version.clone();
         state.lock().await.latest_release = Some(latest_release);
 

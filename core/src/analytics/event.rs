@@ -18,6 +18,9 @@ pub enum Event {
     FETCH_VERSION_SUCCESS {
         version: String,
     },
+    FETCH_VERSION_ERROR {
+        error: String,
+    },
     DOWNLOAD_VERSION {
         version: String,
     },
@@ -100,6 +103,7 @@ impl Display for Event {
                 Event::LAUNCHER_CLOSE { .. } => "Launcher Close",
                 Event::FETCH_VERSION_START => "Fetch Version Start",
                 Event::FETCH_VERSION_SUCCESS { .. } => "Fetch Version Success",
+                Event::FETCH_VERSION_ERROR { .. } => "Fetch Version Error",
                 Event::DOWNLOAD_VERSION { .. } => "Download Version",
                 Event::DOWNLOAD_VERSION_PROGRESS { .. } => "Download Version Progress",
                 Event::DOWNLOAD_VERSION_SUCCESS { .. } => "Download Version Success",
