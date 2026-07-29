@@ -160,9 +160,19 @@ impl LaunchFlow {
         {
             std::result::Result::Ok(_) => std::result::Result::Ok(()),
             std::result::Result::Err(e) => {
-                let e = self.report_attempt_error(e, 1).await;
+                log::error!("Error launching Explorer. Cause {} {:#?}", e, e);
+                let code = e.code();
+                sentry::with_scope(
+                    |scope| {
+                        scope.set_tag("error_code", code);
+                        scope.set_fingerprint(Some(&[code]));
+                    },
+                    || {
+                        sentry::capture_error(&e);
+                    },
+                );
                 std::result::Result::Err(FlowError {
-                    user_message: e.error.user_message().to_owned(),
+                    user_message: e.user_message().to_owned(),
                 })
             }
         }
