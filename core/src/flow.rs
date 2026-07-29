@@ -28,6 +28,10 @@ trait WorkflowStep<TState, TOutput> {
         state: Arc<Mutex<TState>>,
     ) -> StepResultTyped<TOutput>;
 
+    fn on_skipped(&self, _state: Arc<Mutex<TState>>) -> impl std::future::Future<Output = ()> {
+        std::future::ready(())
+    }
+
     async fn execute_if_needed<T: EventChannel>(
         &self,
         channel: &T,
@@ -37,6 +41,7 @@ trait WorkflowStep<TState, TOutput> {
         let complete = self.is_complete(state.clone()).await?;
         if complete {
             info!("Step {} is already complete", label);
+            self.on_skipped(state).await;
             return StepResultTyped::Ok(None);
         }
 
@@ -85,7 +90,9 @@ impl LaunchFlow {
         };
 
         Self {
-            fetch_step: FetchStep {},
+            fetch_step: FetchStep {
+                analytics: analytics.clone(),
+            },
             download_step: DownloadStep {
                 analytics: analytics.clone(),
             },
@@ -106,23 +113,55 @@ impl LaunchFlow {
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> std::result::Result<(), FlowError> {
+        let handled_by_passthrough = self.prepare_with_retries(channel, state.clone()).await?;
+        if handled_by_passthrough {
+            return std::result::Result::Ok(());
+        }
+
+        self.launch_once(channel, state).await
+    }
+
+    async fn prepare_with_retries<T: EventChannel>(
+        &self,
+        channel: &T,
+        state: Arc<Mutex<LaunchFlowState>>,
+    ) -> std::result::Result<bool, FlowError> {
         const SILENT_ATTEMPTS_COUNT: u8 = 3;
 
         let mut last_error: Option<AttemptError> = None;
 
         for attempt in 1..=SILENT_ATTEMPTS_COUNT {
-            let result = self.launch_internal(channel, state.clone()).await;
+            match self.prepare_internal(channel, state.clone()).await {
+                std::result::Result::Ok(handled_by_passthrough) => {
+                    return std::result::Result::Ok(handled_by_passthrough);
+                }
+                std::result::Result::Err(e) => {
+                    last_error = Some(self.report_attempt_error(e, attempt).await);
+                }
+            }
+        }
 
-            if let Err(e) = result {
-                log::error!(
-                    "Error during the flow. Attempt: {}, Cause {} {:#?}",
-                    attempt,
-                    e,
-                    e
-                );
+        std::result::Result::Err(FlowError {
+            user_message: last_error
+                .map(|e| e.error.user_message().to_owned())
+                .unwrap_or_default(),
+        })
+    }
+
+    async fn launch_once<T: EventChannel>(
+        &self,
+        channel: &T,
+        state: Arc<Mutex<LaunchFlowState>>,
+    ) -> std::result::Result<(), FlowError> {
+        match self
+            .app_launch_step
+            .execute_if_needed(channel, state, "launch")
+            .await
+        {
+            std::result::Result::Ok(_) => std::result::Result::Ok(()),
+            std::result::Result::Err(e) => {
+                log::error!("Error launching Explorer. Cause {} {:#?}", e, e);
                 let code = e.code();
-                let e = AttemptError { error: e, attempt };
-
                 sentry::with_scope(
                     |scope| {
                         scope.set_tag("error_code", code);
@@ -132,34 +171,46 @@ impl LaunchFlow {
                         sentry::capture_error(&e);
                     },
                 );
-                self.analytics
-                    .lock()
-                    .await
-                    .track_and_flush_silent((&e).into())
-                    .await;
-
-                last_error = Some(e);
-                continue;
+                std::result::Result::Err(FlowError {
+                    user_message: e.user_message().to_owned(),
+                })
             }
-
-            return std::result::Result::Ok(());
-        }
-
-        if let Some(e) = last_error {
-            let error = FlowError {
-                user_message: e.error.user_message().to_owned(),
-            };
-            std::result::Result::Err(error)
-        } else {
-            std::result::Result::Ok(())
         }
     }
 
-    async fn launch_internal<T: EventChannel>(
+    async fn report_attempt_error(&self, error: StepError, attempt: u8) -> AttemptError {
+        log::error!(
+            "Error during the flow. Attempt: {}, Cause {} {:#?}",
+            attempt,
+            error,
+            error
+        );
+        let code = error.code();
+        let attempt_error = AttemptError { error, attempt };
+
+        sentry::with_scope(
+            |scope| {
+                scope.set_tag("error_code", code);
+                scope.set_fingerprint(Some(&[code]));
+            },
+            || {
+                sentry::capture_error(&attempt_error);
+            },
+        );
+        self.analytics
+            .lock()
+            .await
+            .track_and_flush_silent((&attempt_error).into())
+            .await;
+
+        attempt_error
+    }
+
+    async fn prepare_internal<T: EventChannel>(
         &self,
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
-    ) -> StepResult {
+    ) -> StepResultTyped<bool> {
         let handled_by_passthrough = self
             .deeplink_passthrough_step
             .execute_if_needed(channel, state.clone(), "deeplink_passthrough")
@@ -171,7 +222,7 @@ impl LaunchFlow {
             info!(
                 "Deeplink handled by passthrough (an Explorer instance is already running); skipping further steps"
             );
-            return StepResult::Ok(());
+            return StepResultTyped::Ok(true);
         }
 
         self.fetch_step
@@ -183,14 +234,14 @@ impl LaunchFlow {
         self.install_step
             .execute_if_needed(channel, state.clone(), "install")
             .await?;
-        self.app_launch_step
-            .execute_if_needed(channel, state.clone(), "launch")
-            .await?;
-        StepResult::Ok(())
+
+        StepResultTyped::Ok(false)
     }
 }
 
-struct FetchStep {}
+struct FetchStep {
+    analytics: Arc<Mutex<Analytics>>,
+}
 
 impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
     async fn is_complete(&self, _state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
@@ -210,9 +261,32 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
         _channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> StepResult {
-        let mut guard = state.lock().await;
-        let latest_release = crate::s3::get_latest_explorer_release().await?;
-        guard.latest_release = Some(latest_release);
+        self.analytics
+            .lock()
+            .await
+            .track_and_flush_silent(Event::FETCH_VERSION_START)
+            .await;
+
+        let fetch_result = crate::s3::get_latest_explorer_release().await;
+        if let Err(e) = &fetch_result {
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::FETCH_VERSION_ERROR {
+                    error: e.to_string(),
+                })
+                .await;
+        }
+        let latest_release = fetch_result?;
+        let version = latest_release.version.clone();
+        state.lock().await.latest_release = Some(latest_release);
+
+        self.analytics
+            .lock()
+            .await
+            .track_and_flush_silent(Event::FETCH_VERSION_SUCCESS { version })
+            .await;
+
         StepResult::Ok(())
     }
 }
@@ -271,6 +345,22 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
                 Ok(updated)
             }
             None => Err(anyhow!("Latest release is not found in the state")),
+        }
+    }
+
+    async fn on_skipped(&self, state: Arc<Mutex<LaunchFlowState>>) {
+        let version = state
+            .lock()
+            .await
+            .latest_release
+            .as_ref()
+            .map(|r| r.version.clone());
+        if let Some(version) = version {
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::DOWNLOAD_VERSION_SKIPPED { version })
+                .await;
         }
     }
 
@@ -406,6 +496,22 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
 
         Ok(guard.recent_download.is_none()
             && installs::explorer_latest_version_path().exists())
+    }
+
+    async fn on_skipped(&self, state: Arc<Mutex<LaunchFlowState>>) {
+        let version = state
+            .lock()
+            .await
+            .latest_release
+            .as_ref()
+            .map(|r| r.version.clone());
+        if let Some(version) = version {
+            self.analytics
+                .lock()
+                .await
+                .track_and_flush_silent(Event::INSTALL_VERSION_SKIPPED { version })
+                .await;
+        }
     }
 
     fn start_label(&self) -> Result<Status> {

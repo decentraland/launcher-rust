@@ -14,6 +14,13 @@ pub enum Event {
     LAUNCHER_CLOSE {
         version: String,
     },
+    FETCH_VERSION_START,
+    FETCH_VERSION_SUCCESS {
+        version: String,
+    },
+    FETCH_VERSION_ERROR {
+        error: String,
+    },
     DOWNLOAD_VERSION {
         version: String,
     },
@@ -32,6 +39,9 @@ pub enum Event {
     DOWNLOAD_VERSION_CANCELLED {
         version: String,
     },
+    DOWNLOAD_VERSION_SKIPPED {
+        version: String,
+    },
     INSTALL_VERSION_START {
         version: String,
     },
@@ -41,6 +51,9 @@ pub enum Event {
     INSTALL_VERSION_ERROR {
         version: Option<String>,
         error: String,
+    },
+    INSTALL_VERSION_SKIPPED {
+        version: String,
     },
     LAUNCH_CLIENT_START {
         version: String,
@@ -88,14 +101,19 @@ impl Display for Event {
             match self {
                 Event::LAUNCHER_OPEN { .. } => "Launcher Open",
                 Event::LAUNCHER_CLOSE { .. } => "Launcher Close",
+                Event::FETCH_VERSION_START => "Fetch Version Start",
+                Event::FETCH_VERSION_SUCCESS { .. } => "Fetch Version Success",
+                Event::FETCH_VERSION_ERROR { .. } => "Fetch Version Error",
                 Event::DOWNLOAD_VERSION { .. } => "Download Version",
                 Event::DOWNLOAD_VERSION_PROGRESS { .. } => "Download Version Progress",
                 Event::DOWNLOAD_VERSION_SUCCESS { .. } => "Download Version Success",
                 Event::DOWNLOAD_VERSION_ERROR { .. } => "Download Version Error",
                 Event::DOWNLOAD_VERSION_CANCELLED { .. } => "Download Version Cancelled",
+                Event::DOWNLOAD_VERSION_SKIPPED { .. } => "Download Version Skipped",
                 Event::INSTALL_VERSION_START { .. } => "Install Version Start",
                 Event::INSTALL_VERSION_SUCCESS { .. } => "Install Version Success",
                 Event::INSTALL_VERSION_ERROR { .. } => "Install Version Error",
+                Event::INSTALL_VERSION_SKIPPED { .. } => "Install Version Skipped",
                 Event::LAUNCH_CLIENT_START { .. } => "Launch Client Start",
                 Event::LAUNCH_CLIENT_SUCCESS { .. } => "Launch Client Success",
                 Event::LAUNCH_CLIENT_ERROR { .. } => "Launch Client Error",
