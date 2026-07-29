@@ -42,9 +42,15 @@ fn main_internal() -> Result<()> {
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
     log::info!("Installer path: {installer_path}");
 
-    if CampaignAnonUserIdStorage::has() {
+    let has_anon_user_id = CampaignAnonUserIdStorage::has();
+    let has_referrer = ReferrerStorage::has();
+    let zone_info = (!has_anon_user_id || !has_referrer)
+        .then(|| read_zone_info(installer_path))
+        .flatten();
+
+    if has_anon_user_id {
         log::info!("Campaign anon_user_id already present in storage");
-    } else if let Some(anon_id) = extract_anon_user_id_from_zone(installer_path) {
+    } else if let Some(anon_id) = zone_info.as_ref().and_then(extract_anon_user_id_from_zone) {
         log::info!("Campaign anon_user_id extracted from Zone.Identifier");
         if let Err(e) = CampaignAnonUserIdStorage::write(&anon_id) {
             log::error!("Cannot write campaign anon user id: {e}");
@@ -65,9 +71,9 @@ fn main_internal() -> Result<()> {
 
     // Referrer extraction must happen before the auth-token early return below:
     // reinstalls on a machine that already has a token would otherwise skip it.
-    if ReferrerStorage::has() {
+    if has_referrer {
         log::info!("Referrer already present in storage");
-    } else if let Some(referrer) = extract_referrer_from_zone(installer_path) {
+    } else if let Some(referrer) = zone_info.as_ref().and_then(extract_referrer_from_zone) {
         log::info!("Referrer extracted from Zone.Identifier");
         if let Err(e) = ReferrerStorage::write(&referrer) {
             log::error!("Cannot write referrer: {e}");
@@ -87,21 +93,22 @@ fn main_internal() -> Result<()> {
     Ok(())
 }
 
-/// Try to extract `anon_user_id` from Zone.Identifier URLs.
-fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
+fn read_zone_info(installer_path: &str) -> Option<ZoneInfo> {
     let content = match zone_identifier_content(installer_path).or_else(|e| {
-        log::error!("ADS read for anon_user_id failed via CAPI, fallback to PowerShell: {e:?}");
+        log::error!("ADS read failed via CAPI, fallback to PowerShell: {e:?}");
         zone_identifier_content_powershell(installer_path)
     }) {
         Ok(c) => c,
         Err(e) => {
-            log::error!("Cannot read Zone.Identifier for anon_user_id: {e:?}");
+            log::error!("Cannot read Zone.Identifier: {e:?}");
             return None;
         }
     };
 
-    let zone_info = parsed_zone_identifier(&content);
+    Some(parsed_zone_identifier(&content))
+}
 
+fn extract_anon_user_id_from_zone(zone_info: &ZoneInfo) -> Option<AnonUserId> {
     [
         zone_info.host_url.as_deref(),
         zone_info.referrer_url.as_deref(),
@@ -111,26 +118,7 @@ fn extract_anon_user_id_from_zone(installer_path: &str) -> Option<AnonUserId> {
     .find_map(AnonUserId::from_url)
 }
 
-/// Try to extract the referral attribution address from Zone.Identifier URLs.
-///
-/// Best-effort only: Windows' silent-unblock handling strips the ADS for
-/// trusted signed binaries, so this covers the direct-CDN download path when
-/// the metadata survives. Gateway-wrapped installers don't rely on this —
-/// they write `referrer-bridge.txt` directly at install time.
-fn extract_referrer_from_zone(installer_path: &str) -> Option<Referrer> {
-    let content = match zone_identifier_content(installer_path).or_else(|e| {
-        log::error!("ADS read for referrer failed via CAPI, fallback to PowerShell: {e:?}");
-        zone_identifier_content_powershell(installer_path)
-    }) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Cannot read Zone.Identifier for referrer: {e:?}");
-            return None;
-        }
-    };
-
-    let zone_info = parsed_zone_identifier(&content);
-
+fn extract_referrer_from_zone(zone_info: &ZoneInfo) -> Option<Referrer> {
     [
         zone_info.host_url.as_deref(),
         zone_info.referrer_url.as_deref(),
