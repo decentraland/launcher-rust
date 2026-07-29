@@ -28,7 +28,9 @@ trait WorkflowStep<TState, TOutput> {
         state: Arc<Mutex<TState>>,
     ) -> StepResultTyped<TOutput>;
 
-    async fn on_skipped(&self, _state: Arc<Mutex<TState>>) {}
+    fn on_skipped(&self, _state: Arc<Mutex<TState>>) -> impl std::future::Future<Output = ()> {
+        std::future::ready(())
+    }
 
     async fn execute_if_needed<T: EventChannel>(
         &self,
