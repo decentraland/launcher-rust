@@ -41,11 +41,19 @@ runs:
         PROJECT_PATH="${{ inputs.project-path }}"
         BUNDLES=$(echo '${{ toJson(matrix.bundles) }}' | jq -r '.[]')
 
+        # macOS universal builds emit under target/universal-apple-darwin/…; everything else under target/release/…
+        if [[ -d "$PROJECT_PATH/target/universal-apple-darwin/release/bundle" ]]; then
+          BUNDLE_BASE="$PROJECT_PATH/target/universal-apple-darwin/release/bundle"
+        else
+          BUNDLE_BASE="$PROJECT_PATH/target/release/bundle"
+        fi
+        echo "Using bundle base: $BUNDLE_BASE"
+
         detected_version=$(find "$PROJECT_PATH" -type f -name 'Decentraland_*_*' | head -n1 | sed -E 's/^.*Decentraland_([0-9]+\.[0-9]+\.[0-9]+)_.*/\1/')
         echo "Detected version: $detected_version"
 
         for bundle in $BUNDLES; do
-          ARTIFACT_DIR="$PROJECT_PATH/target/release/bundle/$bundle"
+          ARTIFACT_DIR="$BUNDLE_BASE/$bundle"
           if [[ -d "$ARTIFACT_DIR" ]]; then
             echo "Renaming artifacts in $ARTIFACT_DIR"
 
@@ -95,14 +103,30 @@ runs:
           echo "Found latest.json at ./latest.json"
 
           jq --arg tar_url "$DOMAIN/$TARGET_PATH/$FILENAME_TAR" \
-             --arg exe_url "$DOMAIN/$TARGET_PATH/$FILENAME_EXE" \
-            '.platforms["darwin-aarch64"].url = $tar_url |
-             .platforms["windows-x86_64"].url = $exe_url' \
-            ./latest.json > ./latest.json.tmp
+             --arg exe_url "$DOMAIN/$TARGET_PATH/$FILENAME_EXE" '
+              (if .platforms | has("darwin-aarch64") then .platforms["darwin-aarch64"].url = $tar_url else . end)
+              | (if .platforms | has("darwin-x86_64")  then .platforms["darwin-x86_64"].url  = $tar_url else . end)
+              | (if .platforms | has("windows-x86_64") then .platforms["windows-x86_64"].url = $exe_url else . end)
+            ' ./latest.json > ./latest.json.tmp
 
           mv ./latest.json.tmp ./latest.json
           echo "Updated URLs in latest.json:"
           cat ./latest.json
+
+          # The macOS and Windows jobs each emit a latest.json holding only their own
+          # platform keys and upload to the same S3 path, so the last writer would drop
+          # the other's platforms. Merge with any manifest the sibling job already
+          # uploaded (local keys win on overlap). Safe because target-dir is unique per
+          # commit/run, so an existing manifest there is the same version.
+          S3_LATEST="s3://${{ inputs.s3-bucket }}/${{ inputs.target-dir }}/latest.json"
+          if aws s3 cp --no-progress "$S3_LATEST" ./latest.s3.json 2>/dev/null; then
+            echo "Merging platform keys from existing S3 latest.json"
+            jq -s '(.[0].platforms) as $s3 | .[1] | .platforms = ($s3 + .platforms)' \
+              ./latest.s3.json ./latest.json > ./latest.merged.json
+            mv ./latest.merged.json ./latest.json
+            echo "Merged latest.json:"
+            cat ./latest.json
+          fi
         fi
 
         upload_file "./latest.json" "s3://${{ inputs.s3-bucket }}/${{ inputs.target-dir }}/latest.json"

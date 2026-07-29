@@ -1,6 +1,7 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::config;
+use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
 use crate::environment::AppEnvironment;
 use crate::errors::{StepError, StepResult};
 use crate::instances::RunningInstances;
@@ -97,11 +98,14 @@ pub fn campaign_anon_user_id_storage_path() -> PathBuf {
     explorer_path().join("campaign-anon-user-id.txt")
 }
 
+pub fn startup_deeplink_path() -> PathBuf {
+    explorer_path().join("startup-deeplink.txt")
+}
+
 pub fn referrer_storage_path() -> PathBuf {
     explorer_path().join("referrer.txt")
 }
 
-/// Written by the download gateway's NSIS wrapper at install time (Windows).
 pub fn referrer_bridge_path() -> PathBuf {
     explorer_path().join("referrer-bridge.txt")
 }
@@ -543,13 +547,13 @@ impl InstallsHub {
         }
 
         if let Some(anon_id) =
-            crate::auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
+            crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
         {
             output.push("--campaign_anon_user_id".to_string());
             output.push(anon_id.as_str().to_owned());
         }
 
-        if let Some(referrer) = crate::auto_auth::referrer_storage::ReferrerStorage::read() {
+        if let Some(referrer) = crate::download_origin_metadata::referrer_storage::ReferrerStorage::read() {
             output.push("--referrer".to_string());
             output.push(referrer.as_str().to_owned());
         }
@@ -605,6 +609,9 @@ impl InstallsHub {
             })
             .await;
         } else {
+            // Consume the deeplink on success and prevent re-triggering it on every subsequent launch
+            StartupDeeplinkStorage::clear();
+
             self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS {
                 version: readable_version,
             })
@@ -696,10 +703,10 @@ impl InstallsHub {
             };
 
             if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
-                log::error!(
-                    "Timed out waiting for Explorer process under {} to appear",
+                return Err(anyhow!(
+                    "Explorer process under {} did not start",
                     explorer_launch_path.display()
-                );
+                ));
             }
         }
 

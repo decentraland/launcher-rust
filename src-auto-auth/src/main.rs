@@ -4,12 +4,13 @@
 use std::path::Path;
 
 use dcl_launcher_core::{
-    anyhow::{anyhow, Context, Result},
-    auto_auth::anon_user_id::AnonUserId,
-    auto_auth::auth_token_storage::AuthTokenStorage,
-    auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
-    auto_auth::referrer::Referrer,
-    auto_auth::referrer_storage::ReferrerStorage,
+    anyhow::{Context, Result, anyhow},
+    download_origin_metadata::DownloadOriginData,
+    download_origin_metadata::anon_user_id::AnonUserId,
+    download_origin_metadata::auth_token_storage::AuthTokenStorage,
+    download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
+    download_origin_metadata::referrer_storage::ReferrerStorage,
+    download_origin_metadata::startup_location_storage::StartupDeeplinkStorage,
     log, logs,
 };
 use regex::Regex;
@@ -42,17 +43,20 @@ fn main_internal() -> Result<()> {
         .ok_or_else(|| anyhow!("Installer path is not provided"))?;
     log::info!("Installer path: {installer_path}");
 
-    let has_anon_user_id = CampaignAnonUserIdStorage::has();
-    let has_referrer = ReferrerStorage::has();
-    let zone_info = (!has_anon_user_id || !has_referrer)
-        .then(|| read_zone_info(installer_path))
-        .flatten();
+    let origin = read_zone_origin(installer_path);
+    if let Err(e) = &origin {
+        log::error!("Cannot read Zone.Identifier download-origin metadata: {e:?}");
+    }
+    let origin = origin.ok();
 
-    if has_anon_user_id {
+    if CampaignAnonUserIdStorage::has() {
         log::info!("Campaign anon_user_id already present in storage");
-    } else if let Some(anon_id) = zone_info.as_ref().and_then(extract_anon_user_id_from_zone) {
+    } else if let Some(anon_id) = origin
+        .as_ref()
+        .and_then(|o| o.campaign_anon_user_id.as_ref())
+    {
         log::info!("Campaign anon_user_id extracted from Zone.Identifier");
-        if let Err(e) = CampaignAnonUserIdStorage::write(&anon_id) {
+        if let Err(e) = CampaignAnonUserIdStorage::write(anon_id) {
             log::error!("Cannot write campaign anon user id: {e}");
         }
     } else if let Some(anon_id) = extract_anon_user_id_from_filename(installer_path) {
@@ -71,15 +75,27 @@ fn main_internal() -> Result<()> {
 
     // Referrer extraction must happen before the auth-token early return below:
     // reinstalls on a machine that already has a token would otherwise skip it.
-    if has_referrer {
+    if ReferrerStorage::has() {
         log::info!("Referrer already present in storage");
-    } else if let Some(referrer) = zone_info.as_ref().and_then(extract_referrer_from_zone) {
+    } else if let Some(referrer) = origin.as_ref().and_then(|o| o.referrer.as_ref()) {
         log::info!("Referrer extracted from Zone.Identifier");
-        if let Err(e) = ReferrerStorage::write(&referrer) {
+        if let Err(e) = ReferrerStorage::write(referrer) {
             log::error!("Cannot write referrer: {e}");
         }
     } else {
         log::info!("No referrer found in Zone.Identifier URLs");
+    }
+
+    if !StartupDeeplinkStorage::has() {
+        if let Some(deeplink) = origin.as_ref().and_then(|o| o.to_startup_deeplink()) {
+            log::info!(
+                "Persisting startup location deeplink: {}",
+                deeplink.original()
+            );
+            if let Err(e) = StartupDeeplinkStorage::write(deeplink.original()) {
+                log::error!("Cannot write startup deeplink: {e}");
+            }
+        }
     }
 
     if AuthTokenStorage::has_token() {
@@ -87,45 +103,53 @@ fn main_internal() -> Result<()> {
         return Ok(());
     }
 
-    let token = token_from_file_by_zone_attr(installer_path)?;
+    let token = origin
+        .and_then(|o| o.auth_token)
+        .ok_or_else(|| anyhow!("Token not found in Zone.Identifier download-origin metadata"))?;
     AuthTokenStorage::write_token(token.as_str())?;
     log::info!("Token write complete");
     Ok(())
 }
 
-fn read_zone_info(installer_path: &str) -> Option<ZoneInfo> {
-    let content = match zone_identifier_content(installer_path).or_else(|e| {
-        log::error!("ADS read failed via CAPI, fallback to PowerShell: {e:?}");
-        zone_identifier_content_powershell(installer_path)
-    }) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Cannot read Zone.Identifier: {e:?}");
-            return None;
+fn read_zone_origin(installer_path: &str) -> Result<DownloadOriginData> {
+    let content = zone_identifier_content(installer_path)
+        .or_else(|e| {
+            log::error!("ADS read from direct CAPI failed, fallback to PowerShell: {e:?}");
+            zone_identifier_content_powershell(installer_path)
+        })
+        .with_context(|| {
+            anyhow!(
+                "Reading zone content from both CAPI and PowerShell failed for '{installer_path}'"
+            )
+        })?;
+
+    Ok(origin_from_zone_info(parsed_zone_identifier(&content)))
+}
+
+/// Merge the download-origin data carried by the Zone.Identifier URLs, taking
+/// the first non-empty value for each field (host URL before referrer).
+fn origin_from_zone_info(zone_info: ZoneInfo) -> DownloadOriginData {
+    let mut result = DownloadOriginData::default();
+
+    for url in [
+        zone_info.host_url.as_deref(),
+        zone_info.referrer_url.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Ok(parsed) = DownloadOriginData::from_url(url) {
+            result.auth_token = result.auth_token.or(parsed.auth_token);
+            result.campaign_anon_user_id = result
+                .campaign_anon_user_id
+                .or(parsed.campaign_anon_user_id);
+            result.startup_position = result.startup_position.or(parsed.startup_position);
+            result.startup_realm = result.startup_realm.or(parsed.startup_realm);
+            result.referrer = result.referrer.or(parsed.referrer);
         }
-    };
+    }
 
-    Some(parsed_zone_identifier(&content))
-}
-
-fn extract_anon_user_id_from_zone(zone_info: &ZoneInfo) -> Option<AnonUserId> {
-    [
-        zone_info.host_url.as_deref(),
-        zone_info.referrer_url.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .find_map(AnonUserId::from_url)
-}
-
-fn extract_referrer_from_zone(zone_info: &ZoneInfo) -> Option<Referrer> {
-    [
-        zone_info.host_url.as_deref(),
-        zone_info.referrer_url.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .find_map(Referrer::from_url)
+    result
 }
 
 /// Try to extract `anon_user_id` from the installer's filename.
@@ -156,47 +180,11 @@ fn extract_anon_user_id_from_filename(installer_path: &str) -> Option<AnonUserId
     AnonUserId::parse(m.as_str())
 }
 
-// Zone.Identifier
-fn token_from_file_by_zone_attr(path: &str) -> Result<String> {
-    let content = zone_identifier_content(path)
-        .or_else(|e| {
-            log::error!("ADS read from direct CAPI failed, fallback to PowerShell: {e:?}");
-            zone_identifier_content_powershell(path)
-        })
-        .with_context(|| {
-            anyhow!("Reading zone content from both CAPI and PowerShell failed for file '{path}'")
-        })?;
-    let content = parsed_zone_identifier(&content);
-    token_from_zone_info(content)
-}
-
-fn token_from_zone_info(zone_info: ZoneInfo) -> Result<String> {
-    use dcl_launcher_core::auto_auth::DownloadOriginData;
-
-    for url in [
-        zone_info.host_url.as_deref(),
-        zone_info.referrer_url.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if let Ok(origin) = DownloadOriginData::from_url(url) {
-            if let Some(token) = origin.auth_token {
-                return Ok(token);
-            }
-        }
-    }
-
-    Err(anyhow!(
-        "Token not found in Zone.Identifier attribute: {zone_info:?}"
-    ))
-}
-
 #[allow(unsafe_code)]
 #[cfg(windows)]
 fn log_alternate_data_streams(path: &str) -> Result<()> {
-    use std::ffi::c_void;
     use std::ffi::OsStr;
+    use std::ffi::c_void;
     use std::os::windows::prelude::*;
     use windows_sys::Win32::Foundation::*;
     use windows_sys::Win32::Storage::FileSystem::*;
@@ -447,7 +435,8 @@ mod tests {
             return Ok(());
         };
 
-        let token = token_from_file_by_zone_attr(path)?;
+        let origin = read_zone_origin(path)?;
+        let token = origin.auth_token.ok_or_else(|| anyhow!("No token found"))?;
         println!("{token}");
         Ok(())
     }
@@ -483,7 +472,9 @@ mod tests {
             ..Default::default()
         };
 
-        let token = token_from_zone_info(zone)?;
+        let token = origin_from_zone_info(zone)
+            .auth_token
+            .ok_or_else(|| anyhow!("Token not found"))?;
         assert_eq!(expected_token, token.as_str());
         Ok(())
     }

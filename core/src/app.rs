@@ -2,17 +2,17 @@ use anyhow::{Context, Result};
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
-#[cfg(target_os = "macos")]
-use crate::auto_auth::AutoAuth;
-use crate::auto_auth::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
-use crate::auto_auth::campaign_attribution_marker::CampaignAttributionMarker;
-use crate::auto_auth::referrer_storage::ReferrerStorage;
+use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
+use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttributionMarker;
+use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
 use crate::instances::RunningInstances;
 use crate::monitoring::Monitoring;
 use crate::protocols::Protocol;
 use crate::{analytics, logs, utils};
+#[cfg(target_os = "macos")]
+use crate::download_origin_metadata::DownloadOrigin;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -42,12 +42,10 @@ impl AppState {
 
         #[cfg(target_os = "macos")]
         {
-            AutoAuth::try_obtain_auth_token();
-            AutoAuth::try_install_to_app_dir_if_from_dmg();
+            DownloadOrigin::try_extract_origin_data();
+            DownloadOrigin::try_install_to_app_dir_if_from_dmg();
         }
 
-        // Windows: pick up the referrer written by the download gateway's NSIS
-        // wrapper at install time. No-op on macOS (handled via DMG xattr above).
         ReferrerStorage::ingest_bridge_file();
 
         let campaign_anon_user_id = CampaignAnonUserIdStorage::read();
