@@ -2,6 +2,7 @@ use crate::channel::EventChannel;
 use crate::deeplink_bridge::{execute_passthrough, should_use_deeplink_bridge_for};
 use crate::errors::{AttemptError, StepError, StepResultTyped};
 use crate::instances::RunningInstances;
+use crate::logs::LOG_TO_FILE;
 use crate::protocols::{DeepLink, Protocol};
 use crate::{
     analytics::{Analytics, event::Event},
@@ -160,7 +161,12 @@ impl LaunchFlow {
         {
             std::result::Result::Ok(_) => std::result::Result::Ok(()),
             std::result::Result::Err(e) => {
-                log::error!("Error launching Explorer. Cause {} {:#?}", e, e);
+                log::error!(
+                    target: LOG_TO_FILE,
+                    "Error launching Explorer. Cause {} {:#?}",
+                    e,
+                    e
+                );
                 let code = e.code();
                 sentry::with_scope(
                     |scope| {
@@ -180,11 +186,13 @@ impl LaunchFlow {
 
     async fn report_attempt_error(&self, error: StepError, attempt: u8) -> AttemptError {
         log::error!(
+            target: LOG_TO_FILE,
             "Error during the flow. Attempt: {}, Cause {} {:#?}",
             attempt,
             error,
             error
         );
+        
         let code = error.code();
         let attempt_error = AttemptError { error, attempt };
 

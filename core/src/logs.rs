@@ -3,6 +3,9 @@ use anyhow::Result;
 use log::{Metadata, Record, info};
 use sentry_log::SentryLogger;
 
+pub const LOG_TO_FILE: &str = "dest:file";
+pub const LOG_TO_SENTRY: &str = "dest:sentry";
+
 pub fn dispath_logs() -> Result<()> {
     let path = installs::log_file_path()?;
     let log_file = fern::log_file(&path)?;
@@ -16,7 +19,7 @@ pub fn dispath_logs() -> Result<()> {
                 "[{} {} {}] {}",
                 humantime::format_rfc3339(std::time::SystemTime::now()),
                 record.level(),
-                record.target(),
+                record.module_path().unwrap_or_else(|| record.target()),
                 message
             ));
         })
@@ -58,8 +61,14 @@ impl log::Log for CombinedLog {
     }
 
     fn log(&self, record: &Record) {
-        self.fern.log(record);
-        self.sentry.log(record);
+        match record.target() {
+            LOG_TO_FILE => self.fern.log(record),
+            LOG_TO_SENTRY => self.sentry.log(record),
+            _ => {
+                self.fern.log(record);
+                self.sentry.log(record);
+            }
+        }
     }
 
     fn flush(&self) {
