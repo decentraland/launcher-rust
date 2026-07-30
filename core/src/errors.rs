@@ -127,6 +127,26 @@ pub enum StepError {
     E3008_EXPLORER_ALREADY_RUNNING {
         processes: Vec<String>,
     },
+    E3009_EXPLORER_NOT_INSTALLED {
+        expected_path: String,
+        version: Option<String>,
+    },
+    E3010_EXPLORER_LAUNCH_FAILED {
+        path: String,
+        #[source]
+        inner_error: anyhow::Error,
+    },
+    E3011_EXPLORER_PROCESS_NOT_STARTED {
+        path: String,
+    },
+    E3012_EXPLORER_EXITED_ON_LAUNCH {
+        exit_code: String,
+    },
+    E3013_EXPLORER_BINARY_ACCESS_FAILED {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl StepError {
@@ -233,6 +253,21 @@ impl StepError {
             }
             Self::E3008_EXPLORER_ALREADY_RUNNING { .. } => {
                 "Decentraland is already running and is blocking the update. Please close it and try again."
+            }
+            Self::E3009_EXPLORER_NOT_INSTALLED { .. } => {
+                "Decentraland isn't installed correctly. Please close the launcher and open it again to reinstall it."
+            }
+            Self::E3010_EXPLORER_LAUNCH_FAILED { .. } => {
+                "We couldn't start Decentraland. Please close the launcher and open it again. If the problem continues, try running it as administrator."
+            }
+            Self::E3011_EXPLORER_PROCESS_NOT_STARTED { .. } => {
+                "Decentraland didn't start. Please make sure your antivirus isn't blocking it and try again."
+            }
+            Self::E3012_EXPLORER_EXITED_ON_LAUNCH { .. } => {
+                "Decentraland closed unexpectedly right after starting. Please try again, and make sure your graphics drivers are up to date."
+            }
+            Self::E3013_EXPLORER_BINARY_ACCESS_FAILED { .. } => {
+                "We couldn't access the Decentraland files. If Decentraland is open, please close it and try again."
             }
         }
     }

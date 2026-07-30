@@ -384,6 +384,21 @@ fn as_rename_back_err(path: &Path, source: std::io::Error) -> StepError {
     }
 }
 
+fn as_launch_failed_err(path: &Path, inner_error: anyhow::Error) -> StepError {
+    StepError::E3010_EXPLORER_LAUNCH_FAILED {
+        path: path.to_string_lossy().into_owned(),
+        inner_error,
+    }
+}
+
+#[cfg(windows)]
+fn as_binary_access_err(path: &Path, source: std::io::Error) -> StepError {
+    StepError::E3013_EXPLORER_BINARY_ACCESS_FAILED {
+        path: path.to_string_lossy().into_owned(),
+        source,
+    }
+}
+
 fn rename_latest_back_to_version(
     latest_path: &Path,
     target: &Path,
@@ -579,7 +594,7 @@ impl InstallsHub {
         &self,
         deeplink: Option<DeepLink>,
         preferred_version: Option<&str>,
-    ) -> Result<()> {
+    ) -> StepResult {
         let readable_version = Self::readable_version(preferred_version);
 
         self.send_analytics_event(Event::LAUNCH_CLIENT_START {
@@ -592,7 +607,7 @@ impl InstallsHub {
         if let Err(e) = &result {
             self.send_analytics_event(Event::LAUNCH_CLIENT_ERROR {
                 version: readable_version,
-                error: e.to_string(),
+                error: format!("{:?}", e),
             })
             .await;
         } else {
@@ -612,7 +627,7 @@ impl InstallsHub {
         &self,
         deeplink: Option<DeepLink>,
         preferred_version: Option<&str>,
-    ) -> Result<()> {
+    ) -> StepResult {
         log::info!("Launching Explorer...");
 
         // macOS uses .app instaed of launching direct binary
@@ -623,18 +638,17 @@ impl InstallsHub {
             .ok_or_else(|| anyhow!("Failed to get explorer binary directory"))?;
 
         if !explorer_launch_path.exists() {
-            let error_message = match preferred_version {
-                Some(ver) => format!("The explorer version specified ({}) is not installed.", ver),
-                None => "The explorer is not installed.".to_string(),
-            };
-            log::error!("{}, {}", error_message, explorer_launch_path.display());
-            return Err(anyhow!(error_message));
+            return Err(StepError::E3009_EXPLORER_NOT_INSTALLED {
+                expected_path: explorer_launch_path.to_string_lossy().into_owned(),
+                version: preferred_version.map(str::to_owned),
+            });
         }
 
         // Ensure binary is executable, windows only, macOS doesn't use direct launch due
         // the permissions issue
         #[cfg(windows)]
-        fs::metadata(&explorer_launch_path).context("Failed to access explorer binary")?;
+        fs::metadata(&explorer_launch_path)
+            .map_err(|e| as_binary_access_err(&explorer_launch_path, e))?;
 
         // Prepare explorer parameters
         #[cfg(target_os = "macos")]
@@ -657,12 +671,14 @@ impl InstallsHub {
             ];
 
             macos_params.append(&mut explorer_params);
-            Self::launch_open_blocking(explorer_launch_dir, &macos_params)?;
+            Self::launch_open_blocking(explorer_launch_dir, &macos_params)
+                .map_err(|e| as_launch_failed_err(&explorer_launch_path, e))?;
         }
 
         #[cfg(target_os = "windows")]
         let mut child =
-            Self::launch_command(&explorer_launch_path, explorer_launch_dir, &explorer_params)?;
+            Self::launch_command(&explorer_launch_path, explorer_launch_dir, &explorer_params)
+                .map_err(|e| as_launch_failed_err(&explorer_launch_path, e))?;
 
         #[cfg(target_os = "windows")]
         {
@@ -685,10 +701,9 @@ impl InstallsHub {
             };
 
             if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
-                return Err(anyhow!(
-                    "Explorer process under {} did not start",
-                    explorer_launch_path.display()
-                ));
+                return Err(StepError::E3011_EXPLORER_PROCESS_NOT_STARTED {
+                    path: explorer_launch_path.to_string_lossy().into_owned(),
+                });
             }
         }
 
@@ -713,10 +728,9 @@ impl InstallsHub {
                         break;
                     }
 
-                    return Err(anyhow!(
-                        "Child process died shorly after launch with code: {}",
-                        exit_status
-                    ));
+                    return Err(StepError::E3012_EXPLORER_EXITED_ON_LAUNCH {
+                        exit_code: exit_status.to_string(),
+                    });
                 }
 
                 thread::sleep(CHECK_INTERVAL);
