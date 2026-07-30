@@ -3,7 +3,7 @@ use crate::analytics::event::Event;
 use crate::config;
 use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
 use crate::environment::AppEnvironment;
-use crate::errors::{StepError, StepResult};
+use crate::errors::{StepError, StepResult, StepResultTyped};
 use crate::instances::RunningInstances;
 #[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
@@ -165,14 +165,14 @@ fn get_version_data_or_empty() -> Map<String, Value> {
     })
 }
 
-fn get_latest_version(version_data: &Map<String, Value>) -> Result<&str> {
+fn get_latest_version(version_data: &Map<String, Value>) -> StepResultTyped<&str> {
     version_data
         .get("version")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!(StepError::E3003_CANT_GET_VERSION.user_message()))
+        .ok_or(StepError::E3003_CANT_GET_VERSION)
 }
 
-pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> Result<PathBuf> {
+pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> StepResultTyped<PathBuf> {
     let base_path = match version {
         None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
@@ -296,17 +296,27 @@ fn remove_version_if_exists(version: &EntryVersion) {
     }
 }
 
-fn cleanup_versions(current_version: &EntryVersion) -> Result<()> {
+fn cleanup_versions(current_version: &EntryVersion) -> StepResult {
     const KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT: usize = 2;
 
-    let entries = fs::read_dir(explorer_path()).context("Cannot read entries in the app dir")?;
+    let explorer_path = explorer_path();
+    let entries =
+        fs::read_dir(&explorer_path).map_err(|e| as_stale_cleanup_err(&explorer_path, e))?;
 
     let mut installations: Vec<EntryVersion> = Vec::new();
 
     for entry in entries {
         let Ok(entry) = entry else { continue };
         let file_name = entry.file_name();
-        let entry_name = file_name.to_str().context("no file name on entry")?;
+        let entry_name = file_name.to_str().ok_or_else(|| {
+            as_stale_cleanup_err(
+                &entry.path(),
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "entry name is not valid UTF-8",
+                ),
+            )
+        })?;
 
         if let Some(version) = EntryVersion::from_str(entry_name) {
             installations.push(version);
@@ -379,6 +389,13 @@ pub fn target_download_path() -> PathBuf {
 
 fn as_rename_back_err(path: &Path, source: std::io::Error) -> StepError {
     StepError::E3006_RENAME_BACK_FAILED {
+        path: path.to_string_lossy().into_owned(),
+        source,
+    }
+}
+
+fn as_stale_cleanup_err(path: &Path, source: std::io::Error) -> StepError {
+    StepError::E3005_STALE_BUILD_CLEANUP_FAILED {
         path: path.to_string_lossy().into_owned(),
         source,
     }
@@ -495,8 +512,11 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         .map_err(|source| StepError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
     // Remove the downloaded file
-    fs::remove_file(file_path)?;
-    cleanup_versions(&current_version).context("Cannot clean up the old versions")?;
+    fs::remove_file(&file_path).map_err(|e| StepError::E1006_FILE_DELETE_FAILED {
+        file_path: file_path.to_string_lossy().into_owned(),
+        inner_error: e.into(),
+    })?;
+    cleanup_versions(&current_version)?;
 
     Ok(())
 }
@@ -506,9 +526,7 @@ pub fn rename_explorer_to_latest() -> StepResult {
         return Err(StepError::E3003_CANT_GET_VERSION);
     };
 
-    let Ok(latest_version) = get_latest_version(&version_data) else {
-        return Err(StepError::E3003_CANT_GET_VERSION);
-    };
+    let latest_version = get_latest_version(&version_data)?;
 
     let Ok(()) = fs::rename(
         explorer_path().join(latest_version),
