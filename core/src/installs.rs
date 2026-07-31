@@ -301,7 +301,7 @@ fn cleanup_versions(current_version: &EntryVersion) -> DCLErrorResult {
 
     let explorer_path = explorer_path();
     let entries =
-        fs::read_dir(&explorer_path).map_err(|e| as_stale_cleanup_err(&explorer_path, e))?;
+        fs::read_dir(&explorer_path).map_err(|e| DCLError::from_cleanup(&explorer_path, e))?;
 
     let mut installations: Vec<EntryVersion> = Vec::new();
 
@@ -309,7 +309,7 @@ fn cleanup_versions(current_version: &EntryVersion) -> DCLErrorResult {
         let Ok(entry) = entry else { continue };
         let file_name = entry.file_name();
         let entry_name = file_name.to_str().ok_or_else(|| {
-            as_stale_cleanup_err(
+            DCLError::from_cleanup(
                 &entry.path(),
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -387,47 +387,18 @@ pub fn target_download_path() -> PathBuf {
     explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
 }
 
-fn as_rename_back_err(path: &Path, source: std::io::Error) -> DCLError {
-    DCLError::E3006_RENAME_BACK_FAILED {
-        path: path.to_string_lossy().into_owned(),
-        source,
-    }
-}
-
-fn as_stale_cleanup_err(path: &Path, source: std::io::Error) -> DCLError {
-    DCLError::E3005_STALE_BUILD_CLEANUP_FAILED {
-        path: path.to_string_lossy().into_owned(),
-        source,
-    }
-}
-
-fn as_launch_failed_err(path: &Path, inner_error: anyhow::Error) -> DCLError {
-    DCLError::E3010_EXPLORER_LAUNCH_FAILED {
-        path: path.to_string_lossy().into_owned(),
-        inner_error,
-    }
-}
-
-#[cfg(windows)]
-fn as_binary_access_err(path: &Path, source: std::io::Error) -> DCLError {
-    DCLError::E3013_EXPLORER_BINARY_ACCESS_FAILED {
-        path: path.to_string_lossy().into_owned(),
-        source,
-    }
-}
-
 fn rename_latest_back_to_version(
     latest_path: &Path,
     target: &Path,
     branch_path: &Path,
 ) -> DCLErrorResult {
     if target == branch_path {
-        return fs::remove_dir_all(latest_path).map_err(|e| as_rename_back_err(latest_path, e));
+        return fs::remove_dir_all(latest_path).map_err(|e| DCLError::from_rename_back(latest_path, e));
     }
     if target.exists() {
-        fs::remove_dir_all(target).map_err(|e| as_rename_back_err(target, e))?;
+        fs::remove_dir_all(target).map_err(|e| DCLError::from_rename_back(target, e))?;
     }
-    fs::rename(latest_path, target).map_err(|e| as_rename_back_err(latest_path, e))
+    fs::rename(latest_path, target).map_err(|e| DCLError::from_rename_back(latest_path, e))
 }
 
 pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLErrorResult {
@@ -666,7 +637,7 @@ impl InstallsHub {
         // the permissions issue
         #[cfg(windows)]
         fs::metadata(&explorer_launch_path)
-            .map_err(|e| as_binary_access_err(&explorer_launch_path, e))?;
+            .map_err(|e| DCLError::from_binary_access(&explorer_launch_path, e))?;
 
         // Prepare explorer parameters
         #[cfg(target_os = "macos")]
@@ -690,13 +661,13 @@ impl InstallsHub {
 
             macos_params.append(&mut explorer_params);
             Self::launch_open_blocking(explorer_launch_dir, &macos_params)
-                .map_err(|e| as_launch_failed_err(&explorer_launch_path, e))?;
+                .map_err(|e| DCLError::from_launch_failure(&explorer_launch_path, e))?;
         }
 
         #[cfg(target_os = "windows")]
         let mut child =
             Self::launch_command(&explorer_launch_path, explorer_launch_dir, &explorer_params)
-                .map_err(|e| as_launch_failed_err(&explorer_launch_path, e))?;
+                .map_err(|e| DCLError::from_launch_failure(&explorer_launch_path, e))?;
 
         #[cfg(target_os = "windows")]
         {

@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, path::Path};
 use strum::IntoStaticStr;
 use thiserror::Error;
 
@@ -150,6 +150,35 @@ pub enum DCLError {
 }
 
 impl DCLError {
+    pub fn from_cleanup(path: &Path, source: std::io::Error) -> Self {
+        Self::E3005_STALE_BUILD_CLEANUP_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
+    pub fn from_rename_back(path: &Path, source: std::io::Error) -> Self {
+        Self::E3006_RENAME_BACK_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
+    pub fn from_launch_failure(path: &Path, inner_error: anyhow::Error) -> Self {
+        Self::E3010_EXPLORER_LAUNCH_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            inner_error,
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn from_binary_access(path: &Path, source: std::io::Error) -> Self {
+        Self::E3013_EXPLORER_BINARY_ACCESS_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
     /// Stable identifier for Sentry grouping. Must not include any variable
     /// data (paths, OS messages) — only the variant name. Sentry fingerprints
     /// off this so all occurrences of the same failure cluster into one issue.
