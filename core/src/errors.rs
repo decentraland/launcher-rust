@@ -24,7 +24,7 @@ impl From<&FlowError> for Status {
 #[derive(Error, Debug)]
 pub struct AttemptError {
     #[source]
-    pub(crate) error: StepError,
+    pub(crate) error: DCLError,
     pub(crate) attempt: u8,
 }
 
@@ -38,19 +38,19 @@ impl Display for AttemptError {
     }
 }
 
-pub type StepResult = std::result::Result<(), StepError>;
+pub type DCLErrorResult = std::result::Result<(), DCLError>;
 
-pub type StepResultTyped<T> = std::result::Result<T, StepError>;
+pub type DCLErrorTyped<T> = std::result::Result<T, DCLError>;
 
-impl<T> From<StepError> for StepResultTyped<T> {
-    fn from(value: StepError) -> Self {
+impl<T> From<DCLError> for DCLErrorTyped<T> {
+    fn from(value: DCLError) -> Self {
         Self::Err(value)
     }
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Error, Debug, IntoStaticStr)]
-pub enum StepError {
+pub enum DCLError {
     E0000_GENERIC_ERROR {
         #[source]
         error: anyhow::Error,
@@ -149,7 +149,7 @@ pub enum StepError {
     },
 }
 
-impl StepError {
+impl DCLError {
     /// Stable identifier for Sentry grouping. Must not include any variable
     /// data (paths, OS messages) — only the variant name. Sentry fingerprints
     /// off this so all occurrences of the same failure cluster into one issue.
@@ -273,13 +273,13 @@ impl StepError {
     }
 }
 
-impl Display for StepError {
+impl Display for DCLError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.user_message())
     }
 }
 
-impl From<anyhow::Error> for StepError {
+impl From<anyhow::Error> for DCLError {
     fn from(value: anyhow::Error) -> Self {
         Self::E0000_GENERIC_ERROR {
             error: value,
@@ -288,7 +288,7 @@ impl From<anyhow::Error> for StepError {
     }
 }
 
-impl From<std::io::Error> for StepError {
+impl From<std::io::Error> for DCLError {
     fn from(value: std::io::Error) -> Self {
         use std::io::ErrorKind::*;
 
@@ -311,7 +311,7 @@ impl From<std::io::Error> for StepError {
     }
 }
 
-impl From<zip::result::ZipError> for StepError {
+impl From<zip::result::ZipError> for DCLError {
     fn from(value: zip::result::ZipError) -> Self {
         match value {
             zip::result::ZipError::Io(io_err) => Self::from(io_err),
@@ -335,7 +335,7 @@ impl From<zip::result::ZipError> for StepError {
     }
 }
 
-impl From<DownloadFileError> for StepError {
+impl From<DownloadFileError> for DCLError {
     fn from(value: DownloadFileError) -> Self {
         use DownloadFileError::*;
         match value {
@@ -355,7 +355,7 @@ impl From<DownloadFileError> for StepError {
     }
 }
 
-impl From<reqwest::Error> for StepError {
+impl From<reqwest::Error> for DCLError {
     fn from(value: reqwest::Error) -> Self {
         let url: Option<String> = value.url().map(|e| e.as_str().to_owned());
         Self::E2001_DOWNLOAD_FAILED { url, error: value }

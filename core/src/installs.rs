@@ -3,7 +3,7 @@ use crate::analytics::event::Event;
 use crate::config;
 use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
 use crate::environment::AppEnvironment;
-use crate::errors::{StepError, StepResult, StepResultTyped};
+use crate::errors::{DCLError, DCLErrorResult, DCLErrorTyped};
 use crate::instances::RunningInstances;
 #[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
@@ -165,14 +165,14 @@ fn get_version_data_or_empty() -> Map<String, Value> {
     })
 }
 
-fn get_latest_version(version_data: &Map<String, Value>) -> StepResultTyped<&str> {
+fn get_latest_version(version_data: &Map<String, Value>) -> DCLErrorTyped<&str> {
     version_data
         .get("version")
         .and_then(|v| v.as_str())
-        .ok_or(StepError::E3003_CANT_GET_VERSION)
+        .ok_or(DCLError::E3003_CANT_GET_VERSION)
 }
 
-pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> StepResultTyped<PathBuf> {
+pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<PathBuf> {
     let base_path = match version {
         None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
@@ -296,7 +296,7 @@ fn remove_version_if_exists(version: &EntryVersion) {
     }
 }
 
-fn cleanup_versions(current_version: &EntryVersion) -> StepResult {
+fn cleanup_versions(current_version: &EntryVersion) -> DCLErrorResult {
     const KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT: usize = 2;
 
     let explorer_path = explorer_path();
@@ -387,30 +387,30 @@ pub fn target_download_path() -> PathBuf {
     explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
 }
 
-fn as_rename_back_err(path: &Path, source: std::io::Error) -> StepError {
-    StepError::E3006_RENAME_BACK_FAILED {
+fn as_rename_back_err(path: &Path, source: std::io::Error) -> DCLError {
+    DCLError::E3006_RENAME_BACK_FAILED {
         path: path.to_string_lossy().into_owned(),
         source,
     }
 }
 
-fn as_stale_cleanup_err(path: &Path, source: std::io::Error) -> StepError {
-    StepError::E3005_STALE_BUILD_CLEANUP_FAILED {
+fn as_stale_cleanup_err(path: &Path, source: std::io::Error) -> DCLError {
+    DCLError::E3005_STALE_BUILD_CLEANUP_FAILED {
         path: path.to_string_lossy().into_owned(),
         source,
     }
 }
 
-fn as_launch_failed_err(path: &Path, inner_error: anyhow::Error) -> StepError {
-    StepError::E3010_EXPLORER_LAUNCH_FAILED {
+fn as_launch_failed_err(path: &Path, inner_error: anyhow::Error) -> DCLError {
+    DCLError::E3010_EXPLORER_LAUNCH_FAILED {
         path: path.to_string_lossy().into_owned(),
         inner_error,
     }
 }
 
 #[cfg(windows)]
-fn as_binary_access_err(path: &Path, source: std::io::Error) -> StepError {
-    StepError::E3013_EXPLORER_BINARY_ACCESS_FAILED {
+fn as_binary_access_err(path: &Path, source: std::io::Error) -> DCLError {
+    DCLError::E3013_EXPLORER_BINARY_ACCESS_FAILED {
         path: path.to_string_lossy().into_owned(),
         source,
     }
@@ -420,7 +420,7 @@ fn rename_latest_back_to_version(
     latest_path: &Path,
     target: &Path,
     branch_path: &Path,
-) -> StepResult {
+) -> DCLErrorResult {
     if target == branch_path {
         return fs::remove_dir_all(latest_path).map_err(|e| as_rename_back_err(latest_path, e));
     }
@@ -430,7 +430,7 @@ fn rename_latest_back_to_version(
     fs::rename(latest_path, target).map_err(|e| as_rename_back_err(latest_path, e))
 }
 
-pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> StepResult {
+pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLErrorResult {
     let current_version: EntryVersion = EntryVersion::from_str(version)
         .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
 
@@ -439,7 +439,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
 
     if !file_path.exists() {
-        return StepError::E1001_FILE_NOT_FOUND {
+        return DCLError::E1001_FILE_NOT_FOUND {
             expected_path: Some(file_path.to_string_lossy().into_owned()),
         }
         .into();
@@ -447,7 +447,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     if branch_path.exists() {
         fs::remove_dir_all(&branch_path).map_err(|source| {
-            StepError::E3005_STALE_BUILD_CLEANUP_FAILED {
+            DCLError::E3005_STALE_BUILD_CLEANUP_FAILED {
                 path: branch_path.to_string_lossy().into_owned(),
                 source,
             }
@@ -509,10 +509,10 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         serde_json::to_string(&version_data).context("Cannot serialize version_data")?;
     let version_path = explorer_version_path();
     fs::write(version_path, version_data_str)
-        .map_err(|source| StepError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
+        .map_err(|source| DCLError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
     // Remove the downloaded file
-    fs::remove_file(&file_path).map_err(|e| StepError::E1006_FILE_DELETE_FAILED {
+    fs::remove_file(&file_path).map_err(|e| DCLError::E1006_FILE_DELETE_FAILED {
         file_path: file_path.to_string_lossy().into_owned(),
         inner_error: e.into(),
     })?;
@@ -521,9 +521,9 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     Ok(())
 }
 
-pub fn rename_explorer_to_latest() -> StepResult {
+pub fn rename_explorer_to_latest() -> DCLErrorResult {
     let Ok(version_data) = get_version_data() else {
-        return Err(StepError::E3003_CANT_GET_VERSION);
+        return Err(DCLError::E3003_CANT_GET_VERSION);
     };
 
     let latest_version = get_latest_version(&version_data)?;
@@ -532,7 +532,7 @@ pub fn rename_explorer_to_latest() -> StepResult {
         explorer_path().join(latest_version),
         explorer_latest_version_path(),
     ) else {
-        return Err(StepError::E3004_CANT_RENAME_LATEST);
+        return Err(DCLError::E3004_CANT_RENAME_LATEST);
     };
 
     Ok(())
@@ -612,7 +612,7 @@ impl InstallsHub {
         &self,
         deeplink: Option<DeepLink>,
         preferred_version: Option<&str>,
-    ) -> StepResult {
+    ) -> DCLErrorResult {
         let readable_version = Self::readable_version(preferred_version);
 
         self.send_analytics_event(Event::LAUNCH_CLIENT_START {
@@ -645,7 +645,7 @@ impl InstallsHub {
         &self,
         deeplink: Option<DeepLink>,
         preferred_version: Option<&str>,
-    ) -> StepResult {
+    ) -> DCLErrorResult {
         log::info!("Launching Explorer...");
 
         // macOS uses .app instaed of launching direct binary
@@ -656,7 +656,7 @@ impl InstallsHub {
             .ok_or_else(|| anyhow!("Failed to get explorer binary directory"))?;
 
         if !explorer_launch_path.exists() {
-            return Err(StepError::E3009_EXPLORER_NOT_INSTALLED {
+            return Err(DCLError::E3009_EXPLORER_NOT_INSTALLED {
                 expected_path: explorer_launch_path.to_string_lossy().into_owned(),
                 version: preferred_version.map(str::to_owned),
             });
@@ -719,7 +719,7 @@ impl InstallsHub {
             };
 
             if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
-                return Err(StepError::E3011_EXPLORER_PROCESS_NOT_STARTED {
+                return Err(DCLError::E3011_EXPLORER_PROCESS_NOT_STARTED {
                     path: explorer_launch_path.to_string_lossy().into_owned(),
                 });
             }
@@ -746,7 +746,7 @@ impl InstallsHub {
                         break;
                     }
 
-                    return Err(StepError::E3012_EXPLORER_EXITED_ON_LAUNCH {
+                    return Err(DCLError::E3012_EXPLORER_EXITED_ON_LAUNCH {
                         exit_code: exit_status.to_string(),
                     });
                 }

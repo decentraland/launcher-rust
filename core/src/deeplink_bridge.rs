@@ -13,7 +13,7 @@ use crate::{
         AppEnvironment, Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
         ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
     },
-    errors::{StepError, StepResult},
+    errors::{DCLError, DCLErrorResult},
     installs::deeplink_bridge_path,
     protocols::DeepLink,
     types::{Status, Step},
@@ -120,7 +120,7 @@ pub fn should_use_deeplink_bridge_for(deeplink: &DeepLink, any_is_running: bool)
 pub async fn execute_passthrough<T: EventChannel>(
     channel: &T,
     deeplink: &DeepLink,
-) -> StepResult {
+) -> DCLErrorResult {
     const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
 
     channel.send(Status::State {
@@ -151,7 +151,7 @@ pub async fn execute_passthrough<T: EventChannel>(
             // to completion lets that arm remove the bridge file before we report the timeout.
             token.cancel();
             let _ = (&mut wait).await;
-            return StepResult::Err(StepError::E3001_OPEN_DEEPLINK_TIMEOUT);
+            return DCLErrorResult::Err(DCLError::E3001_OPEN_DEEPLINK_TIMEOUT);
         }
     };
 
@@ -163,9 +163,9 @@ pub async fn execute_passthrough<T: EventChannel>(
                 #[cfg(target_os = "macos")]
                 try_bring_explorer_to_front();
             }
-            StepResult::Ok(())
+            DCLErrorResult::Ok(())
         }
-        PlaceDeeplinkResult::Err(error) => StepResult::Err(error.into()),
+        PlaceDeeplinkResult::Err(error) => DCLErrorResult::Err(error.into()),
     }
 }
 
