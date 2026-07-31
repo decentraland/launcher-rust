@@ -24,10 +24,15 @@
     DetailPrint "SEGMENT_API_KEY missing at build time, skipping '${EVENT_NAME}'"
   ${Else}
     Push $0
+    ; Hand the path over through the environment rather than inlining it into a
+    ; PowerShell string literal: a path such as C:\Users\O'Brien\Downloads\...
+    ; would close the quote and take the whole script down with it.
+    System::Call 'kernel32::SetEnvironmentVariable(t "DCL_INSTALLER_PATH", t "$EXEPATH") i.r0'
     nsExec::ExecToLog `powershell -NoProfile -WindowStyle Hidden -Command "& { \
       $$ErrorActionPreference = 'SilentlyContinue'; \
       [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
-      $$installerName = Split-Path -Leaf '$EXEPATH'; \
+      $$installerName = Split-Path -Leaf $$env:DCL_INSTALLER_PATH; \
+      if (-not $$installerName) { $$installerName = '' }; \
       $$campaignMatch = [regex]::Match($$installerName, '(?i)[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'); \
       $$campaignId = $$null; \
       if ($$campaignMatch.Success) { $$campaignId = $$campaignMatch.Value }; \
