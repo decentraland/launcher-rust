@@ -487,9 +487,8 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         file_path: file_path.to_string_lossy().into_owned(),
         source,
     })?;
-    cleanup_versions(&current_version)?;
-
-    Ok(())
+    
+    cleanup_versions(&current_version)
 }
 
 pub fn rename_explorer_to_latest() -> DCLErrorResult {
