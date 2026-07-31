@@ -483,9 +483,9 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         .map_err(|source| DCLError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
     // Remove the downloaded file
-    fs::remove_file(&file_path).map_err(|e| DCLError::E1006_FILE_DELETE_FAILED {
+    fs::remove_file(&file_path).map_err(|source| DCLError::E1006_FILE_DELETE_FAILED {
         file_path: file_path.to_string_lossy().into_owned(),
-        inner_error: e.into(),
+        source,
     })?;
     cleanup_versions(&current_version)?;
 

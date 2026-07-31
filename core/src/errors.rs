@@ -77,7 +77,7 @@ pub enum DCLError {
     E1006_FILE_DELETE_FAILED {
         file_path: String,
         #[source]
-        inner_error: anyhow::Error,
+        source: std::io::Error,
     },
     E1007_FILE_CREATE_FAILED {
         file_path: String,
