@@ -2,7 +2,7 @@ use crate::channel::EventChannel;
 use crate::deeplink_bridge::{execute_passthrough, should_use_deeplink_bridge_for};
 use crate::errors::{AttemptError, StepError, StepResultTyped};
 use crate::instances::RunningInstances;
-use crate::logs::LOG_TO_FILE;
+use crate::logs::LogDestination;
 use crate::protocols::{DeepLink, Protocol};
 use crate::{
     analytics::{Analytics, event::Event},
@@ -162,7 +162,7 @@ impl LaunchFlow {
             std::result::Result::Ok(_) => std::result::Result::Ok(()),
             std::result::Result::Err(e) => {
                 log::error!(
-                    target: LOG_TO_FILE,
+                    target: LogDestination::File.as_target(),
                     "Error launching Explorer. Cause {} {:#?}",
                     e,
                     e
@@ -186,7 +186,7 @@ impl LaunchFlow {
 
     async fn report_attempt_error(&self, error: StepError, attempt: u8) -> AttemptError {
         log::error!(
-            target: LOG_TO_FILE,
+            target: LogDestination::File.as_target(),
             "Error during the flow. Attempt: {}, Cause {} {:#?}",
             attempt,
             error,

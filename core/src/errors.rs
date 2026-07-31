@@ -258,7 +258,7 @@ impl StepError {
                 "Decentraland isn't installed correctly. Please close the launcher and open it again to reinstall it."
             }
             Self::E3010_EXPLORER_LAUNCH_FAILED { .. } => {
-                "We couldn't start Decentraland. Please close the launcher and open it again. If the problem continues, try running it as administrator."
+                "We couldn't start Decentraland. Please close the launcher and open it again."
             }
             Self::E3011_EXPLORER_PROCESS_NOT_STARTED { .. } => {
                 "Decentraland didn't start. Please make sure your antivirus isn't blocking it and try again."
