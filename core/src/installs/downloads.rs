@@ -73,6 +73,8 @@ impl Display for DownloadFileError {
     }
 }
 
+const PROGRESS_REPORT_STEP: u8 = 25;
+
 async fn track_download_progress(
     analytics: Arc<Mutex<Analytics>>,
     url: String,
@@ -108,9 +110,9 @@ pub async fn download_file<T: EventChannel>(
                 url: url.to_owned(),
             })?;
 
-    // We don't want to send too many analytics events, so we limit the rate at which we send them.
-    let mut last_analytics_time: Option<std::time::Instant> = None;
-    let duration = std::time::Duration::from_millis(500);
+    // We don't want to send too many analytics events, so we only report every
+    // PROGRESS_REPORT_STEP percent — at most 4 events per download.
+    let mut next_report_at: u8 = PROGRESS_REPORT_STEP;
     let mut tasks = Vec::new();
 
     let mut downloaded: u64 = 0;
@@ -131,13 +133,16 @@ pub async fn download_file<T: EventChannel>(
                     let new = min(downloaded.saturating_add(chunk.len() as u64), total_size);
                     downloaded = new;
 
-                    let should_send = match last_analytics_time {
-                        None => true,
-                        Some(last_time) => last_time.elapsed() >= duration,
-                    };
+                    #[allow(
+                        clippy::arithmetic_side_effects,
+                        clippy::cast_precision_loss,
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss
+                    )]
+                    let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
 
-                    if should_send {
-                        last_analytics_time = Some(std::time::Instant::now());
+                    if next_report_at < 100 && progress >= next_report_at {
+                        next_report_at = next_report_at.saturating_add(PROGRESS_REPORT_STEP);
                         let task = tokio::spawn(track_download_progress(
                             analytics.clone(),
                             url.to_string(),
@@ -146,14 +151,6 @@ pub async fn download_file<T: EventChannel>(
                         ));
                         tasks.push(task);
                     }
-
-                    #[allow(
-                        clippy::arithmetic_side_effects,
-                        clippy::cast_precision_loss,
-                        clippy::cast_possible_truncation,
-                        clippy::cast_sign_loss
-                    )]
-                    let progress: u8 = ((downloaded as f64 / total_size as f64) * 100.0) as u8;
 
                     let event: Status = Status::State {
                         step: Step::Downloading {
