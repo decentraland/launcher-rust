@@ -120,6 +120,17 @@ jobs:
           cache-targets: true
           cache-provider: github
 
+      # The cache restores src-tauri/target, which carries bundle and installer
+      # staging output from earlier runs. Those copies can end up inside the
+      # installer instead of the ones this run builds, so drop them first.
+      - name: Purge cached bundle output
+        run: |
+          rm -rf src-tauri/target/release/bundle \
+                 src-tauri/target/release/nsis \
+                 src-tauri/target/universal-apple-darwin/release/bundle
+          find src-tauri/target -name 'auto-auth-token-fetch.exe' -delete || true
+          find src-tauri/target -name 'Decentraland_*setup.exe' -delete || true
+
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
