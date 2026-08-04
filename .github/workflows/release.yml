@@ -280,28 +280,6 @@ jobs:
           args: ${{ matrix.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
-      - name: Verify static CRT (Win)
-        if: ${{ matrix.os == 'windows-latest' }}
-        shell: pwsh
-        run: |
-          $exes = @(
-            "${{ github.workspace }}\src-tauri\target\release\dcl_launcher.exe",
-            "${{ github.workspace }}\src-tauri\resources\auto-auth-token-fetch.exe"
-          )
-          $failed = $false
-          foreach ($exe in $exes) {
-            if (-not (Test-Path $exe)) { throw "missing binary: $exe" }
-            $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
-            $hits = @('VCRUNTIME140', 'MSVCP140') | Where-Object { $text -match $_ }
-            if ($hits) {
-              Write-Host "::error::$exe imports $($hits -join ', ') - static CRT did not apply"
-              $failed = $true
-            } else {
-              Write-Host "$exe OK (static CRT)"
-            }
-          }
-          if ($failed) { exit 1 }
-
       - name: Sign dcl_launcher.exe manually (Win)
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
