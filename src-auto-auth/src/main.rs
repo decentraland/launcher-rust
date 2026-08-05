@@ -9,6 +9,7 @@ use dcl_launcher_core::{
     download_origin_metadata::anon_user_id::AnonUserId,
     download_origin_metadata::auth_token_storage::AuthTokenStorage,
     download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
+    download_origin_metadata::dcl_env_storage::DclEnvStorage,
     download_origin_metadata::referrer_storage::ReferrerStorage,
     download_origin_metadata::startup_location_storage::StartupDeeplinkStorage,
     log, logs,
@@ -86,6 +87,15 @@ fn main_internal() -> Result<()> {
         log::info!("No referrer found in Zone.Identifier URLs");
     }
 
+    if let Some(dcl_env) = origin.as_ref().and_then(|o| o.dcl_env) {
+        log::info!("Environment extracted from Zone.Identifier: {dcl_env}");
+        if let Err(e) = DclEnvStorage::write(dcl_env) {
+            log::error!("Cannot write dcl environment: {e}");
+        }
+    } else {
+        log::info!("No environment found in Zone.Identifier URLs");
+    }
+
     if !StartupDeeplinkStorage::has() {
         if let Some(deeplink) = origin.as_ref().and_then(|o| o.to_startup_deeplink()) {
             log::info!(
@@ -146,6 +156,7 @@ fn origin_from_zone_info(zone_info: ZoneInfo) -> DownloadOriginData {
             result.startup_position = result.startup_position.or(parsed.startup_position);
             result.startup_realm = result.startup_realm.or(parsed.startup_realm);
             result.referrer = result.referrer.or(parsed.referrer);
+            result.dcl_env = result.dcl_env.or(parsed.dcl_env);
         }
     }
 
@@ -477,6 +488,48 @@ mod tests {
             .ok_or_else(|| anyhow!("Token not found"))?;
         assert_eq!(expected_token, token.as_str());
         Ok(())
+    }
+
+    #[rstest]
+    // HostUrl carries the environment.
+    #[case(
+        Some("https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/Decentraland_installer.exe"),
+        None,
+        Some("zone")
+    )]
+    #[case(
+        Some("https://download-gateway.decentraland.org/391a85da-a3bb-49e2-a45e-96c740c38424/Decentraland_installer.exe"),
+        None,
+        Some("org")
+    )]
+    // HostUrl is a CDN outside decentraland.*: the referring page still names
+    // the environment the user downloaded from.
+    #[case(
+        Some("https://cdn.example.com/Decentraland_installer.exe"),
+        Some("https://decentraland.zone/download"),
+        Some("zone")
+    )]
+    // Neither URL is a decentraland domain: no environment signal.
+    #[case(
+        Some("https://cdn.example.com/Decentraland_installer.exe"),
+        Some("https://example.com/download"),
+        None
+    )]
+    // No Zone.Identifier URLs at all (stripped ADS).
+    #[case(None, None, None)]
+    fn test_dcl_env_from_zone_info(
+        #[case] host_url: Option<&str>,
+        #[case] referrer_url: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let zone = ZoneInfo {
+            zone_id: Some(3),
+            host_url: host_url.map(ToOwned::to_owned),
+            referrer_url: referrer_url.map(ToOwned::to_owned),
+        };
+
+        let dcl_env = origin_from_zone_info(zone).dcl_env;
+        assert_eq!(expected, dcl_env.map(|env| env.as_str()));
     }
 
     // Tests use forward-slash paths so they run on both Windows and Unix CI
