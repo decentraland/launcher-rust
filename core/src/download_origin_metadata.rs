@@ -51,8 +51,7 @@ impl DownloadOriginData {
 
         for (key, value) in url.query_pairs() {
             match key.as_ref() {
-                "anon_user_id" => {}
-                "referrer" => {}
+                "anon_user_id" | "referrer" => {}
                 "position" if !value.is_empty() => {
                     startup_position = Some(value.to_string());
                 }
