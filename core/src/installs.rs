@@ -1,6 +1,7 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::config;
+use crate::download_origin_metadata::dcl_env::DclEnv;
 use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
 use crate::environment::AppEnvironment;
 use crate::errors::{DCLError, DCLErrorResult, DCLErrorTyped};
@@ -108,6 +109,10 @@ pub fn referrer_storage_path() -> PathBuf {
 
 pub fn referrer_bridge_path() -> PathBuf {
     explorer_path().join("referrer-bridge.txt")
+}
+
+pub fn dcl_env_storage_path() -> PathBuf {
+    explorer_path().join("dcl-env.txt")
 }
 
 pub fn campaign_attribution_reported_marker_path() -> PathBuf {
@@ -559,6 +564,11 @@ impl InstallsHub {
         if let Some(referrer) = crate::download_origin_metadata::referrer_storage::ReferrerStorage::read() {
             output.push("--referrer".to_string());
             output.push(referrer.as_str().to_owned());
+        }
+
+        if crate::download_origin_metadata::dcl_env_storage::DclEnvStorage::is_zone() {
+            output.push("--dclenv".to_string());
+            output.push(DclEnv::Zone.as_str().to_owned());
         }
 
         let mut additionals = config::client_additional_arguments();

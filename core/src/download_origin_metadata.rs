@@ -2,6 +2,8 @@ pub mod anon_user_id;
 pub mod auth_token_storage;
 pub mod campaign_anon_user_id_storage;
 pub mod campaign_attribution_marker;
+pub mod dcl_env;
+pub mod dcl_env_storage;
 pub mod startup_location_storage;
 pub mod referrer;
 pub mod referrer_storage;
@@ -24,6 +26,9 @@ use crate::protocols::Protocol;
 use anon_user_id::AnonUserId;
 #[cfg(target_os = "macos")]
 use campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
+use dcl_env::DclEnv;
+#[cfg(target_os = "macos")]
+use dcl_env_storage::DclEnvStorage;
 use referrer::Referrer;
 #[cfg(target_os = "macos")]
 use referrer_storage::ReferrerStorage;
@@ -35,6 +40,7 @@ pub struct DownloadOriginData {
     pub startup_position: Option<String>,
     pub startup_realm: Option<String>,
     pub referrer: Option<Referrer>,
+    pub dcl_env: Option<DclEnv>,
 }
 
 impl DownloadOriginData {
@@ -77,6 +83,7 @@ impl DownloadOriginData {
 
         let campaign_anon_user_id = AnonUserId::from_url(url_str);
         let referrer = Referrer::from_url(url_str);
+        let dcl_env = DclEnv::from_url(url_str);
 
         Ok(Self {
             auth_token,
@@ -84,6 +91,7 @@ impl DownloadOriginData {
             startup_position,
             startup_realm,
             referrer,
+            dcl_env,
         })
     }
 
@@ -112,8 +120,8 @@ impl DownloadOriginData {
 pub struct DownloadOrigin {}
 
 impl DownloadOrigin {
-    /// Extracts auth token, campaign `anon_user_id`, and startup deeplink
-    /// (position/realm) from the DMG's xattr URLs.
+    /// Extracts auth token, campaign `anon_user_id`, environment, and startup
+    /// deeplink (position/realm) from the DMG's xattr URLs.
     ///
     /// Windows is handled by the `src-auto-auth` binary, so this is macOS-only.
     #[cfg(target_os = "macos")]
@@ -122,6 +130,7 @@ impl DownloadOrigin {
     }
 
     #[cfg(target_os = "macos")]
+    #[allow(clippy::cognitive_complexity)]
     fn try_extract_from_dmg() {
         let has_token = AuthTokenStorage::has_token();
         let has_anon_id = CampaignAnonUserIdStorage::has();
@@ -169,6 +178,13 @@ impl DownloadOrigin {
                         if let Err(e) = ReferrerStorage::write(referrer) {
                             log::error!("Cannot write referrer: {e}");
                         }
+                    }
+                }
+
+                if let Some(dcl_env) = origin.dcl_env {
+                    log::info!("Environment obtained from DMG origin: {dcl_env}");
+                    if let Err(e) = DclEnvStorage::write(dcl_env) {
+                        log::error!("Cannot write dcl environment: {e}");
                     }
                 }
             }
@@ -274,6 +290,7 @@ impl DownloadOrigin {
                     result.startup_position = result.startup_position.or(parsed.startup_position);
                     result.startup_realm = result.startup_realm.or(parsed.startup_realm);
                     result.referrer = result.referrer.or(parsed.referrer);
+                    result.dcl_env = result.dcl_env.or(parsed.dcl_env);
                 }
                 Err(e) => {
                     log::error!("Cannot parse url '{}': {}", attr, e);
