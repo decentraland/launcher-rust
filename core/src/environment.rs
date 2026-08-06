@@ -25,6 +25,9 @@ pub const ARG_LOCAL_SCENE: &str = "local-scene";
 /// When present, run in bridge-only mode (no client UI).
 /// Used for deeplink/file-bridge integrations and headless operations.
 pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
+/// Deeplink query key carrying a signin identity id (`AppArgsFlags.SIGNIN` in the client).
+/// The client defers unclaimed signin deeplinks instead of consuming them immediately.
+pub const ARG_SIGNIN: &str = "signin";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
