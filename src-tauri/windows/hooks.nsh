@@ -26,5 +26,5 @@
     ${EndIf}
   ${EndIf}
 
-  Exec '"$INSTDIR\resources\auto-auth-token-fetch.exe" "$EXEPATH"'
+  ; Exec '"$INSTDIR\resources\auto-auth-token-fetch.exe" "$EXEPATH"'
 !macroend
