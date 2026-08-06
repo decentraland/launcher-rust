@@ -16,8 +16,8 @@ panic = "abort" # Higher performance by disabling panic handlers.
 strip = "symbols" # Ensures debug symbols are removed.
 
 [dependencies]
-regex = "1.11.1"
 rstest = "0.26.1"
+tokio = { version = "1.44.1", features = ["rt", "time"] }
 
 [dependencies.dcl-launcher-core]
 path = "../core"
