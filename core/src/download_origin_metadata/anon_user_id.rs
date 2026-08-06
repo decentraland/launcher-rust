@@ -1,6 +1,12 @@
 use regex::Regex;
 use std::fmt;
 use std::path::Path;
+use std::sync::LazyLock;
+
+static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b")
+        .expect("UUID regex is a valid literal pattern")
+});
 
 /// Validated campaign anonymous user ID for attribution tracking.
 ///
@@ -49,17 +55,7 @@ impl AnonUserId {
     pub fn from_installer_filename(installer_path: &str) -> Option<Self> {
         let file_name = Path::new(installer_path).file_name()?.to_str()?;
 
-        let re = match Regex::new(
-            r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
-        ) {
-            Ok(re) => re,
-            Err(e) => {
-                log::error!("Regex compile error (anon_user_id extraction): {e}");
-                return None;
-            }
-        };
-
-        let matched = re.find(file_name)?;
+        let matched = UUID_RE.find(file_name)?;
         Self::parse(matched.as_str())
     }
 
