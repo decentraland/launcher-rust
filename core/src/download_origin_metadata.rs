@@ -4,9 +4,9 @@ pub mod campaign_anon_user_id_storage;
 pub mod campaign_attribution_marker;
 pub mod startup_location_storage;
 
+use anyhow::Result;
 #[cfg(target_os = "macos")]
 use anyhow::anyhow;
-use anyhow::Result;
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 
@@ -22,6 +22,11 @@ use crate::protocols::Protocol;
 use anon_user_id::AnonUserId;
 #[cfg(target_os = "macos")]
 use campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
+
+/// Query params that legitimately carry the auth token. Everything else is
+/// ignored even when its value looks like a UUID — the download URL also carries
+/// unrelated ids such as the website's `click_id`.
+const AUTH_TOKEN_QUERY_KEYS: &[&str] = &["token"];
 
 /// Data extracted from a download URL — auth token, campaign anonymous user ID,
 /// and optional startup deeplink position/realm.
@@ -39,8 +44,20 @@ pub struct DownloadOriginData {
 impl DownloadOriginData {
     /// Extract both auth token and `anon_user_id` from a single URL.
     ///
-    /// The auth token is matched by UUID regex on any query param value (except
-    /// `anon_user_id`) or path segment. The `anon_user_id` is matched by key name.
+    /// The auth token is taken from the path segment first (the download
+    /// gateway's identity route, `/{token}/decentraland.dmg`), then from the
+    /// `token` query param (used by dry-run artifact URLs). The `anon_user_id`
+    /// is matched by key name.
+    ///
+    /// Both lookups are by position or by explicit key: the previous version
+    /// accepted *any* query param whose value looked like a UUID, and checked
+    /// the query before the path. The website now also sends `click_id`, a
+    /// website-only analytics correlation id that happens to be a UUID, so it
+    /// was picked up as the auth token and shadowed the real one in the path —
+    /// auto-login then failed with a token that was never a token. Matching by
+    /// name instead of by shape means the next tracking param cannot re-break
+    /// this; anything genuinely carrying a token must be added to
+    /// `AUTH_TOKEN_QUERY_KEYS`.
     pub fn from_url(url_str: &str) -> Result<Self> {
         let url = url::Url::parse(url_str)?;
 
@@ -52,29 +69,29 @@ impl DownloadOriginData {
         let mut startup_position: Option<String> = None;
         let mut startup_realm: Option<String> = None;
 
+        // Path first: this is where the production identity route carries it, so
+        // no query param can shadow it.
+        if let Some(segments) = url.path_segments() {
+            auth_token = segments
+                .filter(|s| re.is_match(s))
+                .map(ToString::to_string)
+                .next();
+        }
+
         for (key, value) in url.query_pairs() {
             match key.as_ref() {
-                "anon_user_id" => {}
                 "position" if !value.is_empty() => {
                     startup_position = Some(value.to_string());
                 }
                 "realm" if !value.is_empty() => {
                     startup_realm = Some(value.to_string());
                 }
-                _ => {
+                key if AUTH_TOKEN_QUERY_KEYS.contains(&key) => {
                     if auth_token.is_none() && re.is_match(&value) {
                         auth_token = Some(value.to_string());
                     }
                 }
-            }
-        }
-
-        if auth_token.is_none() {
-            if let Some(segments) = url.path_segments() {
-                auth_token = segments
-                    .filter(|s| re.is_match(s))
-                    .map(ToString::to_string)
-                    .next();
+                _ => {}
             }
         }
 
@@ -260,8 +277,9 @@ impl DownloadOrigin {
             match DownloadOriginData::from_url(attr) {
                 Ok(parsed) => {
                     result.auth_token = result.auth_token.or(parsed.auth_token);
-                    result.campaign_anon_user_id =
-                        result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+                    result.campaign_anon_user_id = result
+                        .campaign_anon_user_id
+                        .or(parsed.campaign_anon_user_id);
                     result.startup_position = result.startup_position.or(parsed.startup_position);
                     result.startup_realm = result.startup_realm.or(parsed.startup_realm);
                 }
@@ -312,6 +330,48 @@ mod tests {
         Ok(())
     }
 
+    /// The website appends `click_id`, a UUID that is not a token. It used to be
+    /// picked up as the auth token — query params were scanned before the path
+    /// and any UUID-shaped value was accepted — which broke auto-login for users
+    /// who already had a session on the website.
+    #[test]
+    fn test_click_id_does_not_shadow_the_path_token() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.org/8448424d-5234-40c5-9922-13a2870cf7de/decentraland.dmg?anon_user_id=5b0a9de5-87e1-4321-8600-a8904f1943be&click_id=50c51fed-e0b3-4d63-9c21-4e2fb96eabb2";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(
+            origin.auth_token.as_deref(),
+            Some("8448424d-5234-40c5-9922-13a2870cf7de")
+        );
+        assert_eq!(
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
+            Some("5b0a9de5-87e1-4321-8600-a8904f1943be".to_owned())
+        );
+        Ok(())
+    }
+
+    /// Same URL shape on the anonymous route: there is no token to find, and
+    /// `click_id` must not be mistaken for one.
+    #[test]
+    fn test_click_id_alone_yields_no_token() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.org/anonymous/decentraland.exe?anon_user_id=5b0a9de5-87e1-4321-8600-a8904f1943be&click_id=50c51fed-e0b3-4d63-9c21-4e2fb96eabb2";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert!(origin.auth_token.is_none());
+        assert!(origin.campaign_anon_user_id.is_some());
+        Ok(())
+    }
+
+    /// An unrelated UUID-shaped param is ignored regardless of its name, so the
+    /// next tracking id the website adds cannot re-break auto-login.
+    #[test]
+    fn test_unknown_uuid_param_is_not_a_token() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.org/anonymous/decentraland.exe?some_future_id=50c51fed-e0b3-4d63-9c21-4e2fb96eabb2";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert!(origin.auth_token.is_none());
+        Ok(())
+    }
+
     #[test]
     fn test_both_token_and_anon_id() -> anyhow::Result<()> {
         let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?anon_user_id=abc-123";
@@ -322,7 +382,9 @@ mod tests {
         );
         assert!(origin.campaign_anon_user_id.is_some());
         assert_eq!(
-            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
             Some("abc-123".to_owned())
         );
         Ok(())
@@ -355,7 +417,9 @@ mod tests {
             Some("391a85da-a3bb-49e2-a45e-96c740c38424")
         );
         assert_eq!(
-            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
             Some("abc-123".to_owned())
         );
         assert_eq!(origin.startup_position.as_deref(), Some("5,10"));
