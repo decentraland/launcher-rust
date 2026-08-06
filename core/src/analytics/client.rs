@@ -163,25 +163,25 @@ fn merge_static_defaults(properties: &mut Map<String, Value>, defaults: &Map<Str
     }
 }
 
+fn event_data(value: Value) -> Result<Map<String, Value>, String> {
+    match value {
+        Value::Object(mut map) => match map.remove("data") {
+            Some(Value::Object(data)) => Ok(data),
+            Some(other) => Err(format!(
+                "serialized event data is not a json object: {other:#?}"
+            )),
+            None => Ok(Map::new()),
+        },
+        other => Err(format!("serialized event is not an object: {other:#?}")),
+    }
+}
+
 fn properties_from_event(event: &Event) -> Map<String, Value> {
-    let result = serde_json::to_value(event);
-    match result {
-        Ok(json) => match json.as_object() {
-            Some(map) => match map.get("data") {
-                Some(data) => match data {
-                    Value::Object(map) => map.to_owned(),
-                    _ => {
-                        error!("serialized event is not a json object: {:#?}", data);
-                        Map::new()
-                    }
-                },
-                None => {
-                    error!("serialized event doesn't have data property");
-                    Map::new()
-                }
-            },
-            None => {
-                error!("serialized event is not an object");
+    match serde_json::to_value(event) {
+        Ok(value) => match event_data(value) {
+            Ok(map) => map,
+            Err(e) => {
+                error!("{}", e);
                 Map::new()
             }
         },
@@ -279,5 +279,29 @@ mod tests {
         println!("message: {}", json_value);
 
         Ok(())
+    }
+
+    #[test]
+    fn event_data_is_empty_for_unit_variant_event() -> Result<()> {
+        let value = serde_json::to_value(&Event::FETCH_VERSION_START)?;
+        let data = event_data(value).map_err(|e| anyhow!(e))?;
+        assert_eq!(data, Map::new());
+        Ok(())
+    }
+
+    #[test]
+    fn event_data_extracts_fields_for_data_carrying_variant() -> Result<()> {
+        let value = serde_json::to_value(&Event::FETCH_VERSION_SUCCESS {
+            version: "1.0".to_owned(),
+        })?;
+        let data = event_data(value).map_err(|e| anyhow!(e))?;
+        assert_eq!(data.get("version"), Some(&Value::String("1.0".to_owned())));
+        Ok(())
+    }
+
+    #[test]
+    fn event_data_errors_when_data_is_not_an_object() {
+        let value = json!({"event": "custom", "data": "not-an-object"});
+        assert!(event_data(value).is_err());
     }
 }
