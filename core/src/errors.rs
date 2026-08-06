@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, path::Path};
 use strum::IntoStaticStr;
 use thiserror::Error;
 
@@ -24,7 +24,7 @@ impl From<&FlowError> for Status {
 #[derive(Error, Debug)]
 pub struct AttemptError {
     #[source]
-    pub(crate) error: StepError,
+    pub(crate) error: DCLError,
     pub(crate) attempt: u8,
 }
 
@@ -38,19 +38,19 @@ impl Display for AttemptError {
     }
 }
 
-pub type StepResult = std::result::Result<(), StepError>;
+pub type DCLErrorResult = std::result::Result<(), DCLError>;
 
-pub type StepResultTyped<T> = std::result::Result<T, StepError>;
+pub type DCLErrorTyped<T> = std::result::Result<T, DCLError>;
 
-impl<T> From<StepError> for StepResultTyped<T> {
-    fn from(value: StepError) -> Self {
+impl<T> From<DCLError> for DCLErrorTyped<T> {
+    fn from(value: DCLError) -> Self {
         Self::Err(value)
     }
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Error, Debug, IntoStaticStr)]
-pub enum StepError {
+pub enum DCLError {
     E0000_GENERIC_ERROR {
         #[source]
         error: anyhow::Error,
@@ -77,7 +77,7 @@ pub enum StepError {
     E1006_FILE_DELETE_FAILED {
         file_path: String,
         #[source]
-        inner_error: anyhow::Error,
+        source: std::io::Error,
     },
     E1007_FILE_CREATE_FAILED {
         file_path: String,
@@ -127,9 +127,58 @@ pub enum StepError {
     E3008_EXPLORER_ALREADY_RUNNING {
         processes: Vec<String>,
     },
+    E3009_EXPLORER_NOT_INSTALLED {
+        expected_path: String,
+        version: Option<String>,
+    },
+    E3010_EXPLORER_LAUNCH_FAILED {
+        path: String,
+        #[source]
+        inner_error: anyhow::Error,
+    },
+    E3011_EXPLORER_PROCESS_NOT_STARTED {
+        path: String,
+    },
+    E3012_EXPLORER_EXITED_ON_LAUNCH {
+        exit_code: String,
+    },
+    E3013_EXPLORER_BINARY_ACCESS_FAILED {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
-impl StepError {
+impl DCLError {
+    pub fn from_cleanup(path: &Path, source: std::io::Error) -> Self {
+        Self::E3005_STALE_BUILD_CLEANUP_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
+    pub fn from_rename_back(path: &Path, source: std::io::Error) -> Self {
+        Self::E3006_RENAME_BACK_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
+    pub fn from_launch_failure(path: &Path, inner_error: anyhow::Error) -> Self {
+        Self::E3010_EXPLORER_LAUNCH_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            inner_error,
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn from_binary_access(path: &Path, source: std::io::Error) -> Self {
+        Self::E3013_EXPLORER_BINARY_ACCESS_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
     /// Stable identifier for Sentry grouping. Must not include any variable
     /// data (paths, OS messages) — only the variant name. Sentry fingerprints
     /// off this so all occurrences of the same failure cluster into one issue.
@@ -234,17 +283,32 @@ impl StepError {
             Self::E3008_EXPLORER_ALREADY_RUNNING { .. } => {
                 "Decentraland is already running and is blocking the update. Please close it and try again."
             }
+            Self::E3009_EXPLORER_NOT_INSTALLED { .. } => {
+                "Decentraland isn't installed correctly. Please close the launcher and open it again to reinstall it."
+            }
+            Self::E3010_EXPLORER_LAUNCH_FAILED { .. } => {
+                "We couldn't start Decentraland. Please close the launcher and open it again."
+            }
+            Self::E3011_EXPLORER_PROCESS_NOT_STARTED { .. } => {
+                "Decentraland didn't start. Please make sure your antivirus isn't blocking it and try again."
+            }
+            Self::E3012_EXPLORER_EXITED_ON_LAUNCH { .. } => {
+                "Decentraland closed unexpectedly right after starting. Please try again, and make sure your graphics drivers are up to date."
+            }
+            Self::E3013_EXPLORER_BINARY_ACCESS_FAILED { .. } => {
+                "We couldn't access the Decentraland files. If Decentraland is open, please close it and try again."
+            }
         }
     }
 }
 
-impl Display for StepError {
+impl Display for DCLError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.user_message())
     }
 }
 
-impl From<anyhow::Error> for StepError {
+impl From<anyhow::Error> for DCLError {
     fn from(value: anyhow::Error) -> Self {
         Self::E0000_GENERIC_ERROR {
             error: value,
@@ -253,7 +317,7 @@ impl From<anyhow::Error> for StepError {
     }
 }
 
-impl From<std::io::Error> for StepError {
+impl From<std::io::Error> for DCLError {
     fn from(value: std::io::Error) -> Self {
         use std::io::ErrorKind::*;
 
@@ -276,7 +340,7 @@ impl From<std::io::Error> for StepError {
     }
 }
 
-impl From<zip::result::ZipError> for StepError {
+impl From<zip::result::ZipError> for DCLError {
     fn from(value: zip::result::ZipError) -> Self {
         match value {
             zip::result::ZipError::Io(io_err) => Self::from(io_err),
@@ -300,7 +364,7 @@ impl From<zip::result::ZipError> for StepError {
     }
 }
 
-impl From<DownloadFileError> for StepError {
+impl From<DownloadFileError> for DCLError {
     fn from(value: DownloadFileError) -> Self {
         use DownloadFileError::*;
         match value {
@@ -320,7 +384,7 @@ impl From<DownloadFileError> for StepError {
     }
 }
 
-impl From<reqwest::Error> for StepError {
+impl From<reqwest::Error> for DCLError {
     fn from(value: reqwest::Error) -> Self {
         let url: Option<String> = value.url().map(|e| e.as_str().to_owned());
         Self::E2001_DOWNLOAD_FAILED { url, error: value }
