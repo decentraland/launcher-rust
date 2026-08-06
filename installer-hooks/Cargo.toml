@@ -1,5 +1,5 @@
 [package]
-name = "src-auto-auth"
+name = "installer-hooks"
 version = "1.21.5"
 edition = "2024"
 

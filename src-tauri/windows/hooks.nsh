@@ -53,6 +53,11 @@
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
+  ; Pre-1.21.6 name of the helper below. Tauri only prunes the *main* binary on
+  ; rename, so without this the stale copy survives every upgrade and then keeps
+  ; the uninstaller's non-recursive RMDir from clearing $INSTDIR.
+  Delete "$INSTDIR\resources\auto-auth-token-fetch.exe"
+
   ; Earliest hook NSIS exposes — the Tauri installer has no welcome page, so
   ; this is effectively the moment the installer starts working.
   !insertmacro TRACK_INSTALLER_EVENT "Launcher Installer Start" "new"
@@ -86,7 +91,7 @@
     ${EndIf}
   ${EndIf}
 
-  Exec '"$INSTDIR\resources\auto-auth-token-fetch.exe" "$EXEPATH"'
+  Exec '"$INSTDIR\resources\installer-hooks.exe" "$EXEPATH"'
   !insertmacro TRACK_INSTALLER_EVENT "Launcher Installer Finish" "reuse"
   Delete "${INSTALL_RUN_ID_FILE}"
 !macroend
