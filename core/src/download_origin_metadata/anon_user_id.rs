@@ -7,7 +7,7 @@ static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b")
         .expect("UUID regex is a valid literal pattern")
 });
- 
+
 /// Validated campaign anonymous user ID for attribution tracking.
 ///
 /// Format constraint: alphanumeric + hyphens/underscores, max 128 chars.
