@@ -1,3 +1,30 @@
+; Install-funnel events are fired by the same Rust binary that does the
+; postinstall token fetch, so they reuse `core`'s Segment client, anonymous id
+; and campaign-id extraction. Its build-time path arrives through the
+; environment the way SEGMENT_API_KEY reaches the Rust build; an unset variable
+; is dropped by makensis with a compile warning, leaving the empty string, and
+; both events compile out together.
+!define INSTALLER_HOOKS_SRC "$%DCL_INSTALLER_HOOKS_EXE%"
+!define INSTALLER_HOOKS_TEMP_EXE "$TEMP\dcl-installer-hooks.exe"
+
+!macro NSIS_HOOK_PREINSTALL
+  ; Pre-1.21.6 name of the helper. Tauri only prunes the *main* binary on
+  ; rename, so without this the stale copy survives every upgrade and then keeps
+  ; the uninstaller's non-recursive RMDir from clearing $INSTDIR.
+  Delete "$INSTDIR\resources\auto-auth-token-fetch.exe"
+
+  !if "${INSTALLER_HOOKS_SRC}" == ""
+    DetailPrint "DCL_INSTALLER_HOOKS_EXE missing at build time, installer events disabled"
+  !else
+    ; Nothing is extracted yet at PREINSTALL, so the helper needs its own early
+    ; copy. Datablock optimization folds it into the installed resource's block,
+    ; so it costs no installer size. Exec is async: the helper waits up to 5s on
+    ; Segment and the install must not block on it.
+    File "/oname=${INSTALLER_HOOKS_TEMP_EXE}" "${INSTALLER_HOOKS_SRC}"
+    Exec '"${INSTALLER_HOOKS_TEMP_EXE}" installer-event start "$EXEPATH"'
+  !endif
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
   ; A missing key leaves the output empty rather than 0, and a 32-bit installer
   ; reads the WOW6432Node view, so require an explicit 1 in either view.
@@ -26,5 +53,13 @@
     ${EndIf}
   ${EndIf}
 
-  Exec '"$INSTDIR\resources\auto-auth-token-fetch.exe" "$EXEPATH"'
+  Exec '"$INSTDIR\resources\installer-hooks.exe" "$EXEPATH"'
+
+  !if "${INSTALLER_HOOKS_SRC}" != ""
+    ; The installed copy is available by now, so the early one is only cleaned
+    ; up. A Delete that loses the race with the still-running start event just
+    ; leaves the file in $TEMP.
+    Exec '"$INSTDIR\resources\installer-hooks.exe" installer-event finish "$EXEPATH"'
+    Delete "${INSTALLER_HOOKS_TEMP_EXE}"
+  !endif
 !macroend
