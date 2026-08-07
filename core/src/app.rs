@@ -4,6 +4,7 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
 use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttributionMarker;
+use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
 use crate::instances::RunningInstances;
@@ -45,6 +46,8 @@ impl AppState {
             DownloadOrigin::try_install_to_app_dir_if_from_dmg();
         }
 
+        ReferrerStorage::ingest_bridge_file();
+
         let campaign_anon_user_id = CampaignAnonUserIdStorage::read();
 
         let mut analytics = {
@@ -83,11 +86,7 @@ impl AppState {
             running_instances.clone(),
         )));
 
-        let flow = LaunchFlow::new(
-            installs_hub,
-            analytics.clone(),
-            running_instances,
-        );
+        let flow = LaunchFlow::new(installs_hub, analytics.clone(), running_instances);
         let flow_state = LaunchFlowState::default();
         let app_state = Self {
             flow,
