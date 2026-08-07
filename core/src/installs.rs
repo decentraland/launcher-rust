@@ -47,6 +47,21 @@ const EXPLORER_MAC_APP_PATH: &str = concat!("Decentraland", ".app");
 #[cfg(target_os = "windows")]
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
 
+#[cfg(target_os = "macos")]
+const EXPLORER_CRITICAL_FILES: &[&str] = &["Decentraland.app/Contents/MacOS/Explorer"];
+
+#[cfg(target_os = "windows")]
+const EXPLORER_CRITICAL_FILES: &[&str] = &[
+    EXPLORER_WIN_BIN_PATH,
+    "UnityPlayer.dll",
+    "Decentraland_Data/Plugins/x86_64/ClearScriptV8.win-x64.dll",
+    "Decentraland_Data/Plugins/x86_64/ktx_unity.dll",
+    "Decentraland_Data/Plugins/x86_64/AVProVideoWinRT.dll",
+    "Decentraland_Data/Plugins/x86_64/enet.dll",
+    "Decentraland_Data/Plugins/x86_64/segment-server.dll",
+    "Decentraland_Data/Plugins/x86_64/sign-server.dll",
+];
+
 pub fn log_file_path() -> Result<PathBuf> {
     let mut path = PathBuf::new();
     if let Some(dir) = dirs::home_dir() {
@@ -172,7 +187,7 @@ fn get_latest_version(version_data: &Map<String, Value>) -> DCLErrorTyped<&str> 
         .ok_or(DCLError::E3003_CANT_GET_VERSION)
 }
 
-pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<PathBuf> {
+fn get_explorer_base_path(version: Option<&str>) -> DCLErrorTyped<PathBuf> {
     let base_path = match version {
         None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
@@ -187,15 +202,24 @@ pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<P
         }
     };
 
+    Ok(base_path)
+}
+
+fn launch_path_from_base(base_path: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
     {
-        Ok(base_path.join(EXPLORER_MAC_APP_PATH))
+        base_path.join(EXPLORER_MAC_APP_PATH)
     }
 
     #[cfg(target_os = "windows")]
     {
-        Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
+        base_path.join(EXPLORER_WIN_BIN_PATH)
     }
+}
+
+pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<PathBuf> {
+    let base_path = get_explorer_base_path(version)?;
+    Ok(launch_path_from_base(&base_path))
 }
 
 #[cfg(target_os = "macos")]
@@ -371,12 +395,123 @@ fn is_app_updated(version: &str) -> bool {
     }
 }
 
-pub fn is_explorer_installed(version: Option<&str>) -> bool {
-    let path = get_explorer_launch_path(version);
-    match path {
-        Ok(path) => path.exists(),
-        Err(_) => false,
+fn is_non_empty_file(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() > 0)
+}
+
+fn find_missing_file(base_path: &Path, relative_paths: &[&str]) -> Option<PathBuf> {
+    relative_paths
+        .iter()
+        .map(|relative| base_path.join(relative))
+        .find(|path| !is_non_empty_file(path))
+}
+
+fn find_missing_critical_file(base_path: &Path) -> Option<PathBuf> {
+    find_missing_file(base_path, EXPLORER_CRITICAL_FILES)
+}
+
+fn integrity_check_marker_path() -> PathBuf {
+    explorer_path().join("integrity-check-attempts.json")
+}
+
+/// Attempt budget for the critical-file integrity check, shared by
+/// `install_explorer`'s post-decompress gate and `is_explorer_installed`'s
+/// pre-launch gate.
+///
+/// Deliberately kept `>=` flow.rs's private `SILENT_ATTEMPTS_COUNT`
+/// (currently 3): a single `launch()` call there retries the whole
+/// fetch/download/install cycle up to that many times on error, and it is
+/// that existing bounded loop which delivers the accurate "your antivirus
+/// may have removed them" message to the user. Keeping this budget at least
+/// as large means one `launch()` call still gets that full, unchanged
+/// retry-then-report behavior for genuine same-session corruption. Only
+/// attempts *beyond* the budget -- which, by construction, can only happen
+/// once the user retries via a separate, later `launch()` call -- stop
+/// hard-failing/reinstalling and fall through to a logged warning instead.
+/// This is what keeps an unversioned/renamed future critical file from
+/// wedging every install on a legitimately-changed release forever.
+const INTEGRITY_CHECK_ATTEMPT_BUDGET: u32 = 3;
+
+fn read_integrity_check_attempts(version_key: &str) -> u32 {
+    let Ok(data) = fs::read_to_string(integrity_check_marker_path()) else {
+        return 0;
+    };
+    let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(&data) else {
+        return 0;
+    };
+    if obj.get("version").and_then(Value::as_str) != Some(version_key) {
+        return 0;
     }
+    obj.get("attempts")
+        .and_then(Value::as_u64)
+        .and_then(|attempts| u32::try_from(attempts).ok())
+        .unwrap_or(0)
+}
+
+fn write_integrity_check_attempts(version_key: &str, attempts: u32) {
+    let marker = serde_json::json!({ "version": version_key, "attempts": attempts });
+    match serde_json::to_string(&marker) {
+        Ok(data) => {
+            if let Err(e) = fs::write(integrity_check_marker_path(), data) {
+                log::warn!("Failed to persist integrity-check attempt marker: {e}");
+            }
+        }
+        Err(e) => log::warn!("Failed to serialize integrity-check attempt marker: {e}"),
+    }
+}
+
+/// Pure gate: given how many integrity-check failures were already recorded
+/// for a version and the attempt budget, decide whether this failure should
+/// still hard-fail/reinstall.
+///
+/// `Some(next_attempts)` means "still within budget: hard-fail (or trigger a
+/// reinstall) and persist `next_attempts`". `None` means the budget for this
+/// version is exhausted: fall through advisory instead of hard-failing or
+/// reinstalling again.
+const fn integrity_check_gate(previous_attempts: u32, budget: u32) -> Option<u32> {
+    if previous_attempts < budget {
+        Some(previous_attempts.saturating_add(1))
+    } else {
+        None
+    }
+}
+
+pub fn is_explorer_installed(version: Option<&str>) -> bool {
+    let Ok(base_path) = get_explorer_base_path(version) else {
+        return false;
+    };
+
+    if !launch_path_from_base(&base_path).exists() {
+        return false;
+    }
+
+    let Some(missing) = find_missing_critical_file(&base_path) else {
+        return true;
+    };
+
+    let missing_file = missing.to_string_lossy().into_owned();
+    let code = DCLError::E3014_INSTALL_INTEGRITY_CHECK_FAILED {
+        missing_file: missing_file.clone(),
+    }
+    .code();
+    let version_key = version.unwrap_or("latest");
+
+    if integrity_check_gate(read_integrity_check_attempts(version_key), INTEGRITY_CHECK_ATTEMPT_BUDGET).is_none() {
+        // Already gave this version a full reinstall-and-report cycle (see
+        // `install_explorer`) and the file is still missing -- most likely a
+        // legitimately-changed future layout rather than recoverable
+        // per-machine corruption. Don't loop: fall through and let the flow
+        // launch what is installed, with a warning instead of a block.
+        log::warn!(
+            "{code}: critical file still missing after exhausting {INTEGRITY_CHECK_ATTEMPT_BUDGET} \
+             reinstall attempts for {version_key}; treating the install as usable so the flow \
+             launches instead of reinstalling again: {missing_file}"
+        );
+        return true;
+    }
+
+    log::warn!("{code}: treating install as broken, missing or empty critical file: {missing_file}");
+    false
 }
 
 pub fn is_explorer_updated(version: &str) -> bool {
@@ -440,6 +575,35 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
             let mut permissions = metadata.permissions();
             permissions.set_mode(0o755);
             fs::set_permissions(explorer_bin_path, permissions)?;
+        }
+    }
+
+    if let Some(missing) = find_missing_critical_file(&branch_path) {
+        let missing_file = missing.to_string_lossy().into_owned();
+        match integrity_check_gate(
+            read_integrity_check_attempts(version),
+            INTEGRITY_CHECK_ATTEMPT_BUDGET,
+        ) {
+            Some(next_attempts) => {
+                write_integrity_check_attempts(version, next_attempts);
+                return DCLError::E3014_INSTALL_INTEGRITY_CHECK_FAILED { missing_file }.into();
+            }
+            None => {
+                // Budget already exhausted for this version (see
+                // `is_explorer_installed`/`integrity_check_gate`): a future
+                // legitimately-renamed/removed critical file must never hard-
+                // fail every install forever, so log-and-continue instead of
+                // returning `Err` here.
+                let code = DCLError::E3014_INSTALL_INTEGRITY_CHECK_FAILED {
+                    missing_file: missing_file.clone(),
+                }
+                .code();
+                log::warn!(
+                    "{code}: critical file still missing after {INTEGRITY_CHECK_ATTEMPT_BUDGET} \
+                     reinstall attempts for {version}; completing the install anyway instead of \
+                     hard-failing again: {missing_file}"
+                );
+            }
         }
     }
 
