@@ -1,3 +1,8 @@
+; Disable NSIS CRC integrity check because Tauri signs the installer
+; after NSIS compilation, which invalidates the CRC. The Authenticode
+; signature already provides integrity verification.
+CRCCheck off
+
 !macro NSIS_HOOK_POSTINSTALL
   ; A missing key leaves the output empty rather than 0, and a 32-bit installer
   ; reads the WOW6432Node view, so require an explicit 1 in either view.
