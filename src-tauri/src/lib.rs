@@ -14,7 +14,6 @@
     clippy::missing_errors_doc
 )]
 
-mod args;
 mod logging;
 // Public for the Layer 2 integration tests (src-tauri/tests/).
 pub mod service_lifecycle;
@@ -23,8 +22,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use args::UpdaterArgs;
 use dcl_launcher_ipc as ipc;
+use dcl_launcher_shared::environment::{deeplink_from_env, Args};
 use dcl_launcher_shared::types::{LauncherUpdate, Status};
 use ipc::protocol::Command;
 use log::{error, info};
@@ -160,7 +159,10 @@ async fn launch_internal(
 }
 
 fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
-    let updater_args = UpdaterArgs::parse_from_env();
+    // argv only: the updater runs in this process, while everything else in
+    // argv is forwarded verbatim to the service (which merges `config.json`
+    // arguments on its own).
+    let updater_args = Args::from_argv();
     let use_updater_url = updater_args.use_updater_url.clone();
 
     // comparison to support rollbacks
@@ -322,7 +324,7 @@ const fn setup_deeplink(_a: &App, _state: &MutState) {
 
 #[cfg(target_os = "macos")]
 fn accept_deeplink(state: &MutState, url: String) {
-    if !args::is_deeplink(&url) {
+    if !dcl_launcher_shared::environment::is_deeplink(&url) {
         error!("Ignoring a non-decentraland deeplink: {}", url);
         return;
     }
@@ -338,7 +340,7 @@ fn setup(a: &App) {
     );
 
     let state: MutState = Arc::new(UiState {
-        pending_deeplink: Mutex::new(args::deeplink_from_env()),
+        pending_deeplink: Mutex::new(deeplink_from_env()),
         ui_close_notified: AtomicBool::new(false),
     });
 

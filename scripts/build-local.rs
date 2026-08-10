@@ -22,7 +22,7 @@ use std::process::{exit, Command, ExitStatus};
 
 const SCRIPT_NAME: &str = "build-local";
 
-/// `core/src/environment.rs` reads this with `env!`, so nothing compiles
+/// `src-shared/src/environment.rs` reads this with `env!`, so nothing compiles
 /// without it. Defaulted to the same value the `.vscode` configs hardcode; an
 /// existing value in the environment always wins. Only the Rust side needs it,
 /// and `tauri build` passes it down to the prebuild scripts and cargo.

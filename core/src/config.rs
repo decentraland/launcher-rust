@@ -1,30 +1,11 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
+use dcl_launcher_shared::config::{arguments_from_key, content, write};
 use log::error;
-use serde_json::{Map, Value};
-
-use crate::installs::config_path;
-
-fn config_content() -> Result<Map<String, Value>> {
-    let path = config_path();
-    if path.exists() {
-        let data = std::fs::read_to_string(path).context("Failed to read config.json")?;
-        return serde_json::from_str::<Map<String, Value>>(&data).context("Failed to parse JSON");
-    }
-
-    let map: Map<String, Value> = Map::new();
-    Ok(map)
-}
-
-fn write_config(value: &Map<String, Value>) -> Result<()> {
-    let path = config_path();
-    let file = std::fs::File::create(path)?;
-    serde_json::to_writer_pretty(file, &value)?;
-    Ok(())
-}
+use serde_json::Value;
 
 fn user_id() -> Result<String> {
     const KEY: &str = "analytics-user-id";
-    let config = config_content()?;
+    let config = content()?;
     if let Some(id) = config.get(KEY) {
         let value = id.as_str();
         match value {
@@ -40,7 +21,7 @@ fn user_id() -> Result<String> {
     let mut config = config;
     let id = uuid::Uuid::new_v4().to_string();
     config.insert(KEY.to_owned(), Value::String(id.clone()));
-    write_config(&config)?;
+    write(&config)?;
     Ok(id)
 }
 
@@ -49,32 +30,6 @@ pub fn user_id_or_none() -> String {
         error!("Cannot get user id from config, fallback is used: {:#}", e);
         "none".to_owned()
     })
-}
-
-pub fn arguments_from_key(key: &str) -> Vec<String> {
-    let config = config_content();
-    match config {
-        Ok(config) => {
-            if let Some(raw) = config.get(key) {
-                let raw = raw.as_str();
-                match raw {
-                    Some(value) => value.split(' ').map(ToOwned::to_owned).collect(),
-                    None => Vec::new(),
-                }
-            } else {
-                Vec::new()
-            }
-        }
-        Err(e) => {
-            log::error!("Error on reading config content: {}", e);
-            Vec::new()
-        }
-    }
-}
-
-pub fn cmd_arguments() -> Vec<String> {
-    const KEY: &str = "cmd-arguments";
-    arguments_from_key(KEY)
 }
 
 pub fn client_additional_arguments() -> Vec<String> {

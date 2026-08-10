@@ -181,7 +181,7 @@ impl DownloadOrigin {
 
     #[cfg(target_os = "macos")]
     fn install_to_app_dir_if_from_dmg() -> Result<()> {
-        let from_dmg = crate::environment::macos::is_running_from_dmg()?;
+        let from_dmg = dcl_launcher_shared::is_running_from_dmg()?;
 
         if !from_dmg {
             log::info!("App is not running from dmg, no copying needed");
@@ -227,7 +227,7 @@ impl DownloadOrigin {
     fn obtain_token_internal() -> Result<DownloadOriginData> {
         use anyhow::Context;
 
-        use crate::environment::macos::{dmg_backing_file, dmg_mount_path, where_from_attr};
+        use dcl_launcher_shared::macos::{dmg_backing_file, dmg_mount_path, where_from_attr};
 
         let path = std::env::current_exe()?;
         log::info!("Exe path: {}", path.display());

@@ -19,10 +19,13 @@
 )]
 
 //! Base crate for implementations shared across the launcher processes
-//! (core/service, IPC, thin UI): filesystem locations, app version, and
-//! macOS dmg detection. This crate depends on NO other launcher crate —
-//! core references it, never the other way around.
+//! (core/service, IPC, thin UI): filesystem locations, app version,
+//! `config.json` access, command-line arguments, and macOS dmg detection.
+//! This crate depends on NO other launcher crate — core references it, never
+//! the other way around.
 
+pub mod config;
+pub mod environment;
 pub mod macos;
 pub mod types;
 

@@ -15,7 +15,7 @@ use time::OffsetDateTime;
 use tokio::sync::Mutex;
 
 use crate::analytics::network_info::network_context;
-use crate::environment::AppEnvironment;
+use dcl_launcher_shared::environment::AppEnvironment;
 
 use super::event::Event;
 use super::fingerprint::ClientFingerprint;

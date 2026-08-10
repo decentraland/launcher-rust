@@ -6,12 +6,12 @@ use crate::logs::LogDestination;
 use crate::protocols::{DeepLink, Protocol};
 use crate::{
     analytics::{Analytics, event::Event},
-    environment::AppEnvironment,
     errors::{FlowError, DCLErrorResult},
     installs::{self, InstallsHub},
     s3::{self, ReleaseResponse},
 };
 use anyhow::{Context, Ok, Result, anyhow};
+use dcl_launcher_shared::environment::AppEnvironment;
 use dcl_launcher_shared::types::{BuildType, Status, Step};
 use log::info;
 use regex::Regex;

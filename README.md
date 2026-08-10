@@ -174,7 +174,7 @@ C:\Users\<YourUsername>\AppData\Local\DecentralandLauncherLight\
 
 The application supports command-line arguments.
 The complete and up-to-date list is defined here:
-https://github.com/decentraland/launcher-rust/blob/main/core/src/environment.rs
+https://github.com/decentraland/launcher-rust/blob/main/src-shared/src/environment.rs
 
 ### Configuration File
 

@@ -2,13 +2,13 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::config;
 use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
-use crate::environment::AppEnvironment;
 use crate::errors::{DCLError, DCLErrorResult, DCLErrorTyped};
 use crate::instances::RunningInstances;
 #[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
 use anyhow::{Context, Result, anyhow};
+use dcl_launcher_shared::environment::AppEnvironment;
 use semver::Version;
 use serde_json::{Map, Value};
 use std::cmp::Ordering;
@@ -48,10 +48,6 @@ const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
 
 pub fn log_file_path() -> Result<PathBuf> {
     dcl_launcher_shared::log_file_path()
-}
-
-pub fn config_path() -> PathBuf {
-    explorer_path().join("config.json")
 }
 
 pub fn auth_token_marker_path() -> PathBuf {

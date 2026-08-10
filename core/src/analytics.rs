@@ -12,9 +12,10 @@ use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
 
+use dcl_launcher_shared::environment::AppEnvironment;
+
 use crate::{
     config,
-    environment::AppEnvironment,
     utils::{app_version, get_os_name},
 };
 
