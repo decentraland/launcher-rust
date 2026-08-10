@@ -279,7 +279,8 @@ fn ads_content(_path: &str) -> Result<Vec<u8>> {
 fn zone_identifier_content_powershell(path: &str) -> Result<String> {
     use std::process::{Command, Stdio};
 
-    let output = Command::new("powershell.exe")
+    let mut command = Command::new("powershell.exe");
+    command
         .arg("-NoProfile")
         .arg("-Command")
         .arg(format!(
@@ -287,8 +288,19 @@ fn zone_identifier_content_powershell(path: &str) -> Result<String> {
             path.replace("'", "''") // escape single quotes
         ))
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()?;
+        .stderr(Stdio::piped());
+
+    // Without this the console-subsystem child gets a brand new console window,
+    // since this binary runs windowless and has no console to inherit.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command.output()?;
 
     if !output.status.success() {
         return Err(anyhow!(
