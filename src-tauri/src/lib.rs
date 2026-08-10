@@ -71,6 +71,8 @@ struct UiChannel(Channel<ipc::Status>);
 
 impl UiChannel {
     fn send_silent(&self, status: ipc::Status) {
+        info!("UI send status: {status:?}");
+
         if let Err(e) = self.0.send(status) {
             error!("Error during the message sending: {}", e);
         }
