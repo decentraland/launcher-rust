@@ -11,6 +11,7 @@
 use anyhow::{Context, Result, anyhow};
 use semver::{Version};
 use std::{env, fs};
+use std::path::PathBuf;
 use toml_edit::{DocumentMut, value};
 
 const PACKAGE_JSON: &str = "package.json";
@@ -19,14 +20,22 @@ const APP_CONFIG_LOCK: &str = "src-tauri/tauri.conf.json";
 const APP_RS_TOML: &str = "src-tauri/Cargo.toml";
 const CORE_RS_TOML: &str = "core/Cargo.toml";
 const AUTO_AUTH_RS_TOML: &str = "src-auto-auth/Cargo.toml";
+const SHARED_RS_TOML: &str = "src-shared/Cargo.toml";
+const IPC_RS_TOML: &str = "src-ipc/Cargo.toml";
+const SERVICE_RS_TOML: &str = "src-service/Cargo.toml";
+const TESTS_E2E_RS_TOML: &str = "tests-e2e/Cargo.toml";
 
-const FILES: [&'static str; 6] = [
+const FILES: [&'static str; 10] = [
     PACKAGE_JSON,
     PACKAGE_JSON_LOCK,
     APP_CONFIG_LOCK,
     APP_RS_TOML,
     CORE_RS_TOML,
-    AUTO_AUTH_RS_TOML
+    AUTO_AUTH_RS_TOML,
+    SHARED_RS_TOML,
+    IPC_RS_TOML,
+    SERVICE_RS_TOML,
+    TESTS_E2E_RS_TOML
 ];
 
 #[derive(Debug)]
@@ -157,14 +166,28 @@ fn ensure_versions_are_equal(versions: Vec<VersionPair>) -> Result<()> {
     }
 }
 
+/// Walks up from the current directory to the repo root, so the script can be
+/// invoked from anywhere while `FILES` stays root-relative.
+fn repo_root() -> Result<PathBuf> {
+    let start = env::current_dir().context("Cannot read current dir")?;
+    start
+        .ancestors()
+        .find(|dir| dir.join("package.json").is_file() && dir.join("src-tauri").is_dir())
+        .map(|dir| dir.to_path_buf())
+        .ok_or_else(|| anyhow!("Repo root not found at or above {}", start.display()))
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        println!("Usage: cargo run -- [patch|minor|major] or use directly ./update_version.rs [patch|minor|major]");
+        println!("Usage: rust-script scripts/update_version.rs [patch|minor|major]");
         return Ok(());
     }
 
     let bump = BumpType::from_str(&args[1])?;
+
+    let root = repo_root()?;
+    env::set_current_dir(&root).with_context(|| format!("Cannot enter {}", root.display()))?;
 
     let versions = FILES
         .iter()
