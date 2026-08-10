@@ -3,6 +3,7 @@ use std::io;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
+use log::info;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 use crate::protocol::{Command, Frame, Response};
@@ -289,6 +290,8 @@ impl IpcClient {
         cmd: Command,
         mut on_event: impl FnMut(Status),
     ) -> Result<Response> {
+        info!("IPC command request: {cmd:?}");
+
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
 
@@ -300,6 +303,8 @@ impl IpcClient {
                 .read()
                 .await?
                 .ok_or_else(|| anyhow!("The service closed the IPC connection"))?;
+
+            info!("IPC frame received: {frame:?}");
 
             match frame {
                 Frame::Event { status } => on_event(status),
