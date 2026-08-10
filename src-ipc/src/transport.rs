@@ -39,7 +39,10 @@ fn pipe_name(suffix: Option<&str>) -> String {
 
 #[cfg(unix)]
 fn socket_path_for(suffix: Option<&str>) -> PathBuf {
-    let name = suffix.map_or_else(|| "service.sock".to_owned(), |s| format!("service-{s}.sock"));
+    let name = suffix.map_or_else(
+        || "service.sock".to_owned(),
+        |s| format!("service-{s}.sock"),
+    );
     dcl_launcher_shared::app_dir().join(name)
 }
 
