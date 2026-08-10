@@ -380,6 +380,16 @@ pub fn build_explorer_zip(stub_exe: &Path) -> Result<Vec<u8>> {
 </dict>
 </plist>
 "#;
+        // Real release zips carry explicit directory entries; keep the
+        // fixture faithful to them.
+        for dir in [
+            "build",
+            "build/Decentraland.app",
+            "build/Decentraland.app/Contents",
+            "build/Decentraland.app/Contents/MacOS",
+        ] {
+            writer.add_directory(dir, SimpleFileOptions::default())?;
+        }
         writer.start_file(
             "build/Decentraland.app/Contents/Info.plist",
             SimpleFileOptions::default(),

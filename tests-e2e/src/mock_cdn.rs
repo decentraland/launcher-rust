@@ -93,6 +93,11 @@ impl Drop for MockCdn {
         // deadlock the (possibly single-threaded) async runtime that still
         // owns the client side of that socket.
         drop(self.worker.take());
+        // Never run tiny_http's Server::drop either: it joins its internal
+        // accept thread, and on Windows the accept-wakeup race can hang the
+        // test process at exit. Leak the server — the OS reclaims it when
+        // the process dies.
+        std::mem::forget(self.server.clone());
     }
 }
 
