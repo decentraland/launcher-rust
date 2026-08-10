@@ -308,8 +308,7 @@ dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
  "core-foundation-sys",
- "deranged 0.4.0",
- "dirs",
+ "dcl-launcher-shared",
  "display-info",
  "fern",
  "flate2",
@@ -317,10 +316,8 @@ dependencies = [
  "get_if_addrs",
  "humantime",
  "iana-time-zone",
- "libc",
  "log",
  "nix 0.29.0",
- "plist",
  "pretty_env_logger",
  "regex",
  "reqwest",
@@ -379,7 +376,11 @@ name = "dcl-launcher-shared"
 version = "1.21.6"
 dependencies = [
  "anyhow",
- "dcl-launcher-core",
+ "deranged 0.4.0",
+ "dirs",
+ "libc",
+ "log",
+ "plist",
 ]
 
 [[package]]
