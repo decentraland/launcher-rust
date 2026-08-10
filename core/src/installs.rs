@@ -109,11 +109,18 @@ pub fn campaign_attribution_reported_marker_path() -> PathBuf {
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
+    // Test-only escape hatch: Debug builds only.
+    #[cfg(debug_assertions)]
+    if let Ok(base) = std::env::var("DCL_LAUNCHER_BASE_DIR") {
+        if !base.is_empty() {
+            return PathBuf::from(base);
+        }
+    }
     dirs::data_local_dir().expect("Failed to get current directory")
 }
 
-#[allow(clippy::expect_used)]
-fn explorer_path() -> PathBuf {
+#[allow(clippy::expect_used, clippy::missing_panics_doc)]
+pub fn explorer_path() -> PathBuf {
     let path = get_app_base_path().join(APP_NAME);
     create_dir_all(&path).expect("Cannot create app directory");
     path

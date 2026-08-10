@@ -135,6 +135,13 @@ impl AppEnvironment {
     }
 
     pub fn bucket_url() -> String {
+        // Test-only escape hatch:  Debug builds only.
+        #[cfg(debug_assertions)]
+        if let Ok(url) = std::env::var("DCL_LAUNCHER_BUCKET_URL") {
+            if !url.is_empty() {
+                return url;
+            }
+        }
         String::from(BUCKET_URL)
     }
 
