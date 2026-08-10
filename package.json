@@ -14,11 +14,20 @@
     "format-tauri": "cd src-tauri && cargo fmt -- --check --verbose",
     "format-core": "cd core && cargo fmt -- --check --verbose",
     "format-src-auto-auth": "cd src-auto-auth && cargo fmt -- --check --verbose",
-    "format": "npm run format-ui && npm run format-tauri && npm run format-core && npm run format-src-auto-auth",
+    "format-src-shared": "cd src-shared && cargo fmt -- --check --verbose",
+    "format-src-ipc": "cd src-ipc && cargo fmt -- --check --verbose",
+    "format-src-service": "cd src-service && cargo fmt -- --check --verbose",
+    "format-tests-e2e": "cd tests-e2e && cargo fmt -- --check --verbose",
+    "format": "npm run format-ui && npm run format-tauri && npm run format-core && npm run format-src-auto-auth && npm run format-src-shared && npm run format-src-ipc && npm run format-src-service && npm run format-tests-e2e",
     "analyze-tauri": "cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings",
     "analyze-core": "cd core && cargo clippy --all-targets --all-features -- -D warnings",
     "analyze-src-auto-auth": "cd src-auto-auth && cargo clippy --all-targets --all-features -- -D warnings",
-    "analyze": "npm run analyze-tauri && npm run analyze-core && npm run analyze-src-auto-auth"
+    "analyze-src-shared": "cd src-shared && cargo clippy --all-targets --all-features -- -D warnings",
+    "analyze-src-ipc": "cd src-ipc && cargo clippy --all-targets --all-features -- -D warnings",
+    "analyze-src-service": "cd src-service && cargo clippy --all-targets --all-features -- -D warnings",
+    "analyze-tests-e2e": "cd tests-e2e && cargo clippy --all-targets --all-features -- -D warnings",
+    "analyze": "npm run analyze-tauri && npm run analyze-core && npm run analyze-src-auto-auth && npm run analyze-src-shared && npm run analyze-src-ipc && npm run analyze-src-service && npm run analyze-tests-e2e",
+    "e2e": "rust-script scripts/run-e2e.rs"
   },
   "dependencies": {
     "@sentry/react": "^8.29.0",
