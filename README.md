@@ -45,6 +45,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Install Node.js
 brew install node # Or use your favorite package manager
 
+# Install rust-script (runs the build/release scripts in ./scripts)
+cargo install rust-script --locked
+
 # Clone and install
 git clone https://github.com/decentraland/launcher-rust.git
 cd launcher-rust
@@ -66,6 +69,71 @@ npm run tauri dev
 3. Ensure you have VITE_AWS_S3_BUCKET_PUBLIC_URL env var
 4. Execute in the root dir: npm i
 5. Execute tauri build: npm run tauri build
+
+### Building locally without the release key
+
+`TAURI_SIGNING_PRIVATE_KEY` only exists as a CI secret, so the steps above cannot
+be followed outside CI. For a local bundle use:
+
+```bash
+npm run build-local
+```
+
+It mints a throwaway signing key for that one run (in the OS temp dir, deleted
+afterwards), builds the UI and the bundle with it, and defaults
+`VITE_AWS_S3_BUCKET_PUBLIC_URL` if you have not set one. The throwaway public
+key is injected into the build as well, so the resulting launcher trusts only
+that key and will not auto-update itself to the production release. The
+artifacts it produces are consequently **not** publishable as an update.
+
+## Scripts
+
+Repo automation lives in `./scripts` as [rust-script](https://rust-script.org/)
+files — one cross-platform script instead of a `.ps1`/`.sh` pair. They locate
+the repo root themselves, so they can be run from any directory:
+
+| Script | Purpose |
+| --- | --- |
+| `scripts/pre-build-sidecars.rs` | Runs every prebuild step (Windows `beforeDevCommand`/`beforeBuildCommand`) |
+| `scripts/pre-build-service.rs` | Builds `dcl_launcher_service` and stages it in `src-tauri/binaries/` (`universal-apple-darwin` builds both arches and `lipo`s them) |
+| `scripts/pre-build-auto-auth.rs` | Builds the auto-auth token fetcher into `src-tauri/resources/` |
+| `scripts/run-e2e.rs` | Builds the debug service and runs both e2e layers (`npm run e2e`) |
+| `scripts/build-local.rs` | Builds the full bundle with a throwaway updater signing key (`npm run build-local`) |
+| `scripts/update_version.rs` | Bumps the version across every manifest — `rust-script scripts/update_version.rs [patch\|minor\|major]` |
+
+```bash
+rust-script scripts/pre-build-service.rs
+```
+
+## Unit tests
+
+Inline `#[cfg(test)]` tests on each crate's own targets (`--lib`/`--bins`) —
+fast and hermetic, no service binary or staging required:
+
+```bash
+npm run test-unit      # all crates; also: npm test
+npm run test-unit-core # one crate
+```
+
+Exception: `test-unit-tauri` compiles through the tauri build script, which
+needs the sidecar staged first (`rust-script scripts/pre-build-sidecars.rs` —
+the normal dev flow does this for you). `npm run test-all` runs the unit lane
+plus the e2e suite below.
+
+## End-to-end tests
+
+Fully local — no external services are contacted. Every test runs the real
+debug `dcl_launcher_service` in its own sandbox (own base dir, own IPC
+endpoint) against a mock CDN on 127.0.0.1 serving a stub Explorer.
+
+```bash
+npm run e2e            # or: rust-script scripts/run-e2e.rs
+```
+
+Layer 1 lives in `tests-e2e/` (service driven over the IPC protocol); Layer 2
+in `src-tauri/tests/` (UI-side service lifecycle: ensure/restart/stop). The
+tests are `#[ignore]`-gated, so plain `cargo test` skips them. CI runs them in
+`.github/workflows/tests.yml` on Windows and macOS.
 
 ## Development Guidelines
 
