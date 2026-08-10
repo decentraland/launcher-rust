@@ -27,6 +27,14 @@
     "analyze-src-service": "cd src-service && cargo clippy --all-targets --all-features -- -D warnings",
     "analyze-tests-e2e": "cd tests-e2e && cargo clippy --all-targets --all-features -- -D warnings",
     "analyze": "npm run analyze-tauri && npm run analyze-core && npm run analyze-src-auto-auth && npm run analyze-src-shared && npm run analyze-src-ipc && npm run analyze-src-service && npm run analyze-tests-e2e",
+    "test-tauri": "cd src-tauri && cargo test",
+    "test-core": "cd core && cargo test",
+    "test-src-auto-auth": "cd src-auto-auth && cargo test",
+    "test-src-shared": "cd src-shared && cargo test",
+    "test-src-ipc": "cd src-ipc && cargo test",
+    "test-src-service": "cd src-service && cargo test",
+    "test-tests-e2e": "cd tests-e2e && cargo test",
+    "test": "npm run test-tauri && npm run test-core && npm run test-src-auto-auth && npm run test-src-shared && npm run test-src-ipc && npm run test-src-service && npm run test-tests-e2e",
     "e2e": "rust-script scripts/run-e2e.rs"
   },
   "dependencies": {
