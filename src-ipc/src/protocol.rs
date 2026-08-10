@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::status::{Status, Step};
+use dcl_launcher_shared::types::{Status, Step};
 
 /// One JSON line on the wire.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -5,9 +5,8 @@ use anyhow::{Context, Result, anyhow};
 use dcl_launcher_core::analytics::event::Event;
 use dcl_launcher_core::app::AppState;
 use dcl_launcher_core::channel::EventChannel;
-use dcl_launcher_core::types as core_types;
 use dcl_launcher_core::utils;
-use dcl_launcher_ipc as ipc;
+use dcl_launcher_shared::types::Status;
 use log::{error, info};
 use tokio::sync::{mpsc, oneshot};
 
@@ -204,7 +203,7 @@ async fn run_flow_task(
             Ok(())
         }
         Err(flow_error) => {
-            events.publish(ipc::Status::Error {
+            events.publish(Status::Error {
                 message: flow_error.user_message.clone(),
             });
             Err(flow_error.user_message)
@@ -235,57 +234,8 @@ struct BroadcastChannel {
 }
 
 impl EventChannel for BroadcastChannel {
-    fn send(&self, status: core_types::Status) -> Result<()> {
-        self.events.publish(map_status(status));
+    fn send(&self, status: Status) -> Result<()> {
+        self.events.publish(status);
         Ok(())
-    }
-}
-
-fn map_status(status: core_types::Status) -> ipc::Status {
-    match status {
-        core_types::Status::State { step } => ipc::Status::State {
-            step: map_step(step),
-        },
-        core_types::Status::Error { message } => ipc::Status::Error { message },
-    }
-}
-
-const fn map_step(step: core_types::Step) -> ipc::Step {
-    match step {
-        core_types::Step::LauncherUpdate(update) => {
-            ipc::Step::LauncherUpdate(map_launcher_update(&update))
-        }
-        core_types::Step::DeeplinkOpening => ipc::Step::DeeplinkOpening,
-        core_types::Step::Fetching => ipc::Step::Fetching,
-        core_types::Step::Downloading {
-            progress,
-            build_type,
-        } => ipc::Step::Downloading {
-            progress,
-            build_type: map_build_type(&build_type),
-        },
-        core_types::Step::Installing { build_type } => ipc::Step::Installing {
-            build_type: map_build_type(&build_type),
-        },
-        core_types::Step::Launching => ipc::Step::Launching,
-    }
-}
-
-const fn map_launcher_update(update: &core_types::LauncherUpdate) -> ipc::LauncherUpdate {
-    match update {
-        core_types::LauncherUpdate::CheckingForUpdate => ipc::LauncherUpdate::CheckingForUpdate,
-        core_types::LauncherUpdate::Downloading { progress } => ipc::LauncherUpdate::Downloading {
-            progress: *progress,
-        },
-        core_types::LauncherUpdate::DownloadFinished => ipc::LauncherUpdate::DownloadFinished,
-        core_types::LauncherUpdate::InstallingUpdate => ipc::LauncherUpdate::InstallingUpdate,
-        core_types::LauncherUpdate::RestartingApp => ipc::LauncherUpdate::RestartingApp,
-    }
-}
-
-const fn map_build_type(build_type: &core_types::BuildType) -> ipc::BuildType {
-    match *build_type {
-        core_types::BuildType::New => ipc::BuildType::New,
-        core_types::BuildType::Update => ipc::BuildType::Update,
     }
 }

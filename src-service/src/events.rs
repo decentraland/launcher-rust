@@ -1,13 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use dcl_launcher_ipc as ipc;
+use dcl_launcher_shared::types::Status;
 use tokio::sync::broadcast;
 
 /// Fan-out point for status events plus the last-known service state that
 /// backs the `viewCurrentState` command.
 #[derive(Clone)]
 pub struct EventsHub {
-    tx: broadcast::Sender<ipc::Status>,
+    tx: broadcast::Sender<Status>,
     current: Arc<Mutex<ipc::ServiceState>>,
 }
 
@@ -22,16 +23,16 @@ impl EventsHub {
         }
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<ipc::Status> {
+    pub fn subscribe(&self) -> broadcast::Receiver<Status> {
         self.tx.subscribe()
     }
 
     /// Publishes a status event to every connected UI and refreshes the
     /// current-state snapshot derived from it.
-    pub fn publish(&self, status: ipc::Status) {
+    pub fn publish(&self, status: Status) {
         let state = match &status {
-            ipc::Status::State { step } => ipc::ServiceState::Busy { step: step.clone() },
-            ipc::Status::Error { message } => ipc::ServiceState::Errored {
+            Status::State { step } => ipc::ServiceState::Busy { step: step.clone() },
+            Status::Error { message } => ipc::ServiceState::Errored {
                 message: message.clone(),
             },
         };

@@ -35,5 +35,8 @@ tokio = { version = "1.44.1", features = ["rt-multi-thread", "macros", "time", "
 [dependencies.dcl-launcher-ipc]
 path = "../src-ipc"
 
+[dependencies.dcl-launcher-shared]
+path = "../src-shared"
+
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }

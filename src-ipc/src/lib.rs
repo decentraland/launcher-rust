@@ -19,17 +19,15 @@
 )]
 
 //! IPC contract between the thin launcher UI (`src-tauri`) and the resident
-//! background service (`src-service`): wire protocol, mirrored status types,
-//! transport (Windows named pipes / Unix domain sockets), and the
-//! `current-service-pid.txt` discovery file.
+//! background service (`src-service`): wire protocol (status types live in
+//! `dcl_launcher_shared::types`), transport (Windows named pipes / Unix
+//! domain sockets), and the `current-service-pid.txt` discovery file.
 
 pub mod pidfile;
 pub mod protocol;
-pub mod status;
 pub mod transport;
 
 pub use protocol::{Command, Frame, Response, ResponseData, ServiceState, ShutdownReason};
-pub use status::{BuildType, LauncherUpdate, Status, Step};
 pub use transport::{BindError, IpcClient, IpcConnection, IpcServer};
 
 /// Bumped on any breaking change to [`protocol::Frame`] or its payloads.

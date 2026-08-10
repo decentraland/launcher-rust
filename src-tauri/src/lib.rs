@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use args::UpdaterArgs;
 use dcl_launcher_ipc as ipc;
+use dcl_launcher_shared::types::{LauncherUpdate, Status};
 use ipc::protocol::Command;
-use ipc::status::LauncherUpdate;
 use log::{error, info};
 use tauri::Url;
 use tauri::{ipc::Channel, App, AppHandle, Manager, State};
@@ -34,7 +34,7 @@ use tauri::{ipc::Channel, App, AppHandle, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::UpdaterExt;
 
-/// The thin UI owns no launcher logic: it renders [`ipc::Status`] frames
+/// The thin UI owns no launcher logic: it renders [`Status`] frames
 /// streamed by the background service and forwards commands to it.
 pub struct UiState {
     pending_deeplink: Mutex<Option<String>>,
@@ -67,10 +67,10 @@ impl UiState {
 
 type MutState = Arc<UiState>;
 
-struct UiChannel(Channel<ipc::Status>);
+struct UiChannel(Channel<Status>);
 
 impl UiChannel {
-    fn send_silent(&self, status: ipc::Status) {
+    fn send_silent(&self, status: Status) {
         info!("UI send status: {status:?}");
 
         if let Err(e) = self.0.send(status) {
@@ -79,7 +79,7 @@ impl UiChannel {
     }
 
     fn send_error(&self, message: &str) {
-        self.send_silent(ipc::Status::Error {
+        self.send_silent(Status::Error {
             message: message.to_owned(),
         });
     }
@@ -89,7 +89,7 @@ impl UiChannel {
 async fn retry(
     app: AppHandle,
     state: State<'_, MutState>,
-    channel: Channel<ipc::Status>,
+    channel: Channel<Status>,
 ) -> Result<(), String> {
     info!("tauri command: retry");
     launch_internal(app, state, channel, true).await
@@ -99,7 +99,7 @@ async fn retry(
 async fn launch(
     app: AppHandle,
     state: State<'_, MutState>,
-    channel: Channel<ipc::Status>,
+    channel: Channel<Status>,
 ) -> Result<(), String> {
     info!("tauri command: launch");
     launch_internal(app, state, channel, false).await
@@ -108,10 +108,15 @@ async fn launch(
 async fn launch_internal(
     app: AppHandle,
     state: State<'_, MutState>,
-    channel: Channel<ipc::Status>,
+    channel: Channel<Status>,
     retry_flow: bool,
 ) -> Result<(), String> {
     let ui_channel = UiChannel(channel);
+
+    // TODO remove later
+    ui_channel.send_silent(Status::Error { message: "error happened".into() });
+    std::thread::sleep(Duration::from_secs(60));
+
 
     if let Err(e) = update_if_needed_and_restart(&app, &state, &ui_channel).await {
         error!("Cannot update the launcher: {:#}", e);

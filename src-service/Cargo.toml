@@ -29,3 +29,6 @@ path = "../core"
 
 [dependencies.dcl-launcher-ipc]
 path = "../src-ipc"
+
+[dependencies.dcl-launcher-shared]
+path = "../src-shared"

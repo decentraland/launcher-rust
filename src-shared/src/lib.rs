@@ -24,6 +24,7 @@
 //! core references it, never the other way around.
 
 pub mod macos;
+pub mod types;
 
 use std::fs::create_dir_all;
 use std::path::PathBuf;

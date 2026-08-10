@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use dcl_launcher_ipc::protocol::{Command as IpcCommand, Response, ResponseData};
-use dcl_launcher_ipc::status::Status;
+use dcl_launcher_shared::types::Status;
 use dcl_launcher_ipc::transport::IpcClient;
 use dcl_launcher_ipc::{PROTOCOL_VERSION, protocol::ServiceState};
 

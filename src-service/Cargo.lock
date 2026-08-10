@@ -367,6 +367,7 @@ dependencies = [
  "anyhow",
  "dcl-launcher-core",
  "dcl-launcher-ipc",
+ "dcl-launcher-shared",
  "log",
  "tokio",
 ]
@@ -381,6 +382,8 @@ dependencies = [
  "libc",
  "log",
  "plist",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

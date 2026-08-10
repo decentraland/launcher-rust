@@ -342,6 +342,8 @@ dependencies = [
  "libc",
  "log",
  "plist",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

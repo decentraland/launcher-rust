@@ -10,9 +10,9 @@ use crate::{
     errors::{FlowError, DCLErrorResult},
     installs::{self, InstallsHub},
     s3::{self, ReleaseResponse},
-    types::{BuildType, Status, Step},
 };
 use anyhow::{Context, Ok, Result, anyhow};
+use dcl_launcher_shared::types::{BuildType, Status, Step};
 use log::info;
 use regex::Regex;
 use std::{path::PathBuf, sync::Arc};

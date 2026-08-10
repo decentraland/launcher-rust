@@ -7,7 +7,7 @@ use log::info;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 use crate::protocol::{Command, Frame, Response};
-use crate::status::Status;
+use dcl_launcher_shared::types::Status;
 
 #[cfg(windows)]
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};

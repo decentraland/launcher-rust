@@ -237,6 +237,8 @@ dependencies = [
  "libc",
  "log",
  "plist",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -245,6 +247,7 @@ version = "1.21.6"
 dependencies = [
  "anyhow",
  "dcl-launcher-ipc",
+ "dcl-launcher-shared",
  "log",
  "reqwest",
  "serde",

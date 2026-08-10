@@ -16,8 +16,8 @@ use crate::{
     errors::{DCLError, DCLErrorResult},
     installs::deeplink_bridge_path,
     protocols::DeepLink,
-    types::{Status, Step},
 };
+use dcl_launcher_shared::types::{Status, Step};
 
 #[derive(Serialize)]
 struct DeepLinkBridgeDTO {

@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::channel::EventChannel;
-use crate::types::{BuildType, Status, Step};
+use dcl_launcher_shared::types::{BuildType, Status, Step};
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::Mutex;

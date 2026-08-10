@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use dcl_launcher_ipc::protocol::{Command, ServiceState, ShutdownReason};
-use dcl_launcher_ipc::status::{Status, Step};
+use dcl_launcher_shared::types::{Status, Step};
 use dcl_launcher_tests_e2e::harness::TestEnv;
 
 const STUB: &str = env!("CARGO_BIN_EXE_stub_explorer");
