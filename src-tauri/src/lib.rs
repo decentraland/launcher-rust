@@ -113,11 +113,6 @@ async fn launch_internal(
 ) -> Result<(), String> {
     let ui_channel = UiChannel(channel);
 
-    // TODO remove later
-    ui_channel.send_silent(Status::Error { message: "error happened".into() });
-    std::thread::sleep(Duration::from_secs(60));
-
-
     if let Err(e) = update_if_needed_and_restart(&app, &state, &ui_channel).await {
         error!("Cannot update the launcher: {:#}", e);
     }
