@@ -17,6 +17,58 @@ env:
   VITE_AWS_S3_BUCKET_PUBLIC_URL: http://127.0.0.1:9/e2e-placeholder
 
 jobs:
+  # Unit lane: each crate's own targets only (--lib/--bins). The
+  # `#[ignore]`-gated integration tests under tests/ belong to the e2e job.
+  # src-tauri is absent here: any src-tauri compile runs the tauri build
+  # script, which needs the staged sidecar — its unit tests run in the e2e
+  # job after staging.
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            core
+            src-shared
+            src-ipc
+            src-service
+            src-auto-auth
+            tests-e2e
+          cache-targets: true
+          cache-provider: github
+
+      # cargo runs from INSIDE each crate dir so the crate's own
+      # .cargo/config.toml (rustflags incl. crt-static) applies.
+      - name: Unit tests — core
+        working-directory: core
+        run: cargo test --lib --bins
+
+      - name: Unit tests — src-shared
+        working-directory: src-shared
+        run: cargo test --lib
+
+      - name: Unit tests — src-ipc
+        working-directory: src-ipc
+        run: cargo test --lib
+
+      - name: Unit tests — src-service
+        working-directory: src-service
+        run: cargo test --bins
+
+      - name: Unit tests — src-auto-auth
+        working-directory: src-auto-auth
+        run: cargo test --bins
+
+      - name: Unit tests — tests-e2e harness self-tests
+        working-directory: tests-e2e
+        run: cargo test --lib
+
   e2e:
     strategy:
       fail-fast: false
@@ -63,6 +115,12 @@ jobs:
               cargo install rust-script --locked
           fi
           rust-script scripts/pre-build-auto-auth.rs
+
+      # Lives here, not in the unit job: compiling src-tauri runs its build
+      # script, which needs the sidecar and resources staged above.
+      - name: src-tauri unit tests
+        working-directory: src-tauri
+        run: cargo test --lib
 
       - name: E2E Layer 1 (service over IPC)
         working-directory: tests-e2e
