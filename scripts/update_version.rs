@@ -11,8 +11,9 @@
 use anyhow::{Context, Result, anyhow};
 use semver::{Version};
 use std::{env, fs};
-use std::path::PathBuf;
 use toml_edit::{DocumentMut, value};
+
+const SCRIPT_NAME: &str = "update_version";
 
 const PACKAGE_JSON: &str = "package.json";
 const PACKAGE_JSON_LOCK: &str = "package-lock.json";
@@ -166,17 +167,6 @@ fn ensure_versions_are_equal(versions: Vec<VersionPair>) -> Result<()> {
     }
 }
 
-/// Walks up from the current directory to the repo root, so the script can be
-/// invoked from anywhere while `FILES` stays root-relative.
-fn repo_root() -> Result<PathBuf> {
-    let start = env::current_dir().context("Cannot read current dir")?;
-    start
-        .ancestors()
-        .find(|dir| dir.join("package.json").is_file() && dir.join("src-tauri").is_dir())
-        .map(|dir| dir.to_path_buf())
-        .ok_or_else(|| anyhow!("Repo root not found at or above {}", start.display()))
-}
-
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -186,7 +176,9 @@ fn main() -> Result<()> {
 
     let bump = BumpType::from_str(&args[1])?;
 
-    let root = repo_root()?;
+    // `repo_root` comes from shared.rs, so `FILES` stays root-relative no
+    // matter where the script is invoked from.
+    let root = repo_root();
     env::set_current_dir(&root).with_context(|| format!("Cannot enter {}", root.display()))?;
 
     let versions = FILES
@@ -207,4 +199,6 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+include!("shared.rs");
 

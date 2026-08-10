@@ -10,11 +10,11 @@
 //! and `lipo`s them together.
 
 use std::env;
-use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{exit, Command};
+use std::path::Path;
+use std::process::Command;
 
+const SCRIPT_NAME: &str = "pre-build-service";
 const SERVICE_BIN: &str = "dcl_launcher_service";
 const SERVICE_MANIFEST: &str = "src-service/Cargo.toml";
 const UNIVERSAL_DARWIN: &str = "universal-apple-darwin";
@@ -73,26 +73,6 @@ fn build_universal_darwin(root: &Path, staged: &Path) {
     run(root, "lipo", &lipo);
 }
 
-fn copy(from: &Path, to: &Path) {
-    fs::copy(from, to).unwrap_or_else(|e| {
-        fail(&format!("cannot copy {} to {}: {e}", from.display(), to.display()))
-    });
-}
-
-// --- shared script helpers ---------------------------------------------------
-
-/// Walks up from the current directory to the repo root, so the script behaves
-/// the same whether it is invoked from the root, from `scripts/`, or by Tauri.
-fn repo_root() -> PathBuf {
-    let start = env::current_dir().unwrap_or_else(|e| fail(&format!("cannot read cwd: {e}")));
-    for dir in start.ancestors() {
-        if dir.join("package.json").is_file() && dir.join("src-tauri").is_dir() {
-            return dir.to_path_buf();
-        }
-    }
-    fail(&format!("repo root not found at or above {}", start.display()));
-}
-
 fn target_triple() -> String {
     match env::var("TAURI_ENV_TARGET_TRIPLE") {
         Ok(triple) if !triple.is_empty() => triple,
@@ -115,18 +95,4 @@ fn host_triple() -> String {
         .unwrap_or_else(|| fail("no `host:` line in rustc -vV output"))
 }
 
-fn run<S: AsRef<OsStr>>(cwd: &Path, program: &str, args: &[S]) {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .status()
-        .unwrap_or_else(|e| fail(&format!("cannot run {program}: {e}")));
-    if !status.success() {
-        exit(status.code().unwrap_or(1));
-    }
-}
-
-fn fail(message: &str) -> ! {
-    eprintln!("pre-build-service: {message}");
-    exit(1);
-}
+include!("shared.rs");

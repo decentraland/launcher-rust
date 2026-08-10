@@ -5,11 +5,9 @@
 //! Usage: `rust-script scripts/pre-build-auto-auth.rs`
 
 use std::env;
-use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{exit, Command};
 
+const SCRIPT_NAME: &str = "pre-build-auto-auth";
 const AUTO_AUTH_BIN: &str = "src-auto-auth";
 const AUTO_AUTH_MANIFEST: &str = "src-auto-auth/Cargo.toml";
 const RESOURCE_NAME: &str = "auto-auth-token-fetch";
@@ -32,38 +30,4 @@ fn main() {
     println!("AutoAuth resource ready: {}", staged.display());
 }
 
-fn copy(from: &Path, to: &Path) {
-    fs::copy(from, to).unwrap_or_else(|e| {
-        fail(&format!("cannot copy {} to {}: {e}", from.display(), to.display()))
-    });
-}
-
-// --- shared script helpers ---------------------------------------------------
-
-/// Walks up from the current directory to the repo root, so the script behaves
-/// the same whether it is invoked from the root, from `scripts/`, or by Tauri.
-fn repo_root() -> PathBuf {
-    let start = env::current_dir().unwrap_or_else(|e| fail(&format!("cannot read cwd: {e}")));
-    for dir in start.ancestors() {
-        if dir.join("package.json").is_file() && dir.join("src-tauri").is_dir() {
-            return dir.to_path_buf();
-        }
-    }
-    fail(&format!("repo root not found at or above {}", start.display()));
-}
-
-fn run<S: AsRef<OsStr>>(cwd: &Path, program: &str, args: &[S]) {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .status()
-        .unwrap_or_else(|e| fail(&format!("cannot run {program}: {e}")));
-    if !status.success() {
-        exit(status.code().unwrap_or(1));
-    }
-}
-
-fn fail(message: &str) -> ! {
-    eprintln!("pre-build-auto-auth: {message}");
-    exit(1);
-}
+include!("shared.rs");

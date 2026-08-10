@@ -16,10 +16,11 @@
 //! test. `src-tauri/tauri.conf.json` is never modified on disk.
 
 use std::env;
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command, ExitStatus};
+
+const SCRIPT_NAME: &str = "build-local";
 
 /// `core/src/environment.rs` reads this with `env!`, so nothing compiles
 /// without it. Defaulted to the same value the `.vscode` configs hardcode; an
@@ -148,32 +149,4 @@ fn npm() -> &'static str {
     }
 }
 
-// --- shared script helpers ---------------------------------------------------
-
-/// Walks up from the current directory to the repo root, so the script behaves
-/// the same whether it is invoked from the root, from `scripts/`, or by npm.
-fn repo_root() -> PathBuf {
-    let start = env::current_dir().unwrap_or_else(|e| fail(&format!("cannot read cwd: {e}")));
-    for dir in start.ancestors() {
-        if dir.join("package.json").is_file() && dir.join("src-tauri").is_dir() {
-            return dir.to_path_buf();
-        }
-    }
-    fail(&format!("repo root not found at or above {}", start.display()));
-}
-
-fn run<S: AsRef<OsStr>>(cwd: &Path, program: &str, args: &[S]) {
-    let status = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .status()
-        .unwrap_or_else(|e| fail(&format!("cannot run {program}: {e}")));
-    if !status.success() {
-        exit(status.code().unwrap_or(1));
-    }
-}
-
-fn fail(message: &str) -> ! {
-    eprintln!("build-local: {message}");
-    exit(1);
-}
+include!("shared.rs");
