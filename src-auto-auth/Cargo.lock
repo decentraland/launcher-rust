@@ -294,8 +294,7 @@ dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
  "core-foundation-sys",
- "deranged 0.4.0",
- "dirs",
+ "dcl-launcher-shared",
  "display-info",
  "fern",
  "flate2",
@@ -303,10 +302,8 @@ dependencies = [
  "get_if_addrs",
  "humantime",
  "iana-time-zone",
- "libc",
  "log",
  "nix 0.29.0",
- "plist",
  "pretty_env_logger",
  "regex",
  "reqwest",
@@ -333,6 +330,18 @@ dependencies = [
  "windows 0.61.3",
  "windows-sys 0.59.0",
  "zip",
+]
+
+[[package]]
+name = "dcl-launcher-shared"
+version = "1.21.6"
+dependencies = [
+ "anyhow",
+ "deranged 0.4.0",
+ "dirs",
+ "libc",
+ "log",
+ "plist",
 ]
 
 [[package]]

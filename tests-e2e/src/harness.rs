@@ -284,6 +284,12 @@ impl Drop for TestEnv {
         }
         drop(guard);
 
+        // Killed services never reach their graceful endpoint cleanup.
+        #[cfg(unix)]
+        let _ = fs::remove_file(dcl_launcher_ipc::transport::socket_path_for(Some(
+            &self.endpoint,
+        )));
+
         if std::thread::panicking() {
             let mut stderr = std::io::stderr().lock();
             let _ = writeln!(
@@ -298,8 +304,9 @@ impl Drop for TestEnv {
 }
 
 fn temp_root() -> PathBuf {
-    // Unix domain socket paths are limited to ~104 bytes on macOS — keep the
-    // sandbox root short.
+    // /tmp keeps sandbox paths short (std::env::temp_dir() is the long
+    // /var/folders/... on macOS). Sockets live in /tmp too — see
+    // `dcl_launcher_ipc::transport::socket_path_for`.
     #[cfg(unix)]
     {
         PathBuf::from("/tmp")

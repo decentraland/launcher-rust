@@ -30,6 +30,7 @@ jobs:
         with:
           workspaces: |
             src-service
+            src-auto-auth
             tests-e2e
             src-tauri
           cache-targets: true
@@ -50,6 +51,18 @@ jobs:
           else
             cp src-service/target/debug/dcl_launcher_service "src-tauri/binaries/dcl_launcher_service-$TRIPLE"
           fi
+
+      # tauri.windows.conf.json declares the auto-auth bundle resource; the
+      # src-tauri build script (run by Layer 2's `cargo test`) refuses to run
+      # without it.
+      - name: Stage the auto-auth resource for the src-tauri build script
+        if: matrix.os == 'windows-latest'
+        run: |
+          if ! command -v rust-script &> /dev/null; then
+              echo "Installing rust-script..."
+              cargo install rust-script --locked
+          fi
+          rust-script scripts/pre-build-auto-auth.rs
 
       - name: E2E Layer 1 (service over IPC)
         working-directory: tests-e2e

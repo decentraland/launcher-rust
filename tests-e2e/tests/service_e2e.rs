@@ -494,7 +494,7 @@ async fn send_garbage(env: &TestEnv) -> Result<()> {
 #[cfg(unix)]
 async fn send_garbage(env: &TestEnv) -> Result<()> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let path = env.app_dir().join(format!("service-{}.sock", env.endpoint));
+    let path = dcl_launcher_ipc::transport::socket_path_for(Some(&env.endpoint));
     let mut stream = tokio::net::UnixStream::connect(path).await?;
     stream.write_all(b"this is not json\n").await?;
     let mut buf = [0_u8; 256];

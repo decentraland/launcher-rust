@@ -37,13 +37,20 @@ fn pipe_name(suffix: Option<&str>) -> String {
     suffix.map_or_else(|| PIPE_BASE.to_owned(), |s| format!("{PIPE_BASE}-{s}"))
 }
 
+/// Default endpoint: the socket lives in the launcher's data dir. Suffixed
+/// (test-only) endpoints instead live at a fixed short path under `/tmp`:
+/// the suffix alone must determine the endpoint on both ends — the test
+/// process that connects cannot see the service's `DCL_LAUNCHER_BASE_DIR`
+/// redirect, so an `app_dir()`-relative path would resolve differently in
+/// each process. Named pipes on Windows are name-addressed and already
+/// behave this way. `/tmp` also keeps the path under the ~104-byte macOS
+/// socket-path cap.
 #[cfg(unix)]
-fn socket_path_for(suffix: Option<&str>) -> PathBuf {
-    let name = suffix.map_or_else(
-        || "service.sock".to_owned(),
-        |s| format!("service-{s}.sock"),
-    );
-    dcl_launcher_shared::app_dir().join(name)
+pub fn socket_path_for(suffix: Option<&str>) -> PathBuf {
+    suffix.map_or_else(
+        || dcl_launcher_shared::app_dir().join("service.sock"),
+        |s| PathBuf::from("/tmp").join(format!("dcl-launcher-service-{s}.sock")),
+    )
 }
 
 #[cfg(unix)]

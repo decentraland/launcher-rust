@@ -15,8 +15,9 @@ pub struct Sandbox {
 }
 
 pub fn init(tag: &str) -> Result<Sandbox> {
-    // Unix socket paths cap at ~104 bytes on macOS; /tmp keeps them short
-    // (std::env::temp_dir() is the long /var/folders/... there).
+    // /tmp keeps sandbox paths short (std::env::temp_dir() is the long
+    // /var/folders/... on macOS). Sockets live in /tmp too — see
+    // `dcl_launcher_ipc::transport::socket_path_for`.
     #[cfg(unix)]
     let temp_root = PathBuf::from("/tmp");
     #[cfg(windows)]
@@ -49,6 +50,11 @@ impl Drop for Sandbox {
                 dcl_launcher_ipc::pidfile::kill(&entry);
             }
         }
+        // Killed services never reach their graceful endpoint cleanup.
+        #[cfg(unix)]
+        let _ = std::fs::remove_file(dcl_launcher_ipc::transport::socket_path_for(Some(
+            &self.endpoint,
+        )));
         if !std::thread::panicking() {
             let _ = std::fs::remove_dir_all(&self.base);
         } else {

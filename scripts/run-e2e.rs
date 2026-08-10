@@ -17,40 +17,47 @@ use std::process::{exit, Command};
 const BUCKET_URL_KEY: &str = "VITE_AWS_S3_BUCKET_PUBLIC_URL";
 const BUCKET_URL_PLACEHOLDER: &str = "http://127.0.0.1:9/e2e-placeholder";
 
-struct Step {
-    description: &'static str,
-    /// Crate directory cargo runs *inside* — see `cargo` below.
-    crate_dir: &'static str,
-    args: &'static [&'static str],
-}
-
-const STEPS: [Step; 3] = [
-    Step {
-        description: "Building the debug service under test...",
-        crate_dir: "src-service",
-        args: &["build"],
-    },
-    Step {
-        description: "Running e2e (Layer 1: service over IPC)...",
-        crate_dir: "tests-e2e",
-        args: &["test", "--", "--include-ignored"],
-    },
-    Step {
-        description: "Running e2e (Layer 2: UI-side service lifecycle)...",
-        crate_dir: "src-tauri",
-        args: &["test", "--tests", "--", "--include-ignored"],
-    },
-];
-
 fn main() {
     let root = repo_root();
 
-    for step in STEPS {
-        println!("{}", step.description);
-        cargo(&root.join(step.crate_dir), step.args);
+    println!("Building the debug service under test...");
+    cargo(&root.join("src-service"), &["build"]);
+
+    // The src-tauri build script (run by Layer 2's `cargo test`) refuses to
+    // run unless the bundle's externalBin sidecar and, on Windows, the
+    // auto-auth resource exist. Both are gitignored — stage them with the
+    // pre-build scripts so a fresh clone works.
+    if cfg!(windows) {
+        rust_script(&root, "scripts/pre-build-auto-auth.rs");
     }
+    rust_script(&root, "scripts/pre-build-service.rs");
+
+    println!("Running e2e (Layer 1: service over IPC)...");
+    cargo(&root.join("tests-e2e"), &["test", "--", "--include-ignored"]);
+
+    println!("Running e2e (Layer 2: UI-side service lifecycle)...");
+    cargo(
+        &root.join("src-tauri"),
+        &["test", "--tests", "--", "--include-ignored"],
+    );
 
     println!("All e2e tests passed.");
+}
+
+/// Delegates to a sibling rust-script (same mechanism as
+/// `pre-build-sidecars.rs`): `RUST_SCRIPT` can point at a specific
+/// rust-script binary, otherwise it is resolved from `PATH`.
+fn rust_script(root: &Path, script: &str) {
+    println!("Running {script}...");
+    let runner = env::var("RUST_SCRIPT").unwrap_or_else(|_| "rust-script".to_string());
+    let status = Command::new(&runner)
+        .arg(script)
+        .current_dir(root)
+        .status()
+        .unwrap_or_else(|e| fail(&format!("cannot run {runner}: {e}")));
+    if !status.success() {
+        exit(status.code().unwrap_or(1));
+    }
 }
 
 /// Runs cargo from INSIDE the crate dir so the crate's own `.cargo/config.toml`
