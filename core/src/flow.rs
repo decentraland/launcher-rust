@@ -18,6 +18,21 @@ use regex::Regex;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
+const SILENT_ATTEMPTS_COUNT: u8 = 3;
+
+/// Retrying the whole preparation cannot help a deeplink consume-wait timeout: the consumer is
+/// booting, hung, or deferring, and every retry just re-waits the same budget. All other errors
+/// (network, disk) stay retryable.
+const fn is_retryable_error(error: &DCLError) -> bool {
+    !matches!(error, DCLError::E3001_OPEN_DEEPLINK_TIMEOUT)
+}
+
+/// An attempt is final when the silent-retry budget is exhausted or the error is not retryable.
+/// Only the final attempt is captured as a Sentry event; earlier ones become breadcrumbs.
+const fn is_final_attempt(attempt: u8, error: &DCLError) -> bool {
+    attempt >= SILENT_ATTEMPTS_COUNT || !is_retryable_error(error)
+}
+
 trait WorkflowStep<TState, TOutput> {
     async fn is_complete(&self, state: Arc<Mutex<TState>>) -> Result<bool>;
 
@@ -127,8 +142,6 @@ impl LaunchFlow {
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
     ) -> std::result::Result<bool, FlowError> {
-        const SILENT_ATTEMPTS_COUNT: u8 = 3;
-
         let mut last_error: Option<AttemptError> = None;
 
         for attempt in 1..=SILENT_ATTEMPTS_COUNT {
@@ -137,7 +150,12 @@ impl LaunchFlow {
                     return std::result::Result::Ok(handled_by_passthrough);
                 }
                 std::result::Result::Err(e) => {
-                    last_error = Some(self.report_attempt_error(e, attempt).await);
+                    let final_attempt = is_final_attempt(attempt, &e);
+                    last_error =
+                        Some(self.report_attempt_error(e, attempt, final_attempt).await);
+                    if final_attempt {
+                        break;
+                    }
                 }
             }
         }
@@ -184,7 +202,12 @@ impl LaunchFlow {
         }
     }
 
-    async fn report_attempt_error(&self, error: DCLError, attempt: u8) -> AttemptError {
+    async fn report_attempt_error(
+        &self,
+        error: DCLError,
+        attempt: u8,
+        is_final: bool,
+    ) -> AttemptError {
         log::error!(
             target: LogDestination::File.as_target(),
             "Error during the flow. Attempt: {}, Cause {} {:#?}",
@@ -192,19 +215,29 @@ impl LaunchFlow {
             error,
             error
         );
-        
+
         let code = error.code();
         let attempt_error = AttemptError { error, attempt };
 
-        sentry::with_scope(
-            |scope| {
-                scope.set_tag("error_code", code);
-                scope.set_fingerprint(Some(&[code]));
-            },
-            || {
-                sentry::capture_error(&attempt_error);
-            },
-        );
+        if is_final {
+            sentry::with_scope(
+                |scope| {
+                    scope.set_tag("error_code", code);
+                    scope.set_fingerprint(Some(&[code]));
+                },
+                || {
+                    sentry::capture_error(&attempt_error);
+                },
+            );
+        } else {
+            sentry::add_breadcrumb(sentry::protocol::Breadcrumb {
+                category: Some("flow.attempt".to_owned()),
+                message: Some(attempt_error.to_string()),
+                level: sentry::Level::Warning,
+                data: std::iter::once(("error_code".to_owned(), code.into())).collect(),
+                ..Default::default()
+            });
+        }
         self.analytics
             .lock()
             .await
@@ -680,6 +713,54 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                 DCLErrorResult::Ok(())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    // E3001 is the one code the client-side deferral window (and a booting/hung
+    // Explorer) can never resolve by retrying the whole flow again -- report.md item 2's
+    // "single 15s budget" replaces the prior 3x3s. Every other error keeps retrying.
+    #[test]
+    fn e3001_open_deeplink_timeout_is_not_retryable() {
+        assert!(!is_retryable_error(&DCLError::E3001_OPEN_DEEPLINK_TIMEOUT));
+    }
+
+    #[rstest]
+    #[case(DCLError::E3003_CANT_GET_VERSION)]
+    #[case(DCLError::E3004_CANT_RENAME_LATEST)]
+    #[case(DCLError::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT)]
+    fn other_errors_stay_retryable(#[case] error: DCLError) {
+        assert!(is_retryable_error(&error));
+    }
+
+    // `report_attempt_error`'s capture-vs-breadcrumb split (item 3) is driven entirely by
+    // `is_final_attempt`: attempts 1..SILENT_ATTEMPTS_COUNT-1 must stay non-final
+    // (breadcrumb-only) for a retryable error, while a non-retryable error (E3001) is
+    // final on its very first attempt instead of only at the exhausted budget.
+    #[rstest]
+    #[case(1, DCLError::E3001_OPEN_DEEPLINK_TIMEOUT, true)]
+    #[case(2, DCLError::E3001_OPEN_DEEPLINK_TIMEOUT, true)]
+    #[case(SILENT_ATTEMPTS_COUNT, DCLError::E3001_OPEN_DEEPLINK_TIMEOUT, true)]
+    #[case(1, DCLError::E3003_CANT_GET_VERSION, false)]
+    #[case(2, DCLError::E3003_CANT_GET_VERSION, false)]
+    #[case(SILENT_ATTEMPTS_COUNT, DCLError::E3003_CANT_GET_VERSION, true)]
+    fn final_attempt_classification(
+        #[case] attempt: u8,
+        #[case] error: DCLError,
+        #[case] expected_final: bool,
+    ) {
+        assert_eq!(is_final_attempt(attempt, &error), expected_final);
+    }
+
+    // Pins the constant the two matrices above are computed against, so a silent bump of
+    // the retry budget can't invalidate this test's coverage without also failing here.
+    #[test]
+    fn silent_attempts_budget_is_three() {
+        assert_eq!(SILENT_ATTEMPTS_COUNT, 3);
     }
 }
 
