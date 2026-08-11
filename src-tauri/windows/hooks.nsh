@@ -27,8 +27,18 @@
     ; copy. Datablock optimization folds it into the installed resource's block,
     ; so it costs no installer size. Exec is async: the helper waits up to 5s on
     ; Segment and the install must not block on it.
-    File "/oname=${INSTALLER_HOOKS_TEMP_EXE}" "${INSTALLER_HOOKS_SRC}"
-    Exec '"${INSTALLER_HOOKS_TEMP_EXE}" installer-event start "$EXEPATH"'
+    ;
+    ; Delete first so File only ever runs on a free path: overwriting a copy a
+    ; previous helper still has open would raise the abort/retry/ignore dialog
+    ; mid-install. A file that survives the Delete is still in use, so skip the
+    ; event -- that helper is already sending one.
+    Delete "${INSTALLER_HOOKS_TEMP_EXE}"
+    ${IfNot} ${FileExists} "${INSTALLER_HOOKS_TEMP_EXE}"
+      File "/oname=${INSTALLER_HOOKS_TEMP_EXE}" "${INSTALLER_HOOKS_SRC}"
+      Exec '"${INSTALLER_HOOKS_TEMP_EXE}" installer-event start "$EXEPATH"'
+    ${Else}
+      DetailPrint "Installer hooks helper still in use, skipping start event"
+    ${EndIf}
   !endif
 !macroend
 
