@@ -116,7 +116,7 @@ impl DownloadOrigin {
     /// Extracts auth token, campaign `anon_user_id`, and startup deeplink
     /// (position/realm) from the DMG's xattr URLs.
     ///
-    /// Windows is handled by the `src-auto-auth` binary, so this is macOS-only.
+    /// Windows is handled by the `installer-hooks` binary, so this is macOS-only.
     #[cfg(target_os = "macos")]
     pub fn try_extract_origin_data() {
         Self::try_extract_from_dmg();

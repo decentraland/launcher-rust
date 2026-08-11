@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use log::{error, info};
@@ -150,6 +151,20 @@ impl AnalyticsClient {
     pub async fn cleanup(&self) {
         self.send_daemon
             .wait_until_empty_queue_or_abandon(None)
+            .await;
+    }
+
+    /// Same as [`Self::cleanup`] but with an explicit budget.
+    ///
+    /// `cleanup` gives the send daemon the crate default of 500ms, which is
+    /// plenty for the launcher (the daemon keeps draining the queue for the
+    /// lifetime of the process) but not for a short-lived one that exits right
+    /// after: a cold DNS lookup plus TLS handshake to Segment rarely fits, and
+    /// the event would sit in the persistent queue until the next launcher run
+    /// — which never comes for a user who installs and never opens the app.
+    pub async fn cleanup_within(&self, timeout: Duration) {
+        self.send_daemon
+            .wait_until_empty_queue_or_abandon(Some(timeout))
             .await;
     }
 }

@@ -1,5 +1,5 @@
 [package]
-name = "src-auto-auth"
+name = "installer-hooks"
 version = "1.21.8"
 edition = "2024"
 
@@ -16,7 +16,9 @@ panic = "abort" # Higher performance by disabling panic handlers.
 strip = "symbols" # Ensures debug symbols are removed.
 
 [dependencies]
-regex = "1.11.1"
+tokio = { version = "1.44.1", features = ["rt", "time"] }
+
+[dev-dependencies]
 rstest = "0.26.1"
 
 [dependencies.dcl-launcher-core]

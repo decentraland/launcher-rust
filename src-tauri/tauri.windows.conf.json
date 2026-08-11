@@ -2,12 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "resources": [
-      "resources/auto-auth-token-fetch.exe"
+      "resources/installer-hooks.exe"
     ]
   },
   "build": {
-     "beforeDevCommand": "powershell -ExecutionPolicy Bypass -File ./pre-build-auto-auth.ps1",
-     "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File ./pre-build-auto-auth.ps1"
+     "beforeDevCommand": "powershell -ExecutionPolicy Bypass -File ./pre-build-installer-hooks.ps1",
+     "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File ./pre-build-installer-hooks.ps1"
   }
 }
-
