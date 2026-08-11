@@ -213,10 +213,6 @@ jobs:
       - name: Prebuild InstallerHooks
         working-directory: ${{ github.workspace }}
         if: ${{ matrix.os == 'windows-latest' }}
-        # Baked in via option_env! at compile time, so it has to be present for
-        # *this* build of the helper and not just the tauri-action one below.
-        # Without it the helper falls back to a null analytics client and no
-        # installer event is ever sent.
         env:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
         run: powershell -ExecutionPolicy Bypass -File ./pre-build-installer-hooks.ps1
@@ -248,8 +244,6 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           LAUNCHER_ENVIRONMENT: prod
-          # Read by windows/hooks.nsh at makensis time to extract the helper
-          # early enough to fire the PREINSTALL event. Unset disables the events.
           DCL_INSTALLER_HOOKS_EXE: ${{ github.workspace }}\src-tauri\resources\installer-hooks.exe
           GIT_COMMIT: ${{ github.sha }}
           PR_NUMBER: ${{ inputs.pr-number || 'na' }}
