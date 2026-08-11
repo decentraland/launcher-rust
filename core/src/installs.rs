@@ -115,6 +115,10 @@ pub fn dcl_env_storage_path() -> PathBuf {
     explorer_path().join("dcl-env.txt")
 }
 
+pub fn dcl_env_bridge_path() -> PathBuf {
+    explorer_path().join("dcl-env-bridge.txt")
+}
+
 pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
 }

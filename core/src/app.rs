@@ -4,6 +4,7 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
 use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttributionMarker;
+use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
 use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
@@ -47,6 +48,7 @@ impl AppState {
         }
 
         ReferrerStorage::ingest_bridge_file();
+        DclEnvStorage::ingest_bridge_file();
 
         let campaign_anon_user_id = CampaignAnonUserIdStorage::read();
 
