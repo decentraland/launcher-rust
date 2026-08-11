@@ -1,4 +1,9 @@
-pub mod macos;
+//! Compile-time build targets (bucket, provider, launcher environment) and
+//! the command-line arguments the launcher understands.
+//!
+//! Every process parses the same flag set, so the definitions live here. The
+//! thin UI reads argv only ([`Args::from_argv`]) — the service merges
+//! `config.json` arguments on top of argv with [`AppEnvironment::cmd_args`].
 
 use log::info;
 
@@ -25,6 +30,9 @@ pub const ARG_LOCAL_SCENE: &str = "local-scene";
 /// When present, run in bridge-only mode (no client UI).
 /// Used for deeplink/file-bridge integrations and headless operations.
 pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
+
+/// The protocol every launcher deeplink starts with.
+pub const DEEPLINK_PREFIX: &str = "decentraland://";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
@@ -75,6 +83,14 @@ impl Args {
             local_scene: self.local_scene || other.local_scene,
             bridge_only: self.bridge_only || other.bridge_only,
         }
+    }
+
+    /// argv only, with no `config.json` merge — what the thin UI parses for
+    /// itself: the updater runs in the UI process, everything else in argv is
+    /// forwarded verbatim to the service, which merges config arguments on its
+    /// own.
+    pub fn from_argv() -> Self {
+        Self::parse(std::env::args())
     }
 
     pub fn parse(iterator: impl Iterator<Item = String>) -> Self {
@@ -135,6 +151,13 @@ impl AppEnvironment {
     }
 
     pub fn bucket_url() -> String {
+        // Test-only escape hatch:  Debug builds only.
+        #[cfg(debug_assertions)]
+        if let Ok(url) = std::env::var("DCL_LAUNCHER_BUCKET_URL") {
+            if !url.is_empty() {
+                return url;
+            }
+        }
         String::from(BUCKET_URL)
     }
 
@@ -149,28 +172,25 @@ impl AppEnvironment {
         }
     }
 
-    fn args_sources() -> (impl Iterator<Item = String>, impl Iterator<Item = String>) {
+    /// argv merged with the `cmd-arguments` entry of `config.json`.
+    pub fn cmd_args() -> Args {
         let from_cmd = std::env::args();
         info!("cmd args: {:?}", from_cmd);
         let from_config = config::cmd_arguments();
         info!("config args: {:?}", from_config);
 
-        (from_cmd, from_config.into_iter())
-    }
-
-    pub fn cmd_args() -> Args {
-        let (from_cmd, from_config) = Self::args_sources();
-        let cmd_args = Args::parse(from_cmd);
-        let config_args = Args::parse(from_config);
-        let args = cmd_args.merge_with(&config_args);
-        log::info!("parsed args: {:#?}", args);
+        let args = Args::parse(from_cmd).merge_with(&Args::parse(from_config.into_iter()));
+        info!("parsed args: {:#?}", args);
         args
     }
+}
 
-    pub fn raw_cmd_args() -> impl Iterator<Item = String> {
-        let (from_cmd, from_config) = Self::args_sources();
-        from_cmd.chain(from_config)
-    }
+pub fn deeplink_from_env() -> Option<String> {
+    std::env::args().find(|arg| is_deeplink(arg))
+}
+
+pub fn is_deeplink(value: &str) -> bool {
+    value.starts_with(DEEPLINK_PREFIX)
 }
 
 #[cfg(test)]
@@ -289,5 +309,12 @@ mod tests {
             merged.use_latest_json_url.as_deref(),
             Some("https://one.com")
         );
+    }
+
+    #[test]
+    fn deeplink_detection_requires_protocol_prefix() {
+        assert!(is_deeplink("decentraland://open?position=0,0"));
+        assert!(!is_deeplink("--skip-analytics"));
+        assert!(!is_deeplink("https://decentraland.org"));
     }
 }

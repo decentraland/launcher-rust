@@ -5,13 +5,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 
 #[cfg(target_os = "macos")]
-pub fn is_running_from_dmg() -> Result<bool> {
-    let path = std::env::current_exe()?;
-    let dmg_mount_path = dmg_mount_path(&path)?;
-    Ok(dmg_mount_path.is_some())
-}
-
-#[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 pub fn dmg_mount_path(exe_path: &Path) -> Result<Option<PathBuf>> {
     use libc::MNT_RDONLY;

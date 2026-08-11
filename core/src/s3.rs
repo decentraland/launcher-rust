@@ -2,9 +2,9 @@ use reqwest;
 use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::environment::{AppEnvironment, Args};
 use crate::errors::{DCLError, DCLErrorTyped};
 use crate::utils::get_os_name;
+use dcl_launcher_shared::environment::{AppEnvironment, Args};
 
 pub const RELEASE_PREFIX: &str = "@dcl/unity-explorer/releases";
 

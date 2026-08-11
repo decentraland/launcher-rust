@@ -2,13 +2,13 @@ use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::config;
 use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
-use crate::environment::AppEnvironment;
 use crate::errors::{DCLError, DCLErrorResult, DCLErrorTyped};
 use crate::instances::RunningInstances;
 #[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
 use anyhow::{Context, Result, anyhow};
+use dcl_launcher_shared::environment::AppEnvironment;
 use semver::Version;
 use serde_json::{Map, Value};
 use std::cmp::Ordering;
@@ -36,7 +36,6 @@ use std::time::Duration;
 pub mod compression;
 pub mod downloads;
 
-const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 
 #[cfg(target_os = "macos")]
@@ -48,30 +47,7 @@ const EXPLORER_MAC_APP_PATH: &str = concat!("Decentraland", ".app");
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
 
 pub fn log_file_path() -> Result<PathBuf> {
-    let mut path = PathBuf::new();
-    if let Some(dir) = dirs::home_dir() {
-        path.push(dir);
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        path.push("Library/Logs");
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let dir = std::env::var("APPDATA")?;
-        path.push(dir);
-    }
-
-    path.push(APP_NAME);
-    fs::create_dir_all(&path)?;
-
-    path.push("output.log");
-    Ok(path)
-}
-
-pub fn config_path() -> PathBuf {
-    explorer_path().join("config.json")
+    dcl_launcher_shared::log_file_path()
 }
 
 pub fn auth_token_marker_path() -> PathBuf {
@@ -106,17 +82,8 @@ pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
 }
 
-// There is no point to recovery if the app failed to create working directory
-#[allow(clippy::expect_used)]
-fn get_app_base_path() -> PathBuf {
-    dirs::data_local_dir().expect("Failed to get current directory")
-}
-
-#[allow(clippy::expect_used)]
-fn explorer_path() -> PathBuf {
-    let path = get_app_base_path().join(APP_NAME);
-    create_dir_all(&path).expect("Cannot create app directory");
-    path
+pub fn explorer_path() -> PathBuf {
+    dcl_launcher_shared::app_dir()
 }
 
 #[allow(clippy::expect_used)]

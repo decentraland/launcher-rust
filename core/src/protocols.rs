@@ -6,7 +6,7 @@ use url::form_urlencoded;
 use log::{error, warn};
 
 static PROTOCOL_STATE: Mutex<Option<DeepLink>> = Mutex::new(None);
-const PROTOCOL_PREFIX: &str = "decentraland://";
+const PROTOCOL_PREFIX: &str = dcl_launcher_shared::environment::DEEPLINK_PREFIX;
 
 #[derive(Default, Clone)]
 pub struct Protocol {}

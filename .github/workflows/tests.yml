@@ -9,8 +9,20 @@ defaults:
   run:
     shell: 'bash'
 
+env:
+  # Hermetic e2e: the compile-time bucket URL is a non-routable placeholder
+  # (port 9 = discard). Every test injects its own 127.0.0.1 mock CDN,
+  # sandbox base dir, and private IPC endpoint at runtime — CI contacts no
+  # external service.
+  VITE_AWS_S3_BUCKET_PUBLIC_URL: http://127.0.0.1:9/e2e-placeholder
+
 jobs:
-  tests:
+  # Unit lane: each crate's own targets only (--lib/--bins). The
+  # `#[ignore]`-gated integration tests under tests/ belong to the e2e job.
+  # src-tauri is absent here: any src-tauri compile runs the tauri build
+  # script, which needs the staged sidecar — its unit tests run in the e2e
+  # job after staging.
+  unit:
     strategy:
       fail-fast: false
       matrix:
@@ -18,13 +30,114 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v5
+
+      - uses: swatinem/rust-cache@v2
         with:
-          cache: 'npm'
-      - run: npm ci
-        env:
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
-      - run: npm run test:main --if-present
-      - run: npm run test:preload --if-present
-      - run: npm run test:renderer --if-present
-      # - run: npm run test:e2e --if-present
+          workspaces: |
+            core
+            src-shared
+            src-ipc
+            src-service
+            src-auto-auth
+            tests-e2e
+          cache-targets: true
+          cache-provider: github
+
+      # cargo runs from INSIDE each crate dir so the crate's own
+      # .cargo/config.toml (rustflags incl. crt-static) applies.
+      - name: Unit tests — core
+        working-directory: core
+        run: cargo test --lib --bins
+
+      - name: Unit tests — src-shared
+        working-directory: src-shared
+        run: cargo test --lib
+
+      - name: Unit tests — src-ipc
+        working-directory: src-ipc
+        run: cargo test --lib
+
+      - name: Unit tests — src-service
+        working-directory: src-service
+        run: cargo test --bins
+
+      - name: Unit tests — src-auto-auth
+        working-directory: src-auto-auth
+        run: cargo test --bins
+
+      - name: Unit tests — tests-e2e harness self-tests
+        working-directory: tests-e2e
+        run: cargo test --lib
+
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-service
+            src-auto-auth
+            tests-e2e
+            src-tauri
+          cache-targets: true
+          cache-provider: github
+
+      # cargo runs from INSIDE each crate dir so the crate's own
+      # .cargo/config.toml (rustflags incl. crt-static) applies.
+      - name: Build the service under test (debug)
+        working-directory: src-service
+        run: cargo build
+
+      - name: Stage the sidecar for the src-tauri build script
+        run: |
+          TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+          mkdir -p src-tauri/binaries
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp src-service/target/debug/dcl_launcher_service.exe "src-tauri/binaries/dcl_launcher_service-$TRIPLE.exe"
+          else
+            cp src-service/target/debug/dcl_launcher_service "src-tauri/binaries/dcl_launcher_service-$TRIPLE"
+          fi
+
+      # tauri.windows.conf.json declares the auto-auth bundle resource; the
+      # src-tauri build script (run by Layer 2's `cargo test`) refuses to run
+      # without it.
+      - name: Stage the auto-auth resource for the src-tauri build script
+        if: matrix.os == 'windows-latest'
+        run: |
+          if ! command -v rust-script &> /dev/null; then
+              echo "Installing rust-script..."
+              cargo install rust-script --locked
+          fi
+          rust-script scripts/pre-build-auto-auth.rs
+
+      # Lives here, not in the unit job: compiling src-tauri runs its build
+      # script, which needs the sidecar and resources staged above.
+      - name: src-tauri unit tests
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: E2E Layer 1 (service over IPC)
+        working-directory: tests-e2e
+        run: cargo test -- --include-ignored
+
+      - name: E2E Layer 2 (UI-side service lifecycle)
+        working-directory: src-tauri
+        run: cargo test --tests -- --include-ignored
+
+      - name: Upload failed-test sandboxes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-sandboxes-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/dcle2e-*
+            ${{ runner.temp }}/dcll2-*
+            /tmp/dcle2e-*
+            /tmp/dcll2-*
+          if-no-files-found: ignore

@@ -116,7 +116,9 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-service
           cache-targets: true
           cache-provider: github
 
@@ -131,6 +133,15 @@ jobs:
           toolchain: 1.88.0
           components: clippy,rustfmt
           targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # The build scripts under ./scripts are rust-script files, and Tauri's
+      # beforeBuildCommand invokes them too, so this must precede any build.
+      - name: Install rust-script
+        run: |
+          if ! command -v rust-script &> /dev/null; then
+              echo "Installing rust-script..."
+              cargo install rust-script --locked
+          fi
 
       - run: npm ci
         env:
@@ -213,7 +224,19 @@ jobs:
       - name: Prebuild AutoAuth
         working-directory: ${{ github.workspace }}
         if: ${{ matrix.os == 'windows-latest' }}
-        run: powershell -ExecutionPolicy Bypass -File ./pre-build-auto-auth.ps1
+        run: rust-script scripts/pre-build-auto-auth.rs
+
+      - name: Prebuild Service Sidecar
+        working-directory: ${{ github.workspace }}
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: rust-script scripts/pre-build-service.rs
+
+      - name: Prebuild Service Sidecar (macOS universal)
+        working-directory: ${{ github.workspace }}
+        if: ${{ matrix.os == 'macos-latest' }}
+        env:
+          TAURI_ENV_TARGET_TRIPLE: universal-apple-darwin
+        run: rust-script scripts/pre-build-service.rs
 
       - name: Code Analysis Core
         working-directory: ${{ github.workspace }}/core
@@ -221,6 +244,22 @@ jobs:
 
       - name: Code Analysis AutoAuth
         working-directory: ${{ github.workspace }}/src-auto-auth
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Code Analysis Shared
+        working-directory: ${{ github.workspace }}/src-shared
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Code Analysis Ipc
+        working-directory: ${{ github.workspace }}/src-ipc
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Code Analysis Service
+        working-directory: ${{ github.workspace }}/src-service
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Code Analysis TestsE2e
+        working-directory: ${{ github.workspace }}/tests-e2e
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Code Analysis Tauri
@@ -465,6 +504,21 @@ jobs:
             fi
           else
             echo "❌ Signed EXE not found"
+            exit 1
+          fi
+
+          SIDECAR_EXE="src-tauri/target/release/dcl_launcher_service.exe"
+          echo "Checking service sidecar signature..."
+          if [[ -f "$SIDECAR_EXE" ]]; then
+            powershell.exe -Command "Get-AuthenticodeSignature '$SIDECAR_EXE'"
+            SIDECAR_STATUS=$(powershell.exe -Command "(Get-AuthenticodeSignature '$SIDECAR_EXE').Status")
+            echo "Sidecar signature status: $SIDECAR_STATUS"
+            if [[ "$SIDECAR_STATUS" != "Valid" ]]; then
+              echo "❌ Service sidecar is not signed or signature is invalid"
+              exit 1
+            fi
+          else
+            echo "❌ Service sidecar not found at $SIDECAR_EXE"
             exit 1
           fi
 

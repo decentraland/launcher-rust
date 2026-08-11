@@ -5,7 +5,7 @@ use log::info;
 struct ConsoleChannel();
 
 impl EventChannel for ConsoleChannel {
-    fn send(&self, status: dcl_launcher_core::types::Status) -> Result<()> {
+    fn send(&self, status: dcl_launcher_shared::types::Status) -> Result<()> {
         let s = serde_json::to_string_pretty(&status)?;
         info!("{s}");
         Ok(())

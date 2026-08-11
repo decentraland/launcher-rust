@@ -9,15 +9,15 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     channel::EventChannel,
-    environment::{
-        AppEnvironment, Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
-        ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
-    },
     errors::{DCLError, DCLErrorResult},
     installs::deeplink_bridge_path,
     protocols::DeepLink,
-    types::{Status, Step},
 };
+use dcl_launcher_shared::environment::{
+    AppEnvironment, Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
+    ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
+};
+use dcl_launcher_shared::types::{Status, Step};
 
 #[derive(Serialize)]
 struct DeepLinkBridgeDTO {
@@ -204,7 +204,6 @@ pub async fn place_deeplink_and_wait_until_consumed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::environment::Args;
     use crate::protocols::{DeepLink, DeepLinkCreateError};
 
     fn deeplink(value: &str) -> Result<DeepLink, DeepLinkCreateError> {

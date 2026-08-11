@@ -26,7 +26,6 @@ pub mod download_origin_metadata;
 pub mod channel;
 pub mod config;
 mod deeplink_bridge;
-pub mod environment;
 pub mod errors;
 pub mod flow;
 pub mod installs;
@@ -36,7 +35,6 @@ mod monitoring;
 mod processes;
 pub mod protocols;
 pub mod s3;
-pub mod types;
 pub mod utils;
 
 pub use anyhow;

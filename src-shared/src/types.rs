@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Status {
     #[serde(rename_all = "camelCase")]
@@ -9,7 +9,7 @@ pub enum Status {
     Error { message: String },
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Step {
     #[serde(rename_all = "camelCase")]
@@ -26,7 +26,7 @@ pub enum Step {
     Launching,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum LauncherUpdate {
     CheckingForUpdate,
@@ -44,7 +44,7 @@ impl From<LauncherUpdate> for Status {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum BuildType {
     #[serde(rename_all = "camelCase")]
