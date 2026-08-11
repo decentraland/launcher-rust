@@ -119,8 +119,7 @@ fn run_installer_event(phase: InstallerPhase, installer_path: &str) -> Result<()
         .unwrap_or_default()
         .to_owned();
 
-    let campaign_anon_user_id = AnonUserId::from_installer_filename(installer_path)
-        .or_else(CampaignAnonUserIdStorage::read);
+    let campaign_anon_user_id = campaign_anon_user_id_for_event(installer_path);
 
     match &campaign_anon_user_id {
         Some(id) => log::info!("Campaign anon_user_id for installer event: {id}"),
@@ -146,6 +145,19 @@ fn run_installer_event(phase: InstallerPhase, installer_path: &str) -> Result<()
 
     log::info!("Installer event complete");
     Ok(())
+}
+
+fn campaign_anon_user_id_for_event(installer_path: &str) -> Option<AnonUserId> {
+    let from_zone = read_zone_origin(installer_path)
+        .inspect_err(|e| {
+            log::error!("Cannot read Zone.Identifier download-origin metadata: {e:?}");
+        })
+        .ok()
+        .and_then(|origin| origin.campaign_anon_user_id);
+
+    from_zone
+        .or_else(|| AnonUserId::from_installer_filename(installer_path))
+        .or_else(CampaignAnonUserIdStorage::read)
 }
 
 fn run_auth_token(installer_path: &str) -> Result<()> {

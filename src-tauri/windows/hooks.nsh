@@ -1,10 +1,17 @@
 ; Install-funnel events are fired by the same Rust binary that does the
 ; postinstall token fetch, so they reuse `core`'s Segment client, anonymous id
 ; and campaign-id extraction. Its build-time path arrives through the
-; environment the way SEGMENT_API_KEY reaches the Rust build; an unset variable
-; is dropped by makensis with a compile warning, leaving the empty string, and
-; both events compile out together.
+; environment the way SEGMENT_API_KEY reaches the Rust build.
+;
+; A `$%VAR%` the preprocessor cannot resolve is left in place as literal text
+; rather than emptied, so `"${INSTALLER_HOOKS_SRC}" == ""` never holds and the
+; `File` below would abort the build with "no files found". Searching for the
+; leftover `$%` is what actually separates the two cases -- a resolved Windows
+; path never contains that pair -- so INSTALLER_HOOKS_UNRESOLVED is defined
+; only when DCL_INSTALLER_HOOKS_EXE was absent, and both events compile out
+; together.
 !define INSTALLER_HOOKS_SRC "$%DCL_INSTALLER_HOOKS_EXE%"
+!searchparse /noerrors "${INSTALLER_HOOKS_SRC}" "$%" INSTALLER_HOOKS_UNRESOLVED
 !define INSTALLER_HOOKS_TEMP_EXE "$TEMP\dcl-installer-hooks.exe"
 
 !macro NSIS_HOOK_PREINSTALL
@@ -13,7 +20,7 @@
   ; the uninstaller's non-recursive RMDir from clearing $INSTDIR.
   Delete "$INSTDIR\resources\auto-auth-token-fetch.exe"
 
-  !if "${INSTALLER_HOOKS_SRC}" == ""
+  !ifdef INSTALLER_HOOKS_UNRESOLVED
     DetailPrint "DCL_INSTALLER_HOOKS_EXE missing at build time, installer events disabled"
   !else
     ; Nothing is extracted yet at PREINSTALL, so the helper needs its own early
@@ -55,7 +62,7 @@
 
   Exec '"$INSTDIR\resources\installer-hooks.exe" "$EXEPATH"'
 
-  !if "${INSTALLER_HOOKS_SRC}" != ""
+  !ifndef INSTALLER_HOOKS_UNRESOLVED
     ; The installed copy is available by now, so the early one is only cleaned
     ; up. A Delete that loses the race with the still-running start event just
     ; leaves the file in $TEMP.
