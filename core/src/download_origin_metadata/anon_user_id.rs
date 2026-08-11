@@ -1,4 +1,13 @@
+use regex::Regex;
 use std::fmt;
+use std::path::Path;
+use std::sync::LazyLock;
+
+#[allow(clippy::expect_used)]
+static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b")
+        .expect("UUID regex is a valid literal pattern")
+});
 
 /// Validated campaign anonymous user ID for attribution tracking.
 ///
@@ -32,6 +41,25 @@ impl AnonUserId {
         None
     }
 
+    /// Extract from an installer's filename.
+    ///
+    /// The download gateway names anonymous EXE downloads
+    /// `Decentraland-Installer-<UUID>.exe`. The regex matches any RFC 4122
+    /// UUID embedded in the filename so we tolerate browser-added suffixes
+    /// (e.g. `Decentraland-Installer-<UUID> (3).exe` for dedup) and don't lock
+    /// the launcher to a specific gateway-side filename convention.
+    ///
+    /// This is the fallback path used when `Zone.Identifier` has been stripped
+    /// by Windows' silent-unblock handling for trusted signed binaries — which
+    /// is the steady-state for popular pre-signed installers and not an edge
+    /// case.
+    pub fn from_installer_filename(installer_path: &str) -> Option<Self> {
+        let file_name = Path::new(installer_path).file_name()?.to_str()?;
+
+        let matched = UUID_RE.find(file_name)?;
+        Self::parse(matched.as_str())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -54,6 +82,77 @@ impl fmt::Display for AnonUserId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
+
+    // Tests use forward-slash paths so they run on both Windows and Unix CI
+    // hosts. `Path::file_name` uses the host OS's path semantics, but the
+    // production code targets Windows where `\` and `/` both work as
+    // separators — and we only need to exercise the parsing logic here, not
+    // the OS path resolution.
+    #[rstest]
+    #[case(
+        "Downloads/Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
+        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+    )]
+    #[case(
+        // Bare filename, no parent directory.
+        "Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
+        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+    )]
+    #[case(
+        // Browser dedup suffix when the file already exists in Downloads.
+        "Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424 (3).exe",
+        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+    )]
+    #[case(
+        // Different valid UUID, slash-prefixed absolute path.
+        "/tmp/Decentraland-Installer-62792c33-59e3-4e7f-be42-289c053ecb37.exe",
+        Some("62792c33-59e3-4e7f-be42-289c053ecb37")
+    )]
+    #[case(
+        // Old-style filename (no UUID) → no fallback match, the caller must
+        // treat this as "no anon_user_id available".
+        "Decentraland-Installer.exe",
+        None
+    )]
+    #[case(
+        // Different surrounding context — the regex finds the UUID anywhere
+        // in the filename, so the parser stays decoupled from the gateway's
+        // exact filename convention.
+        "some-other-installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
+        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+    )]
+    #[case(
+        // Prefix matches but the UUID part is malformed (raw space). The
+        // RFC 4122 regex rejects it. Defends against attacker-controlled
+        // filenames.
+        "Decentraland-Installer-not a uuid.exe",
+        None
+    )]
+    #[case(
+        // Wrong variant bits (third group does not start with 1-5). RFC 4122
+        // strict regex rejects, even though `AnonUserId::parse` alone would
+        // accept the alphanumeric+hyphen string.
+        "Decentraland-Installer-391a85da-a3bb-09e2-a45e-96c740c38424.exe",
+        None
+    )]
+    #[case(
+        // Uppercase hex still matches thanks to the (?i) flag.
+        "Decentraland-Installer-391A85DA-A3BB-49E2-A45E-96C740C38424.exe",
+        Some("391A85DA-A3BB-49E2-A45E-96C740C38424")
+    )]
+    #[case(
+        // Empty stem (impossible in practice, but we should not panic).
+        "",
+        None
+    )]
+    fn extracts_anon_user_id_from_installer_filename(
+        #[case] path: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let actual = AnonUserId::from_installer_filename(path);
+        assert_eq!(expected, actual.as_ref().map(AnonUserId::as_str));
+    }
 
     #[test]
     fn extracts_anon_user_id_from_query() {

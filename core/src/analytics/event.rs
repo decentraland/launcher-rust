@@ -90,6 +90,12 @@ pub enum Event {
     CAMPAIGN_ATTRIBUTION_DETECTED {
         anon_user_id: String,
     },
+    LAUNCHER_INSTALLER_START {
+        installer_file_name: String,
+    },
+    LAUNCHER_INSTALLER_FINISH {
+        installer_file_name: String,
+    },
 }
 
 impl Display for Event {
@@ -126,6 +132,8 @@ impl Display for Event {
                 Event::FLOW_ATTEMPT_ERROR { .. } => "Launcher Attempt Error",
                 Event::RETRY_FLOW_BUTTON_CLICK { .. } => "Retry Flow Button Click",
                 Event::CAMPAIGN_ATTRIBUTION_DETECTED { .. } => "Campaign Attribution Detected",
+                Event::LAUNCHER_INSTALLER_START { .. } => "Launcher Installer Start",
+                Event::LAUNCHER_INSTALLER_FINISH { .. } => "Launcher Installer Finish",
             }
         )
     }

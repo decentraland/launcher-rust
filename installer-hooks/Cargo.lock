@@ -1091,6 +1091,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "installer-hooks"
+version = "1.21.6"
+dependencies = [
+ "dcl-launcher-core",
+ "rstest",
+ "tokio",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2187,7 +2197,7 @@ dependencies = [
 [[package]]
 name = "segment"
 version = "0.2.6"
-source = "git+https://github.com/decentraland/segment?branch=main#6c97226b10d70f2d1576b529af432209c45415f0"
+source = "git+https://github.com/decentraland/segment?branch=main#d847c53c015b16b54f9a536aff2b3ec1a8002e8e"
 dependencies = [
  "async-trait",
  "reqwest",
@@ -2471,16 +2481,6 @@ checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "src-auto-auth"
-version = "1.16.2"
-dependencies = [
- "dcl-launcher-core",
- "regex",
- "rstest",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
