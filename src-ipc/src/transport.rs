@@ -38,9 +38,10 @@ fn pipe_name(suffix: Option<&str>) -> String {
     suffix.map_or_else(|| PIPE_BASE.to_owned(), |s| format!("{PIPE_BASE}-{s}"))
 }
 
-/// Default endpoint: the socket lives in the launcher's data dir. Suffixed
-/// (test-only) endpoints instead live at a fixed short path under `/tmp`:
-/// the suffix alone must determine the endpoint on both ends — the test
+/// Default endpoint: the socket lives in the launcher's data dir.
+///
+/// Suffixed (test-only) endpoints instead live at a fixed short path under
+/// `/tmp`: the suffix alone must determine the endpoint on both ends — the test
 /// process that connects cannot see the service's `DCL_LAUNCHER_BASE_DIR`
 /// redirect, so an `app_dir()`-relative path would resolve differently in
 /// each process. Named pipes on Windows are name-addressed and already
