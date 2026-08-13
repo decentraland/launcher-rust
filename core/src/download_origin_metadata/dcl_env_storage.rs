@@ -18,10 +18,6 @@ impl DclEnvStorage {
         DclEnv::parse(content.trim())
     }
 
-    pub fn is_zone() -> bool {
-        Self::read() == Some(DclEnv::Zone)
-    }
-
     /// Last-wins, unlike the attribution storages: the environment is
     /// configuration, not attribution. Reinstalling from a production installer
     /// on a machine that once installed from `.zone` must move the client back
@@ -32,6 +28,16 @@ impl DclEnvStorage {
         }
         fs::write(dcl_env_storage_path(), env.as_str())?;
         Ok(())
+    }
+
+    pub fn delete() {
+        let path = dcl_env_storage_path();
+
+        match fs::remove_file(&path) {
+            Ok(()) => log::info!("Dcl environment consumed"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("Cannot remove dcl environment storage file: {e}"),
+        }
     }
 
     pub fn ingest_bridge_file() {

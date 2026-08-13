@@ -1,7 +1,9 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::config;
-use crate::download_origin_metadata::dcl_env::DclEnv;
+use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
+use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
+use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
 use crate::environment::AppEnvironment;
 use crate::errors::{DCLError, DCLErrorResult, DCLErrorTyped};
@@ -558,21 +560,19 @@ impl InstallsHub {
             output.insert(0, value.into());
         }
 
-        if let Some(anon_id) =
-            crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
-        {
+        if let Some(anon_id) = CampaignAnonUserIdStorage::read() {
             output.push("--campaign_anon_user_id".to_string());
             output.push(anon_id.as_str().to_owned());
         }
 
-        if let Some(referrer) = crate::download_origin_metadata::referrer_storage::ReferrerStorage::read() {
+        if let Some(referrer) = ReferrerStorage::read() {
             output.push("--referrer".to_string());
             output.push(referrer.as_str().to_owned());
         }
 
-        if crate::download_origin_metadata::dcl_env_storage::DclEnvStorage::is_zone() {
+        if let Some(env) = DclEnvStorage::read() {
             output.push("--dclenv".to_string());
-            output.push(DclEnv::Zone.as_str().to_owned());
+            output.push(env.as_str().to_owned());
         }
 
         let mut additionals = config::client_additional_arguments();
@@ -628,6 +628,10 @@ impl InstallsHub {
         } else {
             // Consume the deeplink on success and prevent re-triggering it on every subsequent launch
             StartupDeeplinkStorage::clear();
+
+            // Consume the environment on success, it only applies to the first launch after installation.
+            // A failed launch keeps it so the retry still gets it.
+            DclEnvStorage::delete();
 
             self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS {
                 version: readable_version,
