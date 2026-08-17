@@ -62,6 +62,16 @@ impl ReferrerStorage {
         Ok(())
     }
 
+    pub fn delete() {
+        let path = referrer_storage_path();
+
+        match fs::remove_file(&path) {
+            Ok(()) => log::info!("Dcl referrer consumed"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("Cannot remove dcl referrer storage file: {e}"),
+        }
+    }
+
     /// Windows: the download gateway's NSIS wrapper drops `referrer-bridge.txt`
     /// at install time. Move its content into the canonical storage and remove
     /// the bridge file. No-op when the bridge file does not exist (macOS, or

@@ -633,6 +633,9 @@ impl InstallsHub {
             // A failed launch keeps it so the retry still gets it.
             DclEnvStorage::delete();
 
+            // Consume the referrer on success, it only applies to the first launch after installation.
+            ReferrerStorage::delete();
+
             self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS {
                 version: readable_version,
             })
