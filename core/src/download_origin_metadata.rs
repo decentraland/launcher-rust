@@ -2,11 +2,15 @@ pub mod anon_user_id;
 pub mod auth_token_storage;
 pub mod campaign_anon_user_id_storage;
 pub mod campaign_attribution_marker;
+pub mod dcl_env;
+pub mod dcl_env_storage;
 pub mod startup_location_storage;
+pub mod referrer;
+pub mod referrer_storage;
 
+use anyhow::Result;
 #[cfg(target_os = "macos")]
 use anyhow::anyhow;
-use anyhow::Result;
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 
@@ -22,25 +26,24 @@ use crate::protocols::Protocol;
 use anon_user_id::AnonUserId;
 #[cfg(target_os = "macos")]
 use campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
+use dcl_env::DclEnv;
+#[cfg(target_os = "macos")]
+use dcl_env_storage::DclEnvStorage;
+use referrer::Referrer;
+#[cfg(target_os = "macos")]
+use referrer_storage::ReferrerStorage;
 
-/// Data extracted from a download URL — auth token, campaign anonymous user ID,
-/// and optional startup deeplink position/realm.
-///
-/// All fields are parsed independently from the same URL via `from_url()`,
-/// avoiding ordering or collision issues between them.
 #[derive(Default)]
 pub struct DownloadOriginData {
     pub auth_token: Option<String>,
     pub campaign_anon_user_id: Option<AnonUserId>,
     pub startup_position: Option<String>,
     pub startup_realm: Option<String>,
+    pub referrer: Option<Referrer>,
+    pub dcl_env: Option<DclEnv>,
 }
 
 impl DownloadOriginData {
-    /// Extract both auth token and `anon_user_id` from a single URL.
-    ///
-    /// The auth token is matched by UUID regex on any query param value (except
-    /// `anon_user_id`) or path segment. The `anon_user_id` is matched by key name.
     pub fn from_url(url_str: &str) -> Result<Self> {
         let url = url::Url::parse(url_str)?;
 
@@ -54,7 +57,7 @@ impl DownloadOriginData {
 
         for (key, value) in url.query_pairs() {
             match key.as_ref() {
-                "anon_user_id" => {}
+                "anon_user_id" | "referrer" => {}
                 "position" if !value.is_empty() => {
                     startup_position = Some(value.to_string());
                 }
@@ -79,12 +82,16 @@ impl DownloadOriginData {
         }
 
         let campaign_anon_user_id = AnonUserId::from_url(url_str);
+        let referrer = Referrer::from_url(url_str);
+        let dcl_env = DclEnv::from_url(url_str);
 
         Ok(Self {
             auth_token,
             campaign_anon_user_id,
             startup_position,
             startup_realm,
+            referrer,
+            dcl_env,
         })
     }
 
@@ -113,8 +120,8 @@ impl DownloadOriginData {
 pub struct DownloadOrigin {}
 
 impl DownloadOrigin {
-    /// Extracts auth token, campaign `anon_user_id`, and startup deeplink
-    /// (position/realm) from the DMG's xattr URLs.
+    /// Extracts auth token, campaign `anon_user_id`, environment, and startup
+    /// deeplink (position/realm) from the DMG's xattr URLs.
     ///
     /// Windows is handled by the `installer-hooks` binary, so this is macOS-only.
     #[cfg(target_os = "macos")]
@@ -123,9 +130,11 @@ impl DownloadOrigin {
     }
 
     #[cfg(target_os = "macos")]
+    #[allow(clippy::cognitive_complexity)]
     fn try_extract_from_dmg() {
         let has_token = AuthTokenStorage::has_token();
         let has_anon_id = CampaignAnonUserIdStorage::has();
+        let has_referrer = ReferrerStorage::has();
 
         if has_token {
             log::info!("Token already obtained");
@@ -160,6 +169,22 @@ impl DownloadOrigin {
                     if let Some(deeplink) = origin.to_startup_deeplink() {
                         log::info!("Seeding startup location deeplink: {}", deeplink.original());
                         Protocol::store(deeplink);
+                    }
+                }
+
+                if !has_referrer {
+                    if let Some(ref referrer) = origin.referrer {
+                        log::info!("Referrer obtained from DMG origin");
+                        if let Err(e) = ReferrerStorage::write(referrer) {
+                            log::error!("Cannot write referrer: {e}");
+                        }
+                    }
+                }
+
+                if let Some(dcl_env) = origin.dcl_env {
+                    log::info!("Environment obtained from DMG origin: {dcl_env}");
+                    if let Err(e) = DclEnvStorage::write(dcl_env) {
+                        log::error!("Cannot write dcl environment: {e}");
                     }
                 }
             }
@@ -264,6 +289,8 @@ impl DownloadOrigin {
                         result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
                     result.startup_position = result.startup_position.or(parsed.startup_position);
                     result.startup_realm = result.startup_realm.or(parsed.startup_realm);
+                    result.referrer = result.referrer.or(parsed.referrer);
+                    result.dcl_env = result.dcl_env.or(parsed.dcl_env);
                 }
                 Err(e) => {
                     log::error!("Cannot parse url '{}': {}", attr, e);
@@ -322,9 +349,44 @@ mod tests {
         );
         assert!(origin.campaign_anon_user_id.is_some());
         assert_eq!(
-            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
             Some("abc-123".to_owned())
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_token_anon_id_and_referrer() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?anon_user_id=abc-123&referrer=0x24E5F44999C151F08609F8E27B2238C773C4D020";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(
+            origin.auth_token.as_deref(),
+            Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+        );
+        assert_eq!(
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
+            Some("abc-123".to_owned())
+        );
+        assert_eq!(
+            origin.referrer.map(|r| r.as_str().to_owned()),
+            Some("0x24e5f44999c151f08609f8e27b2238c773c4d020".to_owned())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_referrer_is_ignored() -> anyhow::Result<()> {
+        let url = "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/decentraland.dmg?referrer=javascript:alert(1)";
+        let origin = DownloadOriginData::from_url(url)?;
+        assert_eq!(
+            origin.auth_token.as_deref(),
+            Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+        );
+        assert_eq!(origin.referrer, None);
         Ok(())
     }
 
