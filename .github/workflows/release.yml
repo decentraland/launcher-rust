@@ -284,6 +284,14 @@ jobs:
           args: ${{ matrix.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
+      - name: Verify static CRT linking (Win)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\src-tauri\scripts\assert-static-crt.ps1" `
+            "${{ github.workspace }}\src-tauri\target\release\dcl_launcher.exe" `
+            "${{ github.workspace }}\src-tauri\resources\installer-hooks.exe"
+
       - name: Sign dcl_launcher.exe manually (Win)
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
