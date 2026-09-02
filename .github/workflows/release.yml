@@ -221,10 +221,12 @@ jobs:
           SIGN_SCRIPT_PATH="${GITHUB_WORKSPACE}/src-tauri/scripts/sign.ps1"
           sed -i.bak "s|\"sign.ps1\"|\"${SIGN_SCRIPT_PATH//\\/\/}\"|g" src-tauri/tauri.conf.json
 
-      - name: Prebuild AutoAuth
+      - name: Prebuild InstallerHooks
         working-directory: ${{ github.workspace }}
         if: ${{ matrix.os == 'windows-latest' }}
-        run: rust-script scripts/pre-build-auto-auth.rs
+        env:
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+        run: powershell -ExecutionPolicy Bypass -File ./pre-build-installer-hooks.ps1
 
       - name: Prebuild Service Sidecar
         working-directory: ${{ github.workspace }}
@@ -242,8 +244,8 @@ jobs:
         working-directory: ${{ github.workspace }}/core
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Code Analysis AutoAuth
-        working-directory: ${{ github.workspace }}/src-auto-auth
+      - name: Code Analysis InstallerHooks
+        working-directory: ${{ github.workspace }}/installer-hooks
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Code Analysis Shared
@@ -281,6 +283,7 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           LAUNCHER_ENVIRONMENT: prod
+          DCL_INSTALLER_HOOKS_EXE: ${{ github.workspace }}\src-tauri\resources\installer-hooks.exe
           GIT_COMMIT: ${{ github.sha }}
           PR_NUMBER: ${{ inputs.pr-number || 'na' }}
           ES_USERNAME: ${{ secrets.ES_USERNAME }}
@@ -313,11 +316,20 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           LAUNCHER_ENVIRONMENT: dev
+          DCL_INSTALLER_HOOKS_EXE: ${{ github.workspace }}\src-tauri\resources\installer-hooks.exe
           GIT_COMMIT: ${{ github.sha }}
           PR_NUMBER: ${{ inputs.pr-number || 'na' }}
         with:
           args: ${{ matrix.args }}
           projectPath: ${{ env.PROJECT_PATH }}
+
+      - name: Verify static CRT linking (Win)
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\src-tauri\scripts\assert-static-crt.ps1" `
+            "${{ github.workspace }}\src-tauri\target\release\dcl_launcher.exe" `
+            "${{ github.workspace }}\src-tauri\resources\installer-hooks.exe"
 
       - name: Sign dcl_launcher.exe manually (Win)
         if: ${{ matrix.os == 'windows-latest' }}

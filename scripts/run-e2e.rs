@@ -26,10 +26,10 @@ fn main() {
 
     // The src-tauri build script (run by Layer 2's `cargo test`) refuses to
     // run unless the bundle's externalBin sidecar and, on Windows, the
-    // auto-auth resource exist. Both are gitignored — stage them with the
-    // pre-build scripts so a fresh clone works.
+    // installer-hooks resource exist. Both are gitignored — stage them with
+    // the pre-build scripts so a fresh clone works.
     if cfg!(windows) {
-        rust_script(&root, "scripts/pre-build-auto-auth.rs");
+        rust_script(&root, "scripts/pre-build-installer-hooks.rs");
     }
     rust_script(&root, "scripts/pre-build-service.rs");
 

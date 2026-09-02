@@ -20,7 +20,7 @@ const PACKAGE_JSON_LOCK: &str = "package-lock.json";
 const APP_CONFIG_LOCK: &str = "src-tauri/tauri.conf.json";
 const APP_RS_TOML: &str = "src-tauri/Cargo.toml";
 const CORE_RS_TOML: &str = "core/Cargo.toml";
-const AUTO_AUTH_RS_TOML: &str = "src-auto-auth/Cargo.toml";
+const INSTALLER_HOOKS_RS_TOML: &str = "installer-hooks/Cargo.toml";
 const SHARED_RS_TOML: &str = "src-shared/Cargo.toml";
 const IPC_RS_TOML: &str = "src-ipc/Cargo.toml";
 const SERVICE_RS_TOML: &str = "src-service/Cargo.toml";
@@ -32,7 +32,7 @@ const FILES: [&'static str; 10] = [
     APP_CONFIG_LOCK,
     APP_RS_TOML,
     CORE_RS_TOML,
-    AUTO_AUTH_RS_TOML,
+    INSTALLER_HOOKS_RS_TOML,
     SHARED_RS_TOML,
     IPC_RS_TOML,
     SERVICE_RS_TOML,

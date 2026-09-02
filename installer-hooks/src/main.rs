@@ -2,17 +2,24 @@
 #![windows_subsystem = "windows"]
 
 use std::path::Path;
+use std::time::Duration;
 
 use dcl_launcher_core::{
+    analytics::{Analytics, event::Event},
     anyhow::{Context, Result, anyhow},
     download_origin_metadata::DownloadOriginData,
     download_origin_metadata::anon_user_id::AnonUserId,
     download_origin_metadata::auth_token_storage::AuthTokenStorage,
     download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage,
+    download_origin_metadata::dcl_env_storage::DclEnvStorage,
+    download_origin_metadata::referrer_storage::ReferrerStorage,
     download_origin_metadata::startup_location_storage::StartupDeeplinkStorage,
     log, logs,
 };
-use regex::Regex;
+
+const EVENT_SEND_TIMEOUT: Duration = Duration::from_secs(5);
+
+const INSTALLER_EVENT_COMMAND: &str = "installer-event";
 
 #[derive(Debug, Default)]
 pub struct ZoneInfo {
@@ -21,25 +28,141 @@ pub struct ZoneInfo {
     pub referrer_url: Option<String>,
 }
 
+enum Command {
+    AuthToken {
+        installer_path: String,
+    },
+    InstallerEvent {
+        phase: InstallerPhase,
+        installer_path: String,
+    },
+}
+
+enum InstallerPhase {
+    Start,
+    Finish,
+}
+
+impl Command {
+    fn parse(args: &[String]) -> Result<Self> {
+        match args.get(1).map(String::as_str) {
+            Some(INSTALLER_EVENT_COMMAND) => {
+                let phase = args
+                    .get(2)
+                    .ok_or_else(|| anyhow!("Installer event phase is not provided"))?;
+                let installer_path = args
+                    .get(3)
+                    .ok_or_else(|| anyhow!("Installer path is not provided"))?;
+                Ok(Self::InstallerEvent {
+                    phase: InstallerPhase::parse(phase)?,
+                    installer_path: installer_path.clone(),
+                })
+            }
+            Some(installer_path) => Ok(Self::AuthToken {
+                installer_path: installer_path.to_owned(),
+            }),
+            None => Err(anyhow!("Installer path is not provided")),
+        }
+    }
+}
+
+impl InstallerPhase {
+    fn parse(value: &str) -> Result<Self> {
+        match value {
+            "start" => Ok(Self::Start),
+            "finish" => Ok(Self::Finish),
+            other => Err(anyhow!("Unknown installer event phase '{other}'")),
+        }
+    }
+
+    fn into_event(self, installer_file_name: String) -> Event {
+        match self {
+            Self::Start => Event::LAUNCHER_INSTALLER_START {
+                installer_file_name,
+            },
+            Self::Finish => Event::LAUNCHER_INSTALLER_FINISH {
+                installer_file_name,
+            },
+        }
+    }
+}
+
 fn main() {
     if let Err(e) = logs::dispath_logs() {
         eprintln!("Cannot initialize logs: {e}");
         std::process::exit(1);
     }
     if let Err(e) = main_internal() {
-        log::error!("Error occurred running auto auth script: {e:?}");
+        log::error!("Error occurred running installer hooks: {e:?}");
     }
 }
 
 fn main_internal() -> Result<()> {
-    log::info!("Start auto auth script v{}", std::env!("CARGO_PKG_VERSION"));
+    log::info!("Start installer hooks v{}", std::env!("CARGO_PKG_VERSION"));
 
     let args: Vec<String> = std::env::args().collect();
     log::info!("Args: {args:?}");
 
-    let installer_path = args
-        .last()
-        .ok_or_else(|| anyhow!("Installer path is not provided"))?;
+    match Command::parse(&args)? {
+        Command::AuthToken { installer_path } => run_auth_token(&installer_path),
+        Command::InstallerEvent {
+            phase,
+            installer_path,
+        } => run_installer_event(phase, &installer_path),
+    }
+}
+
+fn run_installer_event(phase: InstallerPhase, installer_path: &str) -> Result<()> {
+    log::info!("Installer path: {installer_path}");
+
+    let installer_file_name = Path::new(installer_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_owned();
+
+    let campaign_anon_user_id = campaign_anon_user_id_for_event(installer_path);
+
+    match &campaign_anon_user_id {
+        Some(id) => log::info!("Campaign anon_user_id for installer event: {id}"),
+        None => log::info!("No campaign anon_user_id available for installer event"),
+    }
+
+    let event = phase.into_event(installer_file_name);
+    log::info!("Tracking installer event: {event}");
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("Cannot build tokio runtime for installer event")?;
+
+    runtime.block_on(async move {
+        let mut analytics = Analytics::new_from_env();
+        if let Some(id) = &campaign_anon_user_id {
+            analytics = analytics.with_campaign_anon_user_id(id.as_str());
+        }
+        analytics.track_and_flush_silent(event).await;
+        analytics.cleanup_within(EVENT_SEND_TIMEOUT).await;
+    });
+
+    log::info!("Installer event complete");
+    Ok(())
+}
+
+fn campaign_anon_user_id_for_event(installer_path: &str) -> Option<AnonUserId> {
+    let from_zone = read_zone_origin(installer_path)
+        .inspect_err(|e| {
+            log::error!("Cannot read Zone.Identifier download-origin metadata: {e:?}");
+        })
+        .ok()
+        .and_then(|origin| origin.campaign_anon_user_id);
+
+    from_zone
+        .or_else(|| AnonUserId::from_installer_filename(installer_path))
+        .or_else(CampaignAnonUserIdStorage::read)
+}
+
+fn run_auth_token(installer_path: &str) -> Result<()> {
     log::info!("Installer path: {installer_path}");
 
     let origin = read_zone_origin(installer_path);
@@ -50,12 +173,15 @@ fn main_internal() -> Result<()> {
 
     if CampaignAnonUserIdStorage::has() {
         log::info!("Campaign anon_user_id already present in storage");
-    } else if let Some(anon_id) = origin.as_ref().and_then(|o| o.campaign_anon_user_id.as_ref()) {
+    } else if let Some(anon_id) = origin
+        .as_ref()
+        .and_then(|o| o.campaign_anon_user_id.as_ref())
+    {
         log::info!("Campaign anon_user_id extracted from Zone.Identifier");
         if let Err(e) = CampaignAnonUserIdStorage::write(anon_id) {
             log::error!("Cannot write campaign anon user id: {e}");
         }
-    } else if let Some(anon_id) = extract_anon_user_id_from_filename(installer_path) {
+    } else if let Some(anon_id) = AnonUserId::from_installer_filename(installer_path) {
         // Fallback for the anonymous Download First flow on Windows: the
         // gateway encodes the UUID in the Content-Disposition filename so
         // attribution survives Windows' silent-unblock-on-launch handling
@@ -69,9 +195,34 @@ fn main_internal() -> Result<()> {
         log::info!("No campaign anon_user_id found in Zone.Identifier URLs or installer filename");
     }
 
+    // Referrer extraction must happen before the auth-token early return below:
+    // reinstalls on a machine that already has a token would otherwise skip it.
+    if ReferrerStorage::has() {
+        log::info!("Referrer already present in storage");
+    } else if let Some(referrer) = origin.as_ref().and_then(|o| o.referrer.as_ref()) {
+        log::info!("Referrer extracted from Zone.Identifier");
+        if let Err(e) = ReferrerStorage::write(referrer) {
+            log::error!("Cannot write referrer: {e}");
+        }
+    } else {
+        log::info!("No referrer found in Zone.Identifier URLs");
+    }
+
+    if let Some(dcl_env) = origin.as_ref().and_then(|o| o.dcl_env) {
+        log::info!("Environment extracted from Zone.Identifier: {dcl_env}");
+        if let Err(e) = DclEnvStorage::write(dcl_env) {
+            log::error!("Cannot write dcl environment: {e}");
+        }
+    } else {
+        log::info!("No environment found in Zone.Identifier URLs");
+    }
+
     if !StartupDeeplinkStorage::has() {
         if let Some(deeplink) = origin.as_ref().and_then(|o| o.to_startup_deeplink()) {
-            log::info!("Persisting startup location deeplink: {}", deeplink.original());
+            log::info!(
+                "Persisting startup location deeplink: {}",
+                deeplink.original()
+            );
             if let Err(e) = StartupDeeplinkStorage::write(deeplink.original()) {
                 log::error!("Cannot write startup deeplink: {e}");
             }
@@ -98,7 +249,9 @@ fn read_zone_origin(installer_path: &str) -> Result<DownloadOriginData> {
             zone_identifier_content_powershell(installer_path)
         })
         .with_context(|| {
-            anyhow!("Reading zone content from both CAPI and PowerShell failed for '{installer_path}'")
+            anyhow!(
+                "Reading zone content from both CAPI and PowerShell failed for '{installer_path}'"
+            )
         })?;
 
     Ok(origin_from_zone_info(parsed_zone_identifier(&content)))
@@ -109,48 +262,26 @@ fn read_zone_origin(installer_path: &str) -> Result<DownloadOriginData> {
 fn origin_from_zone_info(zone_info: ZoneInfo) -> DownloadOriginData {
     let mut result = DownloadOriginData::default();
 
-    for url in [zone_info.host_url.as_deref(), zone_info.referrer_url.as_deref()]
-        .into_iter()
-        .flatten()
+    for url in [
+        zone_info.host_url.as_deref(),
+        zone_info.referrer_url.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
     {
         if let Ok(parsed) = DownloadOriginData::from_url(url) {
             result.auth_token = result.auth_token.or(parsed.auth_token);
-            result.campaign_anon_user_id =
-                result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+            result.campaign_anon_user_id = result
+                .campaign_anon_user_id
+                .or(parsed.campaign_anon_user_id);
             result.startup_position = result.startup_position.or(parsed.startup_position);
             result.startup_realm = result.startup_realm.or(parsed.startup_realm);
+            result.referrer = result.referrer.or(parsed.referrer);
+            result.dcl_env = result.dcl_env.or(parsed.dcl_env);
         }
     }
 
     result
-}
-
-/// Try to extract `anon_user_id` from the installer's filename.
-///
-/// The download gateway names anonymous EXE downloads
-/// `Decentraland-Installer-<UUID>.exe`. The regex matches any RFC 4122 UUID
-/// embedded in the filename so we tolerate browser-added suffixes (e.g.
-/// `Decentraland-Installer-<UUID> (3).exe` for dedup) and don't lock the
-/// launcher to a specific gateway-side filename convention.
-///
-/// This is the fallback path used when Zone.Identifier has been stripped by
-/// Windows' silent-unblock handling for trusted signed binaries — which is
-/// the steady-state for popular pre-signed installers and not an edge case.
-fn extract_anon_user_id_from_filename(installer_path: &str) -> Option<AnonUserId> {
-    let file_name = Path::new(installer_path).file_name()?.to_str()?;
-
-    let re = match Regex::new(
-        r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
-    ) {
-        Ok(r) => r,
-        Err(e) => {
-            log::error!("Regex compile error (anon_user_id extraction): {e}");
-            return None;
-        }
-    };
-
-    let m = re.find(file_name)?;
-    AnonUserId::parse(m.as_str())
 }
 
 #[allow(unsafe_code)]
@@ -421,9 +552,7 @@ mod tests {
         };
 
         let origin = read_zone_origin(path)?;
-        let token = origin
-            .auth_token
-            .ok_or_else(|| anyhow!("No token found"))?;
+        let token = origin.auth_token.ok_or_else(|| anyhow!("No token found"))?;
         println!("{token}");
         Ok(())
     }
@@ -466,70 +595,49 @@ mod tests {
         Ok(())
     }
 
-    // Tests use forward-slash paths so they run on both Windows and Unix CI
-    // hosts. `Path::file_stem` uses the host OS's path semantics, but the
-    // production code targets Windows where `\` and `/` both work as
-    // separators — and we only need to exercise the parsing logic here, not
-    // the OS path resolution.
     #[rstest]
+    // HostUrl carries the environment.
     #[case(
-        "Downloads/Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
-        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+        Some(
+            "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/Decentraland_installer.exe"
+        ),
+        None,
+        Some("zone")
     )]
     #[case(
-        // Bare filename, no parent directory.
-        "Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
-        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+        Some(
+            "https://download-gateway.decentraland.org/391a85da-a3bb-49e2-a45e-96c740c38424/Decentraland_installer.exe"
+        ),
+        None,
+        Some("org")
     )]
+    // HostUrl is a CDN outside decentraland.*: the referring page still names
+    // the environment the user downloaded from.
     #[case(
-        // Browser dedup suffix when the file already exists in Downloads.
-        "Decentraland-Installer-391a85da-a3bb-49e2-a45e-96c740c38424 (3).exe",
-        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
+        Some("https://cdn.example.com/Decentraland_installer.exe"),
+        Some("https://decentraland.zone/download"),
+        Some("zone")
     )]
+    // Neither URL is a decentraland domain: no environment signal.
     #[case(
-        // Different valid UUID, slash-prefixed absolute path.
-        "/tmp/Decentraland-Installer-62792c33-59e3-4e7f-be42-289c053ecb37.exe",
-        Some("62792c33-59e3-4e7f-be42-289c053ecb37")
-    )]
-    #[case(
-        // Old-style filename (no UUID) → no fallback match, the caller must
-        // treat this as "no anon_user_id available".
-        "Decentraland-Installer.exe",
+        Some("https://cdn.example.com/Decentraland_installer.exe"),
+        Some("https://example.com/download"),
         None
     )]
-    #[case(
-        // Different surrounding context — the regex finds the UUID anywhere
-        // in the filename, so the parser stays decoupled from the gateway's
-        // exact filename convention.
-        "some-other-installer-391a85da-a3bb-49e2-a45e-96c740c38424.exe",
-        Some("391a85da-a3bb-49e2-a45e-96c740c38424")
-    )]
-    #[case(
-        // Prefix matches but the UUID part is malformed (raw space). The
-        // RFC 4122 regex rejects it. Defends against attacker-controlled
-        // filenames.
-        "Decentraland-Installer-not a uuid.exe",
-        None
-    )]
-    #[case(
-        // Wrong variant bits (third group does not start with 1-5). RFC 4122
-        // strict regex rejects, even though AnonUserId::parse alone would
-        // accept the alphanumeric+hyphen string.
-        "Decentraland-Installer-391a85da-a3bb-09e2-a45e-96c740c38424.exe",
-        None
-    )]
-    #[case(
-        // Uppercase hex still matches thanks to the (?i) flag.
-        "Decentraland-Installer-391A85DA-A3BB-49E2-A45E-96C740C38424.exe",
-        Some("391A85DA-A3BB-49E2-A45E-96C740C38424")
-    )]
-    #[case(
-        // Empty stem (impossible in practice, but we should not panic).
-        "",
-        None
-    )]
-    fn test_extract_anon_user_id_from_filename(#[case] path: &str, #[case] expected: Option<&str>) {
-        let actual = extract_anon_user_id_from_filename(path);
-        assert_eq!(expected, actual.as_ref().map(|id| id.as_str()));
+    // No Zone.Identifier URLs at all (stripped ADS).
+    #[case(None, None, None)]
+    fn test_dcl_env_from_zone_info(
+        #[case] host_url: Option<&str>,
+        #[case] referrer_url: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let zone = ZoneInfo {
+            zone_id: Some(3),
+            host_url: host_url.map(ToOwned::to_owned),
+            referrer_url: referrer_url.map(ToOwned::to_owned),
+        };
+
+        let dcl_env = origin_from_zone_info(zone).dcl_env;
+        assert_eq!(expected, dcl_env.map(|env| env.as_str()));
     }
 }

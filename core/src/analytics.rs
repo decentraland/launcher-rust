@@ -11,6 +11,7 @@ use event::Event;
 use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
+use std::time::Duration;
 
 use dcl_launcher_shared::environment::AppEnvironment;
 
@@ -70,12 +71,8 @@ impl Analytics {
     pub fn new(args: Option<CreateArgs>) -> Self {
         match args {
             Some(a) => {
-                let client = AnalyticsClient::new(
-                    a.write_key,
-                    a.anonymous_id,
-                    a.os,
-                    a.launcher_version,
-                );
+                let client =
+                    AnalyticsClient::new(a.write_key, a.anonymous_id, a.os, a.launcher_version);
                 Self::Client(client)
             }
             None => Self::Null(NullClient::new()),
@@ -126,6 +123,12 @@ impl Analytics {
     pub async fn cleanup(&self) {
         if let Self::Client(client) = &self {
             client.cleanup().await;
+        }
+    }
+
+    pub async fn cleanup_within(&self, timeout: Duration) {
+        if let Self::Client(client) = &self {
+            client.cleanup_within(timeout).await;
         }
     }
 }

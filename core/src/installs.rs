@@ -1,6 +1,9 @@
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
 use crate::config;
+use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
+use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
+use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
 use crate::errors::{DCLError, DCLErrorResult, DCLErrorTyped};
 use crate::instances::RunningInstances;
@@ -76,6 +79,22 @@ pub fn campaign_anon_user_id_storage_path() -> PathBuf {
 
 pub fn startup_deeplink_path() -> PathBuf {
     explorer_path().join("startup-deeplink.txt")
+}
+
+pub fn referrer_storage_path() -> PathBuf {
+    explorer_path().join("referrer.txt")
+}
+
+pub fn referrer_bridge_path() -> PathBuf {
+    explorer_path().join("referrer-bridge.txt")
+}
+
+pub fn dcl_env_storage_path() -> PathBuf {
+    explorer_path().join("dcl-env.txt")
+}
+
+pub fn dcl_env_bridge_path() -> PathBuf {
+    explorer_path().join("dcl-env-bridge.txt")
 }
 
 pub fn campaign_attribution_reported_marker_path() -> PathBuf {
@@ -360,7 +379,8 @@ fn rename_latest_back_to_version(
     branch_path: &Path,
 ) -> DCLErrorResult {
     if target == branch_path {
-        return fs::remove_dir_all(latest_path).map_err(|e| DCLError::from_rename_back(latest_path, e));
+        return fs::remove_dir_all(latest_path)
+            .map_err(|e| DCLError::from_rename_back(latest_path, e));
     }
     if target.exists() {
         fs::remove_dir_all(target).map_err(|e| DCLError::from_rename_back(target, e))?;
@@ -454,7 +474,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         file_path: file_path.to_string_lossy().into_owned(),
         source,
     })?;
-    
+
     cleanup_versions(&current_version)
 }
 
@@ -508,11 +528,19 @@ impl InstallsHub {
             output.insert(0, value.into());
         }
 
-        if let Some(anon_id) =
-            crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage::read()
-        {
+        if let Some(anon_id) = CampaignAnonUserIdStorage::read() {
             output.push("--campaign_anon_user_id".to_string());
             output.push(anon_id.as_str().to_owned());
+        }
+
+        if let Some(referrer) = ReferrerStorage::read() {
+            output.push("--referrer".to_string());
+            output.push(referrer.as_str().to_owned());
+        }
+
+        if let Some(env) = DclEnvStorage::read() {
+            output.push("--dclenv".to_string());
+            output.push(env.as_str().to_owned());
         }
 
         let mut additionals = config::client_additional_arguments();
@@ -568,6 +596,13 @@ impl InstallsHub {
         } else {
             // Consume the deeplink on success and prevent re-triggering it on every subsequent launch
             StartupDeeplinkStorage::clear();
+
+            // Consume the environment on success, it only applies to the first launch after installation.
+            // A failed launch keeps it so the retry still gets it.
+            DclEnvStorage::delete();
+
+            // Consume the referrer on success, it only applies to the first launch after installation.
+            ReferrerStorage::delete();
 
             self.send_analytics_event(Event::LAUNCH_CLIENT_SUCCESS {
                 version: readable_version,
@@ -648,7 +683,12 @@ impl InstallsHub {
 
             let poll = async {
                 loop {
-                    if self.running_instances.lock().await.register_new_opened_instances_by_fuzzy_path(&explorer_launch_path) {
+                    if self
+                        .running_instances
+                        .lock()
+                        .await
+                        .register_new_opened_instances_by_fuzzy_path(&explorer_launch_path)
+                    {
                         break;
                     }
                     tokio::time::sleep(POLL_INTERVAL).await;

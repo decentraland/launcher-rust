@@ -7,7 +7,7 @@
 //! usable on their own (CI runs them separately).
 
 const SCRIPT_NAME: &str = "pre-build-sidecars";
-const STEPS: [&str; 2] = ["scripts/pre-build-auto-auth.rs", "scripts/pre-build-service.rs"];
+const STEPS: [&str; 2] = ["scripts/pre-build-installer-hooks.rs", "scripts/pre-build-service.rs"];
 
 fn main() {
     let root = repo_root();

@@ -2,16 +2,18 @@ use anyhow::{Context, Result};
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
+#[cfg(target_os = "macos")]
+use crate::download_origin_metadata::DownloadOrigin;
 use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
 use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttributionMarker;
+use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
+use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
 use crate::instances::RunningInstances;
 use crate::monitoring::Monitoring;
 use crate::protocols::Protocol;
 use crate::{analytics, logs, utils};
-#[cfg(target_os = "macos")]
-use crate::download_origin_metadata::DownloadOrigin;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -44,6 +46,9 @@ impl AppState {
             DownloadOrigin::try_extract_origin_data();
             DownloadOrigin::try_install_to_app_dir_if_from_dmg();
         }
+
+        ReferrerStorage::ingest_bridge_file();
+        DclEnvStorage::ingest_bridge_file();
 
         let campaign_anon_user_id = CampaignAnonUserIdStorage::read();
 
@@ -83,11 +88,7 @@ impl AppState {
             running_instances.clone(),
         )));
 
-        let flow = LaunchFlow::new(
-            installs_hub,
-            analytics.clone(),
-            running_instances,
-        );
+        let flow = LaunchFlow::new(installs_hub, analytics.clone(), running_instances);
         let flow_state = LaunchFlowState::default();
         let app_state = Self {
             flow,

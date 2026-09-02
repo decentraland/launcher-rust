@@ -100,8 +100,10 @@ pub async fn stop_service_for_update() -> Result<()> {
 }
 
 /// Best-effort: a deeplink arriving while another command is in flight goes
-/// through its own short-lived connection. Only macOS delivers deeplinks to
-/// a running instance (`on_open_url`); Windows always passes them via argv.
+/// through its own short-lived connection.
+///
+/// Only macOS delivers deeplinks to a running instance (`on_open_url`);
+/// Windows always passes them via argv.
 #[cfg(target_os = "macos")]
 pub async fn inject_deeplink(url: String) {
     match IpcClient::connect().await {

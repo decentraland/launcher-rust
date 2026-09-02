@@ -38,7 +38,7 @@ jobs:
             src-shared
             src-ipc
             src-service
-            src-auto-auth
+            installer-hooks
             tests-e2e
           cache-targets: true
           cache-provider: github
@@ -61,8 +61,8 @@ jobs:
         working-directory: src-service
         run: cargo test --bins
 
-      - name: Unit tests — src-auto-auth
-        working-directory: src-auto-auth
+      - name: Unit tests — installer-hooks
+        working-directory: installer-hooks
         run: cargo test --bins
 
       - name: Unit tests — tests-e2e harness self-tests
@@ -82,7 +82,7 @@ jobs:
         with:
           workspaces: |
             src-service
-            src-auto-auth
+            installer-hooks
             tests-e2e
             src-tauri
           cache-targets: true
@@ -104,17 +104,17 @@ jobs:
             cp src-service/target/debug/dcl_launcher_service "src-tauri/binaries/dcl_launcher_service-$TRIPLE"
           fi
 
-      # tauri.windows.conf.json declares the auto-auth bundle resource; the
-      # src-tauri build script (run by Layer 2's `cargo test`) refuses to run
-      # without it.
-      - name: Stage the auto-auth resource for the src-tauri build script
+      # tauri.windows.conf.json declares the installer-hooks bundle resource;
+      # the src-tauri build script (run by Layer 2's `cargo test`) refuses to
+      # run without it.
+      - name: Stage the installer-hooks resource for the src-tauri build script
         if: matrix.os == 'windows-latest'
         run: |
           if ! command -v rust-script &> /dev/null; then
               echo "Installing rust-script..."
               cargo install rust-script --locked
           fi
-          rust-script scripts/pre-build-auto-auth.rs
+          rust-script scripts/pre-build-installer-hooks.rs
 
       # Lives here, not in the unit job: compiling src-tauri runs its build
       # script, which needs the sidecar and resources staged above.
