@@ -240,16 +240,19 @@ jobs:
           TAURI_ENV_TARGET_TRIPLE: universal-apple-darwin
         run: rust-script scripts/pre-build-service.rs
 
-      # The Code Analysis Tauri step below runs bare `cargo clippy`, where
-      # Tauri's build script resolves externalBin with the HOST triple, not
-      # universal-apple-darwin. The universal binary is a fat binary valid for
-      # either arch, so a host-named copy satisfies that lookup.
-      - name: Stage host-triple sidecar alias (macOS)
+      # Tauri's build script resolves externalBin with TAURI_ENV_TARGET_TRIPLE,
+      # which is never universal-apple-darwin when src-tauri actually compiles:
+      # bare `cargo clippy` (Code Analysis Tauri) uses the HOST triple, and
+      # `tauri build --target universal-apple-darwin` compiles each arch with
+      # its own triple. The universal binary is a fat binary valid for either
+      # arch, so per-arch copies satisfy every lookup.
+      - name: Stage per-arch sidecar aliases (macOS)
         working-directory: ${{ github.workspace }}
         if: ${{ matrix.os == 'macos-latest' }}
         run: |
-          TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
-          cp src-tauri/binaries/dcl_launcher_service-universal-apple-darwin "src-tauri/binaries/dcl_launcher_service-$TRIPLE"
+          for TRIPLE in aarch64-apple-darwin x86_64-apple-darwin; do
+            cp src-tauri/binaries/dcl_launcher_service-universal-apple-darwin "src-tauri/binaries/dcl_launcher_service-$TRIPLE"
+          done
 
       - name: Code Analysis Core
         working-directory: ${{ github.workspace }}/core
