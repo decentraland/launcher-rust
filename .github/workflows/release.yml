@@ -240,6 +240,17 @@ jobs:
           TAURI_ENV_TARGET_TRIPLE: universal-apple-darwin
         run: rust-script scripts/pre-build-service.rs
 
+      # The Code Analysis Tauri step below runs bare `cargo clippy`, where
+      # Tauri's build script resolves externalBin with the HOST triple, not
+      # universal-apple-darwin. The universal binary is a fat binary valid for
+      # either arch, so a host-named copy satisfies that lookup.
+      - name: Stage host-triple sidecar alias (macOS)
+        working-directory: ${{ github.workspace }}
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+          cp src-tauri/binaries/dcl_launcher_service-universal-apple-darwin "src-tauri/binaries/dcl_launcher_service-$TRIPLE"
+
       - name: Code Analysis Core
         working-directory: ${{ github.workspace }}/core
         run: cargo clippy --all-targets --all-features -- -D warnings
