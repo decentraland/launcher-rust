@@ -2,9 +2,9 @@ use reqwest;
 use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::environment::{AppEnvironment, Args};
 use crate::errors::{DCLError, DCLErrorTyped};
 use crate::utils::get_os_name;
+use dcl_launcher_shared::environment::{AppEnvironment, Args};
 
 pub const RELEASE_PREFIX: &str = "@dcl/unity-explorer/releases";
 
@@ -19,10 +19,9 @@ pub struct ReleaseResponse {
     pub version: String,
 }
 
-fn latest_json_url() -> String {
-    let args: Args = AppEnvironment::cmd_args();
-    if let Some(url) = args.use_latest_json_url {
-        return url;
+fn latest_json_url(args: &Args) -> String {
+    if let Some(url) = &args.use_latest_json_url {
+        return url.clone();
     }
 
     let bucket_url = AppEnvironment::bucket_url();
@@ -36,8 +35,8 @@ fn latest_json_url() -> String {
     )
 }
 
-async fn fetch_explorer_latest_release() -> DCLErrorTyped<LatestRelease> {
-    let url = latest_json_url();
+async fn fetch_explorer_latest_release(args: &Args) -> DCLErrorTyped<LatestRelease> {
+    let url = latest_json_url(args);
     log::info!(
         "[fetch_explorer_latest_release] Fetching latest release from: {}",
         url
@@ -62,9 +61,9 @@ async fn fetch_explorer_latest_release() -> DCLErrorTyped<LatestRelease> {
     Ok(data)
 }
 
-pub async fn get_latest_explorer_release() -> DCLErrorTyped<ReleaseResponse> {
+pub async fn get_latest_explorer_release(args: &Args) -> DCLErrorTyped<ReleaseResponse> {
     let url = AppEnvironment::bucket_url();
-    let latest_release = fetch_explorer_latest_release().await?;
+    let latest_release = fetch_explorer_latest_release(args).await?;
     let os = get_os_name();
     let release_name = format!("Decentraland_{}.zip", os);
     let release_url = format!(

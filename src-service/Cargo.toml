@@ -1,0 +1,34 @@
+[package]
+name = "dcl-launcher-service"
+version = "1.21.6"
+edition = "2024"
+
+[[bin]]
+name = "dcl_launcher_service"
+path = "src/main.rs"
+
+[profile.dev]
+overflow-checks = true
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+overflow-checks = true
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = "symbols" # Ensures debug symbols are removed.
+
+[dependencies]
+anyhow = "1.0.97"
+log = "0.4"
+tokio = { version = "1.44.1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
+
+[dependencies.dcl-launcher-core]
+path = "../core"
+
+[dependencies.dcl-launcher-ipc]
+path = "../src-ipc"
+
+[dependencies.dcl-launcher-shared]
+path = "../src-shared"

@@ -16,7 +16,6 @@ use time::OffsetDateTime;
 use tokio::sync::Mutex;
 
 use crate::analytics::network_info::network_context;
-use crate::environment::AppEnvironment;
 
 use super::event::Event;
 use super::fingerprint::ClientFingerprint;
@@ -41,8 +40,9 @@ impl AnalyticsClient {
         anonymous_id: String,
         os: String,
         launcher_version: String,
+        force_in_memory_queue: bool,
     ) -> Self {
-        let queue = new_event_queue();
+        let queue = new_event_queue(force_in_memory_queue);
         let queue = Arc::new(Mutex::new(queue));
 
         let context = json!({"direct": true});
@@ -207,10 +207,10 @@ fn properties_from_event(event: &Event) -> Map<String, Value> {
     }
 }
 
-fn new_event_queue() -> CombinedAnalyticsEventQueue {
+fn new_event_queue(force_in_memory: bool) -> CombinedAnalyticsEventQueue {
     const DEFAULT_EVENT_COUNT_LIMIT: u32 = 200;
 
-    if AppEnvironment::cmd_args().force_in_memory_analytics_queue {
+    if force_in_memory {
         info!(
             "CombinedAnalyticsEventQueue created with InMemory queue by flag, InMemoryAnalyticsEventQueue in use"
         );
@@ -245,7 +245,10 @@ mod tests {
     #[test]
     fn merge_static_defaults_preserves_per_event_properties() {
         let mut properties = Map::new();
-        properties.insert("fp_platform".to_owned(), Value::String("override".to_owned()));
+        properties.insert(
+            "fp_platform".to_owned(),
+            Value::String("override".to_owned()),
+        );
 
         let mut defaults = Map::new();
         defaults.insert(

@@ -1,6 +1,8 @@
-pub mod macos;
+//! Compile-time build targets (bucket, provider, launcher environment) and
+//! the command-line arguments the launcher understands.
 
 use log::info;
+use serde::{Deserialize, Serialize};
 
 use crate::config;
 
@@ -29,6 +31,9 @@ pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
 /// The client defers unclaimed signin deeplinks instead of consuming them immediately.
 pub const ARG_SIGNIN: &str = "signin";
 
+/// The protocol every launcher deeplink starts with.
+pub const DEEPLINK_PREFIX: &str = "decentraland://";
+
 #[derive(Debug)]
 pub enum LauncherEnvironment {
     Production,
@@ -39,7 +44,8 @@ pub enum LauncherEnvironment {
 pub struct AppEnvironment {}
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Args {
     pub skip_analytics: bool,
     pub force_in_memory_analytics_queue: bool,
@@ -47,8 +53,10 @@ pub struct Args {
 
     pub always_trigger_updater: bool,
     pub never_trigger_updater: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub use_updater_url: Option<String>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub use_latest_json_url: Option<String>,
 
     // used by the client
@@ -89,10 +97,8 @@ impl Args {
                 ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE,
                 &vector,
             ),
-            open_new_client_instance: Self::has_flag(
-                ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
-                &vector,
-            ) || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
+            open_new_client_instance: Self::has_flag(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, &vector)
+                || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
             always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
@@ -138,6 +144,13 @@ impl AppEnvironment {
     }
 
     pub fn bucket_url() -> String {
+        // Test-only escape hatch:  Debug builds only.
+        #[cfg(debug_assertions)]
+        if let Ok(url) = std::env::var("DCL_LAUNCHER_BUCKET_URL") {
+            if !url.is_empty() {
+                return url;
+            }
+        }
         String::from(BUCKET_URL)
     }
 
@@ -152,28 +165,25 @@ impl AppEnvironment {
         }
     }
 
-    fn args_sources() -> (impl Iterator<Item = String>, impl Iterator<Item = String>) {
+    /// argv merged with the `cmd-arguments` entry of `config.json`.
+    pub fn cmd_args() -> Args {
         let from_cmd = std::env::args();
         info!("cmd args: {:?}", from_cmd);
         let from_config = config::cmd_arguments();
         info!("config args: {:?}", from_config);
 
-        (from_cmd, from_config.into_iter())
-    }
-
-    pub fn cmd_args() -> Args {
-        let (from_cmd, from_config) = Self::args_sources();
-        let cmd_args = Args::parse(from_cmd);
-        let config_args = Args::parse(from_config);
-        let args = cmd_args.merge_with(&config_args);
-        log::info!("parsed args: {:#?}", args);
+        let args = Args::parse(from_cmd).merge_with(&Args::parse(from_config.into_iter()));
+        info!("parsed args: {:#?}", args);
         args
     }
+}
 
-    pub fn raw_cmd_args() -> impl Iterator<Item = String> {
-        let (from_cmd, from_config) = Self::args_sources();
-        from_cmd.chain(from_config)
-    }
+pub fn deeplink_from_env() -> Option<String> {
+    std::env::args().find(|arg| is_deeplink(arg))
+}
+
+pub fn is_deeplink(value: &str) -> bool {
+    value.starts_with(DEEPLINK_PREFIX)
 }
 
 #[cfg(test)]
@@ -219,7 +229,11 @@ mod tests {
 
     #[test]
     fn test_multi_instance_is_alias_of_open_deeplink_in_new_instance() {
-        let args = Args::parse(["app", "--multi-instance"].map(ToOwned::to_owned).into_iter());
+        let args = Args::parse(
+            ["app", "--multi-instance"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
         assert!(args.open_new_client_instance);
 
         // The original flag still works on its own.
@@ -292,5 +306,12 @@ mod tests {
             merged.use_latest_json_url.as_deref(),
             Some("https://one.com")
         );
+    }
+
+    #[test]
+    fn deeplink_detection_requires_protocol_prefix() {
+        assert!(is_deeplink("decentraland://open?position=0,0"));
+        assert!(!is_deeplink("--skip-analytics"));
+        assert!(!is_deeplink("https://decentraland.org"));
     }
 }

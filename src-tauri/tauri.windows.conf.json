@@ -6,7 +6,7 @@
     ]
   },
   "build": {
-     "beforeDevCommand": "powershell -ExecutionPolicy Bypass -File ./pre-build-installer-hooks.ps1",
-     "beforeBuildCommand": "powershell -ExecutionPolicy Bypass -File ./pre-build-installer-hooks.ps1"
+     "beforeDevCommand": "rust-script scripts/pre-build-sidecars.rs",
+     "beforeBuildCommand": "rust-script scripts/pre-build-sidecars.rs"
   }
 }

@@ -1,6 +1,5 @@
 use regex::Regex;
 use std::collections::HashMap;
-use std::env;
 
 #[must_use]
 pub fn get_os_name() -> &'static str {
@@ -38,7 +37,7 @@ pub fn get_version(args: &HashMap<String, String>) -> Option<&String> {
 
 #[must_use]
 pub const fn app_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
+    dcl_launcher_shared::app_version()
 }
 
 pub const BUILD_COMMIT: &str = match option_env!("GIT_COMMIT") {

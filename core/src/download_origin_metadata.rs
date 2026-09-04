@@ -4,9 +4,9 @@ pub mod campaign_anon_user_id_storage;
 pub mod campaign_attribution_marker;
 pub mod dcl_env;
 pub mod dcl_env_storage;
-pub mod startup_location_storage;
 pub mod referrer;
 pub mod referrer_storage;
+pub mod startup_location_storage;
 
 use anyhow::Result;
 #[cfg(target_os = "macos")]
@@ -206,7 +206,7 @@ impl DownloadOrigin {
 
     #[cfg(target_os = "macos")]
     fn install_to_app_dir_if_from_dmg() -> Result<()> {
-        let from_dmg = crate::environment::macos::is_running_from_dmg()?;
+        let from_dmg = dcl_launcher_shared::is_running_from_dmg()?;
 
         if !from_dmg {
             log::info!("App is not running from dmg, no copying needed");
@@ -252,7 +252,7 @@ impl DownloadOrigin {
     fn obtain_token_internal() -> Result<DownloadOriginData> {
         use anyhow::Context;
 
-        use crate::environment::macos::{dmg_backing_file, dmg_mount_path, where_from_attr};
+        use dcl_launcher_shared::macos::{dmg_backing_file, dmg_mount_path, where_from_attr};
 
         let path = std::env::current_exe()?;
         log::info!("Exe path: {}", path.display());
@@ -285,8 +285,9 @@ impl DownloadOrigin {
             match DownloadOriginData::from_url(attr) {
                 Ok(parsed) => {
                     result.auth_token = result.auth_token.or(parsed.auth_token);
-                    result.campaign_anon_user_id =
-                        result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+                    result.campaign_anon_user_id = result
+                        .campaign_anon_user_id
+                        .or(parsed.campaign_anon_user_id);
                     result.startup_position = result.startup_position.or(parsed.startup_position);
                     result.startup_realm = result.startup_realm.or(parsed.startup_realm);
                     result.referrer = result.referrer.or(parsed.referrer);
@@ -417,7 +418,9 @@ mod tests {
             Some("391a85da-a3bb-49e2-a45e-96c740c38424")
         );
         assert_eq!(
-            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
             Some("abc-123".to_owned())
         );
         assert_eq!(origin.startup_position.as_deref(), Some("5,10"));

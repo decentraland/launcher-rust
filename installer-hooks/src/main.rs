@@ -16,6 +16,7 @@ use dcl_launcher_core::{
     download_origin_metadata::startup_location_storage::StartupDeeplinkStorage,
     log, logs,
 };
+use dcl_launcher_shared::environment::AppEnvironment;
 
 const EVENT_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -137,7 +138,9 @@ fn run_installer_event(phase: InstallerPhase, installer_path: &str) -> Result<()
         .context("Cannot build tokio runtime for installer event")?;
 
     runtime.block_on(async move {
-        let mut analytics = Analytics::new_from_env();
+        // This hook is its own process: it parses its own argv (merged with
+        // `config.json`), the same way the dev CLI does.
+        let mut analytics = Analytics::new_from_args(&AppEnvironment::cmd_args());
         if let Some(id) = &campaign_anon_user_id {
             analytics = analytics.with_campaign_anon_user_id(id.as_str());
         }
@@ -598,12 +601,16 @@ mod tests {
     #[rstest]
     // HostUrl carries the environment.
     #[case(
-        Some("https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/Decentraland_installer.exe"),
+        Some(
+            "https://download-gateway.decentraland.zone/391a85da-a3bb-49e2-a45e-96c740c38424/Decentraland_installer.exe"
+        ),
         None,
         Some("zone")
     )]
     #[case(
-        Some("https://download-gateway.decentraland.org/391a85da-a3bb-49e2-a45e-96c740c38424/Decentraland_installer.exe"),
+        Some(
+            "https://download-gateway.decentraland.org/391a85da-a3bb-49e2-a45e-96c740c38424/Decentraland_installer.exe"
+        ),
         None,
         Some("org")
     )]
