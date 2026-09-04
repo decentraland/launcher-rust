@@ -14,7 +14,7 @@ use crate::{
     protocols::DeepLink,
 };
 use dcl_launcher_shared::environment::{
-    AppEnvironment, Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
+    Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
     ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
 };
 use dcl_launcher_shared::types::{Status, Step};
@@ -112,14 +112,10 @@ pub fn should_use_deeplink_bridge(
     !open_new_instance && (any_is_running || bridge_only) && !is_local_scene
 }
 
-pub fn should_use_deeplink_bridge_for(deeplink: &DeepLink, any_is_running: bool) -> bool {
-    let args = AppEnvironment::cmd_args();
-    should_use_deeplink_bridge(deeplink, &args, any_is_running)
-}
-
 pub async fn execute_passthrough<T: EventChannel>(
     channel: &T,
     deeplink: &DeepLink,
+    args: &Args,
 ) -> DCLErrorResult {
     const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -132,7 +128,7 @@ pub async fn execute_passthrough<T: EventChannel>(
     // the file is consumed, because `open <app>` would launch a spurious new instance when the
     // packaged app is not the consumer. Bringing the window to front is only appropriate for the
     // regular passthrough case, where the running instance is one the launcher itself started.
-    let bridge_only = deeplink.has_true_value(ARG_BRIDGE_ONLY) || AppEnvironment::cmd_args().bridge_only;
+    let bridge_only = deeplink.has_true_value(ARG_BRIDGE_ONLY) || args.bridge_only;
     let bring_to_front = !bridge_only;
 
     let token = CancellationToken::new();

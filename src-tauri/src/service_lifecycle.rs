@@ -175,15 +175,16 @@ fn service_binary_path() -> Result<PathBuf> {
     Ok(dir.join(pidfile::SERVICE_PROCESS_NAME))
 }
 
+// The service is spawned with no arguments on purpose: it must never depend
+// on the argv of whichever UI happened to start it. The effective launcher
+// arguments travel with every flow command over IPC instead.
 fn spawn_service() -> Result<()> {
     let path = service_binary_path()?;
-    let forwarded_args: Vec<String> = std::env::args().skip(1).collect();
 
     info!("Spawning the launcher service: {}", path.display());
 
     let mut command = std::process::Command::new(&path);
     command
-        .args(forwarded_args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());

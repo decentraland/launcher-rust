@@ -6,6 +6,7 @@ use dcl_launcher_core::utils;
 use dcl_launcher_ipc as ipc;
 use dcl_launcher_ipc::protocol::{Command, Frame, Response, ResponseData, ShutdownReason};
 use dcl_launcher_ipc::transport::IpcConnection;
+use dcl_launcher_shared::environment::Args;
 use log::{info, warn};
 use tokio::sync::mpsc;
 
@@ -17,8 +18,9 @@ pub struct ConnectionContext {
     pub core: CoreHandle,
     pub events: EventsHub,
     pub shutdown: mpsc::Sender<ShutdownReason>,
-    /// `AppState::setup()` already fired `LAUNCHER_OPEN` for the UI that
-    /// started the service; later hellos fire their own.
+    /// The first UI's `LAUNCHER_OPEN` fires when its first flow command
+    /// activates analytics (`AppState::activate_analytics`); later hellos
+    /// fire their own.
     pub first_hello_consumed: Arc<AtomicBool>,
 }
 
@@ -95,13 +97,13 @@ async fn handle_command(cmd: Command, ctx: &ConnectionContext) -> Response {
                 protocol_version: ipc::PROTOCOL_VERSION,
             })
         }
-        Command::Launch { deeplink } => {
+        Command::Launch { deeplink, args } => {
             if let Some(url) = deeplink {
                 Protocol::new().try_assign_value(url);
             }
-            run_flow(ctx, false).await
+            run_flow(ctx, false, args).await
         }
-        Command::Retry => run_flow(ctx, true).await,
+        Command::Retry { args } => run_flow(ctx, true, args).await,
         Command::ViewCurrentState => Response::ok_with(ResponseData::CurrentState {
             state: ctx.events.snapshot(),
         }),
@@ -123,8 +125,8 @@ async fn handle_command(cmd: Command, ctx: &ConnectionContext) -> Response {
     }
 }
 
-async fn run_flow(ctx: &ConnectionContext, retry: bool) -> Response {
-    match ctx.core.run_flow(retry).await {
+async fn run_flow(ctx: &ConnectionContext, retry: bool, args: Args) -> Response {
+    match ctx.core.run_flow(retry, args).await {
         Ok(()) => Response::ok_empty(),
         Err(user_message) => Response::err(user_message),
     }

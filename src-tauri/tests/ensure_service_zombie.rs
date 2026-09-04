@@ -17,7 +17,6 @@ async fn ensure_service_replaces_a_zombie() -> Result<()> {
     // DIFFERENT endpoint than this test uses -> unreachable = zombie.
     let service = common::service_binary_source_dir()?.join(pidfile::SERVICE_PROCESS_NAME);
     let zombie = std::process::Command::new(service)
-        .arg("--skip-analytics")
         .env("DCL_LAUNCHER_BASE_DIR", &sandbox.base)
         .env(
             "DCL_LAUNCHER_IPC_ENDPOINT",

@@ -31,4 +31,5 @@ pub use protocol::{Command, Frame, Response, ResponseData, ServiceState, Shutdow
 pub use transport::{BindError, IpcClient, IpcConnection, IpcServer};
 
 /// Bumped on any breaking change to [`protocol::Frame`] or its payloads.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// 2: flow commands (`launch`, `retry`) carry the launcher `Args` payload.
+pub const PROTOCOL_VERSION: u32 = 2;

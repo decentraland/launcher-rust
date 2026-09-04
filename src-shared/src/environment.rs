@@ -1,11 +1,8 @@
 //! Compile-time build targets (bucket, provider, launcher environment) and
 //! the command-line arguments the launcher understands.
-//!
-//! Every process parses the same flag set, so the definitions live here. The
-//! thin UI reads argv only ([`Args::from_argv`]) — the service merges
-//! `config.json` arguments on top of argv with [`AppEnvironment::cmd_args`].
 
 use log::info;
+use serde::{Deserialize, Serialize};
 
 use crate::config;
 
@@ -44,7 +41,8 @@ pub enum LauncherEnvironment {
 pub struct AppEnvironment {}
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Args {
     pub skip_analytics: bool,
     pub force_in_memory_analytics_queue: bool,
@@ -52,8 +50,10 @@ pub struct Args {
 
     pub always_trigger_updater: bool,
     pub never_trigger_updater: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub use_updater_url: Option<String>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub use_latest_json_url: Option<String>,
 
     // used by the client
@@ -83,14 +83,6 @@ impl Args {
             local_scene: self.local_scene || other.local_scene,
             bridge_only: self.bridge_only || other.bridge_only,
         }
-    }
-
-    /// argv only, with no `config.json` merge — what the thin UI parses for
-    /// itself: the updater runs in the UI process, everything else in argv is
-    /// forwarded verbatim to the service, which merges config arguments on its
-    /// own.
-    pub fn from_argv() -> Self {
-        Self::parse(std::env::args())
     }
 
     pub fn parse(iterator: impl Iterator<Item = String>) -> Self {

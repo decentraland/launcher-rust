@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use dcl_launcher_ipc as ipc;
-use dcl_launcher_shared::environment::{deeplink_from_env, Args};
+use dcl_launcher_shared::environment::{deeplink_from_env, AppEnvironment};
 use dcl_launcher_shared::types::{LauncherUpdate, Status};
 use ipc::protocol::Command;
 use log::{error, info};
@@ -123,11 +123,15 @@ async fn launch_internal(
         message
     })?;
 
+    // The UI owns argv: every flow command carries the effective arguments
+    // (argv merged with `config.json`), so the service never parses its own.
+    let args = AppEnvironment::cmd_args();
     let cmd = if retry_flow {
-        Command::Retry
+        Command::Retry { args }
     } else {
         Command::Launch {
             deeplink: state.take_pending_deeplink(),
+            args,
         }
     };
 
@@ -159,10 +163,8 @@ async fn launch_internal(
 }
 
 fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
-    // argv only: the updater runs in this process, while everything else in
-    // argv is forwarded verbatim to the service (which merges `config.json`
-    // arguments on its own).
-    let updater_args = Args::from_argv();
+    info!("Begin current_updater");
+    let updater_args = AppEnvironment::cmd_args();
     let use_updater_url = updater_args.use_updater_url.clone();
 
     // comparison to support rollbacks

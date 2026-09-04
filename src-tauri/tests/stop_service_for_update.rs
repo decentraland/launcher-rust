@@ -38,7 +38,6 @@ async fn stop_for_update_graceful_then_kill_escalation() -> Result<()> {
     // endpoint) -> graceful path cannot connect -> validated kill.
     let service = common::service_binary_source_dir()?.join(pidfile::SERVICE_PROCESS_NAME);
     let unreachable = std::process::Command::new(service)
-        .arg("--skip-analytics")
         .env("DCL_LAUNCHER_BASE_DIR", &sandbox.base)
         .env(
             "DCL_LAUNCHER_IPC_ENDPOINT",

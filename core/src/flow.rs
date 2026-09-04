@@ -1,5 +1,5 @@
 use crate::channel::EventChannel;
-use crate::deeplink_bridge::{execute_passthrough, should_use_deeplink_bridge_for};
+use crate::deeplink_bridge::{execute_passthrough, should_use_deeplink_bridge};
 use crate::errors::{AttemptError, DCLError, DCLErrorTyped};
 use crate::instances::RunningInstances;
 use crate::logs::LogDestination;
@@ -11,7 +11,7 @@ use crate::{
     s3::{self, ReleaseResponse},
 };
 use anyhow::{Context, Ok, Result, anyhow};
-use dcl_launcher_shared::environment::AppEnvironment;
+use dcl_launcher_shared::environment::{AppEnvironment, Args};
 use dcl_launcher_shared::types::{BuildType, Status, Step};
 use log::info;
 use regex::Regex;
@@ -60,6 +60,10 @@ trait WorkflowStep<TState, TOutput> {
 pub struct LaunchFlowState {
     latest_release: Option<ReleaseResponse>,
     recent_download: Option<RecentDownload>,
+    /// The launcher arguments the current flow invocation was started with —
+    /// attached to each flow command over IPC, never read from the service's
+    /// own argv.
+    args: Args,
 }
 
 #[derive(Clone)]
@@ -113,7 +117,10 @@ impl LaunchFlow {
         &self,
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
+        args: Args,
     ) -> std::result::Result<(), FlowError> {
+        state.lock().await.args = args;
+
         let handled_by_passthrough = self.prepare_with_retries(channel, state.clone()).await?;
         if handled_by_passthrough {
             return std::result::Result::Ok(());
@@ -275,7 +282,8 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
             .track_and_flush_silent(Event::FETCH_VERSION_START)
             .await;
 
-        let fetch_result = crate::s3::get_latest_explorer_release().await;
+        let args = state.lock().await.args.clone();
+        let fetch_result = crate::s3::get_latest_explorer_release(&args).await;
         if let Err(e) = &fetch_result {
             self.analytics
                 .lock()
@@ -585,19 +593,24 @@ impl DeeplinkPassthroughStep {
         guard.any_is_running()
     }
 
-    async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
+    async fn should_use_deeplink_bridge_for(
+        &self,
+        deeplink: &DeepLink,
+        args: &Args,
+    ) -> anyhow::Result<bool> {
         let any_is_running = self.is_any_instance_running().await?;
-        Ok(should_use_deeplink_bridge_for(deeplink, any_is_running))
+        Ok(should_use_deeplink_bridge(deeplink, args, any_is_running))
     }
 }
 
 impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
-    async fn is_complete(&self, _: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
+    async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let Some(deeplink) = Protocol::value() else {
             return Ok(true);
         };
 
-        let use_bridge = self.should_use_deeplink_bridge_for(&deeplink).await?;
+        let args = state.lock().await.args.clone();
+        let use_bridge = self.should_use_deeplink_bridge_for(&deeplink, &args).await?;
         Ok(!use_bridge)
     }
 
@@ -610,19 +623,21 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
     async fn execute<T: EventChannel>(
         &self,
         channel: &T,
-        _: Arc<Mutex<LaunchFlowState>>,
+        state: Arc<Mutex<LaunchFlowState>>,
     ) -> DCLErrorTyped<bool> {
         let Some(deeplink) = Protocol::value() else {
             return DCLErrorTyped::Ok(false);
         };
 
+        let args = state.lock().await.args.clone();
+
         // Re-check the bridge policy against this snapshot: an open_url event may have
         // reassigned the protocol since `is_complete`, so decide and act on one value.
-        if !self.should_use_deeplink_bridge_for(&deeplink).await? {
+        if !self.should_use_deeplink_bridge_for(&deeplink, &args).await? {
             return DCLErrorTyped::Ok(false);
         }
 
-        execute_passthrough(channel, &deeplink).await?;
+        execute_passthrough(channel, &deeplink, &args).await?;
         DCLErrorTyped::Ok(true)
     }
 }
@@ -633,9 +648,13 @@ impl AppLaunchStep {
         guard.any_is_running()
     }
 
-    async fn should_use_deeplink_bridge_for(&self, deeplink: &DeepLink) -> anyhow::Result<bool> {
+    async fn should_use_deeplink_bridge_for(
+        &self,
+        deeplink: &DeepLink,
+        args: &Args,
+    ) -> anyhow::Result<bool> {
         let any_is_running = self.is_any_instance_running().await?;
-        Ok(should_use_deeplink_bridge_for(deeplink, any_is_running))
+        Ok(should_use_deeplink_bridge(deeplink, args, any_is_running))
     }
 }
 
@@ -655,12 +674,13 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
     async fn execute<T: EventChannel>(
         &self,
         channel: &T,
-        _state: Arc<Mutex<LaunchFlowState>>,
+        state: Arc<Mutex<LaunchFlowState>>,
     ) -> DCLErrorResult {
         match Protocol::value() {
             Some(deeplink) => {
-                if self.should_use_deeplink_bridge_for(&deeplink).await? {
-                    execute_passthrough(channel, &deeplink).await
+                let args = state.lock().await.args.clone();
+                if self.should_use_deeplink_bridge_for(&deeplink, &args).await? {
+                    execute_passthrough(channel, &deeplink, &args).await
                 } else {
                     self.installs_hub
                         .lock()

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use dcl_launcher_shared::environment::Args;
 use dcl_launcher_shared::types::{Status, Step};
 
 /// One JSON line on the wire.
@@ -22,11 +23,20 @@ pub enum Command {
         protocol_version: u32,
         app_version: String,
     },
+    /// Flow commands carry the effective launcher arguments: the service
+    /// never parses its own argv, it uses the [`Args`] attached to each
+    /// invocation.
     #[serde(rename_all = "camelCase")]
     Launch {
         deeplink: Option<String>,
+        #[serde(default)]
+        args: Args,
     },
-    Retry,
+    #[serde(rename_all = "camelCase")]
+    Retry {
+        #[serde(default)]
+        args: Args,
+    },
     ViewCurrentState,
     #[serde(rename_all = "camelCase")]
     InjectDeeplink {
@@ -143,6 +153,79 @@ mod tests {
 
         assert_eq!(serde_json::to_value(&frame)?, expected);
         assert_eq!(roundtrip(&frame)?, frame);
+        Ok(())
+    }
+
+    #[test]
+    fn launch_request_carries_args() -> Result<()> {
+        let frame = Frame::Req {
+            id: 2,
+            cmd: Command::Launch {
+                deeplink: Some("decentraland://open".to_owned()),
+                args: Args {
+                    skip_analytics: true,
+                    use_latest_json_url: Some("https://example.com/latest.json".to_owned()),
+                    ..Args::default()
+                },
+            },
+        };
+
+        let expected: Value = json!({
+            "kind": "req",
+            "id": 2,
+            "cmd": {
+                "cmd": "launch",
+                "deeplink": "decentraland://open",
+                "args": {
+                    "skipAnalytics": true,
+                    "forceInMemoryAnalyticsQueue": false,
+                    "openNewClientInstance": false,
+                    "alwaysTriggerUpdater": false,
+                    "neverTriggerUpdater": false,
+                    "useLatestJsonUrl": "https://example.com/latest.json",
+                    "localScene": false,
+                    "bridgeOnly": false
+                }
+            }
+        });
+
+        assert_eq!(serde_json::to_value(&frame)?, expected);
+        assert_eq!(roundtrip(&frame)?, frame);
+        Ok(())
+    }
+
+    #[test]
+    fn flow_requests_without_args_fall_back_to_defaults() -> Result<()> {
+        let launch: Frame = serde_json::from_value(json!({
+            "kind": "req",
+            "id": 4,
+            "cmd": { "cmd": "launch", "deeplink": null }
+        }))?;
+        assert_eq!(
+            launch,
+            Frame::Req {
+                id: 4,
+                cmd: Command::Launch {
+                    deeplink: None,
+                    args: Args::default(),
+                },
+            }
+        );
+
+        let retry: Frame = serde_json::from_value(json!({
+            "kind": "req",
+            "id": 5,
+            "cmd": { "cmd": "retry" }
+        }))?;
+        assert_eq!(
+            retry,
+            Frame::Req {
+                id: 5,
+                cmd: Command::Retry {
+                    args: Args::default(),
+                },
+            }
+        );
         Ok(())
     }
 

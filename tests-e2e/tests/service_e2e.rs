@@ -20,7 +20,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use dcl_launcher_ipc::protocol::{Command, ServiceState, ShutdownReason};
 use dcl_launcher_shared::types::{Status, Step};
-use dcl_launcher_tests_e2e::harness::TestEnv;
+use dcl_launcher_tests_e2e::harness::{test_args, TestEnv};
 
 const STUB: &str = env!("CARGO_BIN_EXE_stub_explorer");
 const LONG: Duration = Duration::from_secs(90);
@@ -180,7 +180,7 @@ async fn flow_error_surfaces_and_retry_recovers() -> Result<()> {
     );
 
     env.cdn.configure(|s| s.latest_status = None);
-    let retry = within(client.request(Command::Retry, |_| {})).await?;
+    let retry = within(client.request(Command::Retry { args: test_args() }, |_| {})).await?;
     assert!(retry.ok, "retry failed: {:?}", retry.user_message);
     env.wait_stub_launches(1, Duration::from_secs(10)).await?;
 
@@ -202,7 +202,7 @@ async fn concurrent_launches_join_one_flow() -> Result<()> {
     let first = tokio::spawn(async move {
         let mut events = Vec::new();
         let response = c1
-            .request(Command::Launch { deeplink: None }, |s| events.push(s))
+            .request(Command::Launch { deeplink: None, args: test_args() }, |s| events.push(s))
             .await;
         (response, events)
     });
@@ -296,7 +296,7 @@ async fn inject_deeplink_mid_flow_applies_to_launch() -> Result<()> {
 
     let (mut c1, _) = within(env.client()).await?;
     let launch =
-        tokio::spawn(async move { c1.request(Command::Launch { deeplink: None }, |_| {}).await });
+        tokio::spawn(async move { c1.request(Command::Launch { deeplink: None, args: test_args() }, |_| {}).await });
 
     tokio::time::sleep(Duration::from_millis(500)).await;
     let (mut c2, _) = within(env.client()).await?;
@@ -330,7 +330,7 @@ async fn view_current_state_tracks_the_flow() -> Result<()> {
     assert_eq!(state, ServiceState::Idle);
 
     let launch =
-        tokio::spawn(async move { c1.request(Command::Launch { deeplink: None }, |_| {}).await });
+        tokio::spawn(async move { c1.request(Command::Launch { deeplink: None, args: test_args() }, |_| {}).await });
 
     let mut saw_busy = false;
     for _ in 0_u8..100 {
@@ -382,7 +382,7 @@ async fn client_disconnect_mid_download_does_not_stop_the_flow() -> Result<()> {
 
     let (mut c1, _) = within(env.client()).await?;
     let launch =
-        tokio::spawn(async move { c1.request(Command::Launch { deeplink: None }, |_| {}).await });
+        tokio::spawn(async move { c1.request(Command::Launch { deeplink: None, args: test_args() }, |_| {}).await });
 
     let (mut c2, _) = within(env.client()).await?;
     let mut saw_busy = false;

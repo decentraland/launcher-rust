@@ -14,11 +14,15 @@ impl EventChannel for ConsoleChannel {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let app_state = AppState::setup().await.context("Cannot setup state")?;
+    // This dev CLI is its own "UI" process, so it parses its own argv — the
+    // same arguments the Tauri UI would attach to a flow command over IPC.
+    let args = dcl_launcher_shared::environment::AppEnvironment::cmd_args();
+    let app_state = AppState::setup().context("Cannot setup state")?;
+    app_state.activate_analytics(&args).await;
     let channel = ConsoleChannel();
     app_state
         .flow
-        .launch(&channel, app_state.state)
+        .launch(&channel, app_state.state.clone(), args)
         .await
         .map_err(|e| anyhow::anyhow!(e.user_message))
 }

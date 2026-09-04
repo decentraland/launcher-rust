@@ -6,6 +6,7 @@ use dcl_launcher_core::analytics::event::Event;
 use dcl_launcher_core::app::AppState;
 use dcl_launcher_core::channel::EventChannel;
 use dcl_launcher_core::utils;
+use dcl_launcher_shared::environment::Args;
 use dcl_launcher_shared::types::Status;
 use log::{error, info};
 use tokio::sync::{mpsc, oneshot};
@@ -19,6 +20,9 @@ use crate::events::EventsHub;
 pub enum CoreRequest {
     RunFlow {
         retry: bool,
+        /// The launcher arguments the flow command carried over IPC — the
+        /// service never parses its own argv.
+        args: Args,
         done: oneshot::Sender<Result<(), String>>,
     },
     TrackUiOpened,
@@ -36,10 +40,15 @@ pub struct CoreHandle {
 impl CoreHandle {
     /// Runs the launch flow and resolves with the flow result; a request
     /// arriving while a flow is in flight joins it instead of starting a
-    /// second run. `Err` carries the user-facing message.
-    pub async fn run_flow(&self, retry: bool) -> Result<(), String> {
+    /// second run (the in-flight flow keeps the args it started with).
+    /// `Err` carries the user-facing message.
+    pub async fn run_flow(&self, retry: bool, args: Args) -> Result<(), String> {
         let (done, wait) = oneshot::channel();
-        if self.tx.send(CoreRequest::RunFlow { retry, done }).is_err() {
+        if self
+            .tx
+            .send(CoreRequest::RunFlow { retry, args, done })
+            .is_err()
+        {
             return Err("The launcher service is shutting down".to_owned());
         }
         wait.await
@@ -109,7 +118,7 @@ async fn worker_loop(
     setup_tx: oneshot::Sender<Result<()>>,
     events: EventsHub,
 ) {
-    let app_state = match AppState::setup().await.context("Cannot setup app state") {
+    let app_state = match AppState::setup().context("Cannot setup app state") {
         Ok(app_state) => {
             let _ = setup_tx.send(Ok(()));
             Rc::new(app_state)
@@ -129,7 +138,7 @@ async fn worker_loop(
 
     while let Some(request) = rx.recv().await {
         match request {
-            CoreRequest::RunFlow { retry, done } => {
+            CoreRequest::RunFlow { retry, args, done } => {
                 if retry {
                     tokio::task::spawn_local(track(
                         app_state.clone(),
@@ -145,6 +154,7 @@ async fn worker_loop(
                     tokio::task::spawn_local(run_flow_task(
                         app_state.clone(),
                         events.clone(),
+                        args,
                         done,
                         flow_waiters.clone(),
                         flow_running.clone(),
@@ -185,16 +195,21 @@ type FlowWaiters = Rc<RefCell<Vec<oneshot::Sender<Result<(), String>>>>>;
 async fn run_flow_task(
     app_state: Rc<AppState>,
     events: EventsHub,
+    args: Args,
     done: oneshot::Sender<Result<(), String>>,
     waiters: FlowWaiters,
     running: Rc<Cell<bool>>,
 ) {
+    // The first flow command's args build the real analytics client — until
+    // then the service runs with analytics disabled.
+    app_state.activate_analytics(&args).await;
+
     let channel = BroadcastChannel {
         events: events.clone(),
     };
     let result = app_state
         .flow
-        .launch(&channel, app_state.state.clone())
+        .launch(&channel, app_state.state.clone(), args)
         .await;
 
     let outcome = match result {

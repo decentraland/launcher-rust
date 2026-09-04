@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use dcl_launcher_shared::environment::Args;
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
@@ -9,10 +10,11 @@ use crate::installs;
 use crate::instances::RunningInstances;
 use crate::monitoring::Monitoring;
 use crate::protocols::Protocol;
-use crate::{analytics, logs, utils};
+use crate::{logs, utils};
 #[cfg(target_os = "macos")]
 use crate::download_origin_metadata::DownloadOrigin;
 use log::{error, info};
+use std::cell::Cell;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use utils::{BUILD_COMMIT, BUILD_PR, app_version};
@@ -22,10 +24,11 @@ pub struct AppState {
     pub state: Arc<Mutex<LaunchFlowState>>,
     pub protocol: Protocol,
     pub analytics: Arc<Mutex<Analytics>>,
+    analytics_activated: Cell<bool>,
 }
 
 impl AppState {
-    pub async fn setup() -> Result<Self> {
+    pub fn setup() -> Result<Self> {
         logs::dispath_logs()?;
 
         info!(
@@ -45,38 +48,11 @@ impl AppState {
             DownloadOrigin::try_install_to_app_dir_if_from_dmg();
         }
 
-        let campaign_anon_user_id = CampaignAnonUserIdStorage::read();
-
-        let mut analytics = {
-            let analytics = analytics::Analytics::new_from_env();
-            match &campaign_anon_user_id {
-                Some(id) => analytics.with_campaign_anon_user_id(id.as_str()),
-                None => analytics,
-            }
-        };
-
-        analytics
-            .track_and_flush_silent(Event::LAUNCHER_OPEN {
-                version: utils::app_version().to_owned(),
-            })
-            .await;
-
-        if let Some(anon_id) = &campaign_anon_user_id {
-            if !CampaignAttributionMarker::is_reported() {
-                // Mark before sending (at-most-once) to avoid duplicates on crash
-                if let Err(e) = CampaignAttributionMarker::mark_reported() {
-                    log::warn!("Cannot write attribution marker: {e}");
-                }
-                info!("Firing Campaign Attribution Detected event");
-                analytics
-                    .track_and_flush_silent(Event::CAMPAIGN_ATTRIBUTION_DETECTED {
-                        anon_user_id: anon_id.as_str().to_owned(),
-                    })
-                    .await;
-            }
-        }
-
-        let analytics = Arc::new(Mutex::new(analytics));
+        // Analytics starts disabled: the flags that shape it (`skip-analytics`,
+        // `force-in-memory-analytics-queue`) arrive with the first flow command
+        // over IPC — the service never reads its own argv. See
+        // [`Self::activate_analytics`].
+        let analytics = Arc::new(Mutex::new(Analytics::new(None)));
         let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
         let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(
             analytics.clone(),
@@ -94,11 +70,57 @@ impl AppState {
             state: Arc::new(Mutex::new(flow_state)),
             protocol: Protocol {},
             analytics,
+            analytics_activated: Cell::new(false),
         };
 
         info!("Application setup complete");
 
         Ok(app_state)
+    }
+
+    /// Builds the real analytics client from the arguments the first flow
+    /// command carried, then fires the events that waited for it
+    /// (`LAUNCHER_OPEN`, campaign attribution). Later invocations are no-ops:
+    /// rebuilding the client would fragment the analytics session, so the
+    /// first command's flags win for the service's lifetime.
+    pub async fn activate_analytics(&self, args: &Args) {
+        if self.analytics_activated.replace(true) {
+            return;
+        }
+
+        let campaign_anon_user_id = CampaignAnonUserIdStorage::read();
+
+        let analytics = {
+            let analytics = Analytics::new_from_args(args);
+            match &campaign_anon_user_id {
+                Some(id) => analytics.with_campaign_anon_user_id(id.as_str()),
+                None => analytics,
+            }
+        };
+
+        let mut guard = self.analytics.lock().await;
+        *guard = analytics;
+
+        guard
+            .track_and_flush_silent(Event::LAUNCHER_OPEN {
+                version: utils::app_version().to_owned(),
+            })
+            .await;
+
+        if let Some(anon_id) = &campaign_anon_user_id {
+            if !CampaignAttributionMarker::is_reported() {
+                // Mark before sending (at-most-once) to avoid duplicates on crash
+                if let Err(e) = CampaignAttributionMarker::mark_reported() {
+                    log::warn!("Cannot write attribution marker: {e}");
+                }
+                info!("Firing Campaign Attribution Detected event");
+                guard
+                    .track_and_flush_silent(Event::CAMPAIGN_ATTRIBUTION_DETECTED {
+                        anon_user_id: anon_id.as_str().to_owned(),
+                    })
+                    .await;
+            }
+        }
     }
 
     pub async fn cleanup(&self) {

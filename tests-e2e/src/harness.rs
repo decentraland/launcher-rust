@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use dcl_launcher_ipc::protocol::{Command as IpcCommand, Response, ResponseData};
+use dcl_launcher_shared::environment::Args;
 use dcl_launcher_shared::types::Status;
 use dcl_launcher_ipc::transport::IpcClient;
 use dcl_launcher_ipc::{PROTOCOL_VERSION, protocol::ServiceState};
@@ -75,8 +76,9 @@ impl TestEnv {
         let stdout = File::create(self.base.join(format!("service-{seq}-stdout.log")))?;
         let stderr = File::create(self.base.join(format!("service-{seq}-stderr.log")))?;
 
+        // No argv is passed on purpose: the service must not read arguments
+        // from its command line — flow commands carry them (see `test_args`).
         let child = Command::new(exe)
-            .arg("--skip-analytics")
             .args(extra)
             .env("DCL_LAUNCHER_BASE_DIR", &self.base)
             .env("DCL_LAUNCHER_IPC_ENDPOINT", &self.endpoint)
@@ -168,9 +170,15 @@ impl TestEnv {
     ) -> Result<(Response, Vec<Status>)> {
         let mut events = Vec::new();
         let response = client
-            .request(IpcCommand::Launch { deeplink }, |status| {
-                events.push(status);
-            })
+            .request(
+                IpcCommand::Launch {
+                    deeplink,
+                    args: test_args(),
+                },
+                |status| {
+                    events.push(status);
+                },
+            )
             .await?;
         Ok((response, events))
     }
@@ -300,6 +308,16 @@ impl Drop for TestEnv {
         } else {
             let _ = fs::remove_dir_all(&self.base);
         }
+    }
+}
+
+/// The arguments every test flow command carries: the service builds its
+/// analytics client from the first command's args, so analytics must be
+/// disabled there to keep the sandbox hermetic.
+pub fn test_args() -> Args {
+    Args {
+        skip_analytics: true,
+        ..Args::default()
     }
 }
 

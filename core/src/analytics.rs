@@ -12,7 +12,7 @@ use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
 
-use dcl_launcher_shared::environment::AppEnvironment;
+use dcl_launcher_shared::environment::Args;
 
 use crate::{
     config,
@@ -24,6 +24,7 @@ pub struct CreateArgs {
     anonymous_id: String,
     os: String,
     launcher_version: String,
+    force_in_memory_queue: bool,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -33,8 +34,10 @@ pub enum Analytics {
 }
 
 impl Analytics {
-    pub fn new_from_env() -> Self {
-        if AppEnvironment::cmd_args().skip_analytics {
+    /// Builds analytics from the arguments a flow command carried over IPC —
+    /// the service never reads its own argv.
+    pub fn new_from_args(cmd_args: &Args) -> Self {
+        if cmd_args.skip_analytics {
             info!("SEGMENT_API_KEY running with --skip-analytics, segment is not available");
             return Self::new(None);
         }
@@ -54,6 +57,7 @@ impl Analytics {
                     anonymous_id,
                     os,
                     launcher_version,
+                    force_in_memory_queue: cmd_args.force_in_memory_analytics_queue,
                 };
                 Some(args)
             }
@@ -75,6 +79,7 @@ impl Analytics {
                     a.anonymous_id,
                     a.os,
                     a.launcher_version,
+                    a.force_in_memory_queue,
                 );
                 Self::Client(client)
             }
