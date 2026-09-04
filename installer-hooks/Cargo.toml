@@ -1,6 +1,6 @@
 [package]
-name = "src-auto-auth"
-version = "1.21.6"
+name = "installer-hooks"
+version = "1.22.2"
 edition = "2024"
 
 [profile.dev]
@@ -16,11 +16,16 @@ panic = "abort" # Higher performance by disabling panic handlers.
 strip = "symbols" # Ensures debug symbols are removed.
 
 [dependencies]
-regex = "1.11.1"
+tokio = { version = "1.44.1", features = ["rt", "time"] }
+
+[dev-dependencies]
 rstest = "0.26.1"
 
 [dependencies.dcl-launcher-core]
 path = "../core"
+
+[dependencies.dcl-launcher-shared]
+path = "../src-shared"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61.2", features = [

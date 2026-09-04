@@ -39,6 +39,11 @@ When a `decentraland://` link arrives while the Explorer is already running, the
 - Compile-time values belong in `const` items, not `const fn` getters: `pub const BUILD_COMMIT: &str = match option_env!("GIT_COMMIT") { ... }` rather than a zero-arg `const fn build_commit()`.
 - Don't repeat the same expression/comparison twice in a function — extract it into a named local (e.g. `let is_pr_build = BUILD_PR != "na";`).
 
+### Windows CRT linking
+
+- Every Windows binary must link the CRT statically (`-C target-feature=+crt-static` in each `.cargo/config.toml`). The NSIS installer no longer downloads `vc_redist.x64.exe` — the hidden PowerShell download tripped antivirus heuristics — so a dynamic CRT dependency would break clean Windows installs. `src-tauri/scripts/assert-static-crt.ps1` enforces this in CI.
+- Cargo resolves `.cargo/config.toml` from the *working directory*, not the manifest path, so `pre-build-installer-hooks.ps1` (run from the repo root) picks up the root config, not `installer-hooks/.cargo/config.toml`. Both must carry the flag.
+
 ### Install edge cases
 
 - Same-version reinstall is a valid scenario — it happens when `latest/Decentraland.exe` gets removed/corrupted or antivirus quarantines the binary. Install logic must handle `target == branch_path` (the rename-back target being the same as the decompress target).

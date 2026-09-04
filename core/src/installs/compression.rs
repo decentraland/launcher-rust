@@ -49,19 +49,12 @@ pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> DCL
     if let Some(tar_file_data) = tar_file_data {
         let mut archive = Archive::new(tar_file_data.as_slice());
 
-        // Extract the TAR contents
-        for entry in archive.entries()? {
-            let mut entry = entry?;
-            let path = entry.path()?.to_path_buf();
-            let output_path = Path::new(destination_path).join(path);
-
-            if entry.header().entry_type().is_dir() {
-                fs::create_dir_all(output_path)?;
-            } else {
-                let mut output_file = new_file_with_parent(&output_path)?;
-                std::io::copy(&mut entry, &mut output_file)?;
-            }
-        }
+        // unpack applies each entry's recorded Unix mode bits - the .app
+        // ships executables outside Contents/MacOS (e.g. PlugIns/uuav-helper)
+        // that must keep +x to be spawnable - and handles directories,
+        // symlinks and parent creation, refusing paths that escape the
+        // destination.
+        archive.unpack(destination_path)?;
     } else {
         // If no TAR file found, extract the other files
         for i in 0..zip.len() {
@@ -87,6 +80,79 @@ pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> DCL
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    const HELPER_PATH: &str = "build/Decentraland.app/Contents/PlugIns/uuav-helper";
+    const HELPER_CONTENT: &[u8] = b"helper bytes";
+    const DATA_PATH: &str = "build/Decentraland.app/Contents/Resources/Data/config";
+    const DATA_CONTENT: &[u8] = b"data bytes";
+
+    fn append_tar_entry(
+        tar: &mut tar::Builder<&mut Vec<u8>>,
+        path: &str,
+        content: &[u8],
+        mode: u32,
+    ) -> std::io::Result<()> {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        header.set_mode(mode);
+        header.set_cksum();
+        tar.append_data(&mut header, path, content)
+    }
+
+    /// A minimal `Decentraland_macos.zip`: a zip wrapping a single build.tar
+    /// with one executable (0o755) and one regular (0o644) entry.
+    fn zip_wrapped_tar() -> std::result::Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut tar_data = Vec::new();
+        {
+            let mut tar = tar::Builder::new(&mut tar_data);
+            append_tar_entry(&mut tar, HELPER_PATH, HELPER_CONTENT, 0o755)?;
+            append_tar_entry(&mut tar, DATA_PATH, DATA_CONTENT, 0o644)?;
+            tar.finish()?;
+        }
+
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut cursor);
+            zip.start_file("build.tar", zip::write::SimpleFileOptions::default())?;
+            zip.write_all(&tar_data)?;
+            zip.finish()?;
+        }
+        Ok(cursor.into_inner())
+    }
+
+    #[test]
+    fn tar_entry_contents_and_permissions_survive_decompression() -> TestResult {
+        let source_dir = std::env::temp_dir().join(format!(
+            "dcl-launcher-decompress-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&source_dir);
+        fs::create_dir_all(&source_dir)?;
+        let source_path = source_dir.join("decentraland.zip");
+        fs::write(&source_path, zip_wrapped_tar()?)?;
+        let destination_path = source_dir.join("unpacked");
+
+        decompress_file(&source_path, &destination_path)?;
+
+        let helper = destination_path.join(HELPER_PATH);
+        let data = destination_path.join(DATA_PATH);
+        assert_eq!(fs::read(&helper)?, HELPER_CONTENT);
+        assert_eq!(fs::read(&data)?, DATA_CONTENT);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let helper_mode = fs::metadata(&helper)?.permissions().mode();
+            assert_eq!(helper_mode & 0o777, 0o755, "executable bit must survive");
+            let data_mode = fs::metadata(&data)?.permissions().mode();
+            assert_eq!(data_mode & 0o777, 0o644);
+        }
+
+        fs::remove_dir_all(&source_dir)?;
+        Ok(())
+    }
 
     /// Legal zips may list only files with nested paths and no directory
     /// entries — extraction must create the missing parents itself.

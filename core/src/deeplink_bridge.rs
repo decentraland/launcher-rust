@@ -1,8 +1,8 @@
+use serde::Serialize;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
-use serde::Serialize;
 use tokio::fs::remove_file;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -14,8 +14,8 @@ use crate::{
     protocols::DeepLink,
 };
 use dcl_launcher_shared::environment::{
-    Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
-    ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
+    ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE, ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
+    ARG_SIGNIN, Args,
 };
 use dcl_launcher_shared::types::{Status, Step};
 
@@ -98,11 +98,7 @@ fn try_bring_explorer_to_front() {
     }
 }
 
-pub fn should_use_deeplink_bridge(
-    deeplink: &DeepLink,
-    args: &Args,
-    any_is_running: bool,
-) -> bool {
+pub fn should_use_deeplink_bridge(deeplink: &DeepLink, args: &Args, any_is_running: bool) -> bool {
     let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
         || deeplink.has_true_value(ARG_MULTI_INSTANCE)
         || args.open_new_client_instance;
@@ -117,7 +113,7 @@ pub async fn execute_passthrough<T: EventChannel>(
     deeplink: &DeepLink,
     args: &Args,
 ) -> DCLErrorResult {
-    const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(3);
+    const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(15);
 
     channel.send(Status::State {
         step: Step::DeeplinkOpening,
@@ -143,6 +139,16 @@ pub async fn execute_passthrough<T: EventChannel>(
     let result = tokio::select! {
         r = &mut wait => r,
         () = sleep(OPEN_DEEPLINK_TIMEOUT) => {
+            // A signin deeplink is deliberately deferred by the client until the awaiting login
+            // claims it (DEFERRED_SIGNIN_LIFETIME in DeepLinkSentinel), so an unconsumed file is
+            // not a failure: leave it on disk for the client and finish without an error.
+            if deeplink.has_non_empty_value(ARG_SIGNIN) {
+                log::warn!(
+                    "Deeplink was not consumed within {}s; leaving the bridge file in place for the client's deferred signin window",
+                    OPEN_DEEPLINK_TIMEOUT.as_secs()
+                );
+                return DCLErrorResult::Ok(());
+            }
             // Future is still alive: cancelling wakes its `token.cancelled()` arm, and awaiting it
             // to completion lets that arm remove the bridge file before we report the timeout.
             token.cancel();
@@ -233,7 +239,10 @@ mod tests {
     #[test]
     fn no_bridge_when_new_instance_requested_via_deeplink() -> Result<(), DeepLinkCreateError> {
         assert!(!should_use_deeplink_bridge(
-            &deeplink(&format!("decentraland://{}=true", ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE))?,
+            &deeplink(&format!(
+                "decentraland://{}=true",
+                ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE
+            ))?,
             &args(&["app"]),
             true
         ));

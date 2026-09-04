@@ -27,6 +27,9 @@ pub const ARG_LOCAL_SCENE: &str = "local-scene";
 /// When present, run in bridge-only mode (no client UI).
 /// Used for deeplink/file-bridge integrations and headless operations.
 pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
+/// Deeplink query key carrying a signin identity id (`AppArgsFlags.SIGNIN` in the client).
+/// The client defers unclaimed signin deeplinks instead of consuming them immediately.
+pub const ARG_SIGNIN: &str = "signin";
 
 /// The protocol every launcher deeplink starts with.
 pub const DEEPLINK_PREFIX: &str = "decentraland://";
@@ -94,10 +97,8 @@ impl Args {
                 ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE,
                 &vector,
             ),
-            open_new_client_instance: Self::has_flag(
-                ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
-                &vector,
-            ) || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
+            open_new_client_instance: Self::has_flag(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, &vector)
+                || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
             always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
@@ -228,7 +229,11 @@ mod tests {
 
     #[test]
     fn test_multi_instance_is_alias_of_open_deeplink_in_new_instance() {
-        let args = Args::parse(["app", "--multi-instance"].map(ToOwned::to_owned).into_iter());
+        let args = Args::parse(
+            ["app", "--multi-instance"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
         assert!(args.open_new_client_instance);
 
         // The original flag still works on its own.

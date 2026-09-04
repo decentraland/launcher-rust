@@ -289,7 +289,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.21.6"
+version = "1.22.2"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -1100,6 +1100,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "879f10e63c20629ecabbb64a8010319738c66a5cd0c29b02d63d272b03751d01"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "installer-hooks"
+version = "1.22.2"
+dependencies = [
+ "dcl-launcher-core",
+ "dcl-launcher-shared",
+ "rstest",
+ "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2482,16 +2493,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "src-auto-auth"
-version = "1.21.6"
-dependencies = [
- "dcl-launcher-core",
- "regex",
- "rstest",
  "windows-sys 0.61.2",
 ]
 

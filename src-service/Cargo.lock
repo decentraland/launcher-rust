@@ -303,7 +303,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.21.6"
+version = "1.22.2"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
