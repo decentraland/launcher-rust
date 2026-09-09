@@ -7,7 +7,7 @@ use crate::protocols::{DeepLink, Protocol};
 use crate::{
     analytics::{Analytics, event::Event},
     environment::AppEnvironment,
-    errors::{FlowError, DCLErrorResult},
+    errors::{DCLErrorResult, FlowError},
     installs::{self, InstallsHub},
     s3::{self, ReleaseResponse},
     types::{BuildType, Status, Step},
@@ -116,9 +116,7 @@ impl LaunchFlow {
                 analytics: analytics.clone(),
                 running_instances: running_instances.clone(),
             },
-            deeplink_passthrough_step: DeeplinkPassthroughStep {
-                running_instances,
-            },
+            deeplink_passthrough_step: DeeplinkPassthroughStep { running_instances },
             app_launch_step,
             analytics,
         }
@@ -151,8 +149,7 @@ impl LaunchFlow {
                 }
                 std::result::Result::Err(e) => {
                     let final_attempt = is_final_attempt(attempt, &e);
-                    last_error =
-                        Some(self.report_attempt_error(e, attempt, final_attempt).await);
+                    last_error = Some(self.report_attempt_error(e, attempt, final_attempt).await);
                     if final_attempt {
                         break;
                     }
@@ -535,8 +532,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
 
-        Ok(guard.recent_download.is_none()
-            && installs::explorer_latest_version_path().exists())
+        Ok(guard.recent_download.is_none() && installs::explorer_latest_version_path().exists())
     }
 
     async fn on_skipped(&self, state: Arc<Mutex<LaunchFlowState>>) {
@@ -797,4 +793,3 @@ mod tests {
   const shouldRunDevVersion = getRunDevVersion();
   const customDownloadedFilePath = getDownloadedFilePath();
 */
-

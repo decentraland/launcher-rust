@@ -2,26 +2,39 @@ use anyhow::{Context, Result};
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
+#[cfg(target_os = "macos")]
+use crate::download_origin_metadata::DownloadOrigin;
 use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
 use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttributionMarker;
 use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
 use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
-use crate::flow::{LaunchFlow, LaunchFlowState};
 use crate::installs;
 use crate::instances::RunningInstances;
+use crate::launch_flow::{LaunchFlow, LaunchFlowState};
 use crate::monitoring::Monitoring;
 use crate::protocols::Protocol;
 use crate::{analytics, logs, utils};
-#[cfg(target_os = "macos")]
-use crate::download_origin_metadata::DownloadOrigin;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use utils::{BUILD_COMMIT, BUILD_PR, app_version};
 
-pub struct AppState {
+pub struct LaunchContext {
     pub flow: LaunchFlow,
     pub state: Arc<Mutex<LaunchFlowState>>,
+}
+
+pub struct ReportContext {
+    // TODO
+}
+
+pub enum FlowContext {
+    Launch(LaunchContext),
+    Report(ReportContext),
+}
+
+pub struct AppState {
+    pub context: FlowContext,
     pub protocol: Protocol,
     pub analytics: Arc<Mutex<Analytics>>,
 }
@@ -90,9 +103,14 @@ impl AppState {
 
         let flow = LaunchFlow::new(installs_hub, analytics.clone(), running_instances);
         let flow_state = LaunchFlowState::default();
-        let app_state = Self {
+
+        let context = FlowContext::Launch(LaunchContext {
             flow,
             state: Arc::new(Mutex::new(flow_state)),
+        });
+
+        let app_state = Self {
+            context,
             protocol: Protocol {},
             analytics,
         };

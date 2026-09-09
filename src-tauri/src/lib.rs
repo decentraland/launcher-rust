@@ -11,6 +11,7 @@
 #![allow(clippy::uninlined_format_args, clippy::used_underscore_binding)]
 
 use dcl_launcher_core::analytics::event::Event;
+use dcl_launcher_core::app::{FlowContext, LaunchContext};
 use dcl_launcher_core::environment::{AppEnvironment, Args};
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
@@ -91,13 +92,24 @@ async fn launch_internal(
     let status_channel = StatusChannel(channel);
     let guard = state.lock().await;
 
-    let flow_state = guard.state.clone();
+    let flow_context: &LaunchContext = match &guard.context {
+        FlowContext::Launch(ctx) => {
+            ctx
+        },
+        FlowContext::Report(_) => {
+            const ERROR_MESSAGE: &'static str = "Context mismatch, the command must not be invoked and will be ingored";
+            error!("{ERROR_MESSAGE}");
+            return Err(ERROR_MESSAGE.to_owned());
+        },
+    };
+
+    let flow_state = flow_context.state.clone();
 
     if let Err(e) = update_if_needed_and_restart(&app, &guard, &status_channel).await {
         error!("Cannot update the launcher: {}", e);
     }
 
-    guard
+    flow_context
         .flow
         .launch(&status_channel, flow_state)
         .await

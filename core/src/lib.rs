@@ -22,15 +22,15 @@
 
 pub mod analytics;
 pub mod app;
-pub mod download_origin_metadata;
 pub mod channel;
 pub mod config;
 mod deeplink_bridge;
+pub mod download_origin_metadata;
 pub mod environment;
 pub mod errors;
-pub mod flow;
 pub mod installs;
 pub mod instances;
+pub mod launch_flow;
 pub mod logs;
 mod monitoring;
 mod processes;
