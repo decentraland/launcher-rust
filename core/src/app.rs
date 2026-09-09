@@ -104,6 +104,7 @@ impl AppState {
         let flow = LaunchFlow::new(installs_hub, analytics.clone(), running_instances);
         let flow_state = LaunchFlowState::default();
 
+        // TODO dependeing on the arg passed in cmd-args do launch or report flow
         let context = FlowContext::Launch(LaunchContext {
             flow,
             state: Arc::new(Mutex::new(flow_state)),
