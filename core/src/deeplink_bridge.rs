@@ -123,9 +123,7 @@ pub async fn execute_passthrough<T: EventChannel>(
 ) -> DCLErrorResult {
     const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(15);
 
-    channel.send(Status::State {
-        step: Step::DeeplinkOpening,
-    })?;
+    channel.send(Status::from(Step::DeeplinkOpening))?;
 
     // In bridge-only mode the deeplink may be consumed by a process the launcher does not manage
     // (e.g. an Explorer launched from the Unity editor). We must not activate the packaged app once

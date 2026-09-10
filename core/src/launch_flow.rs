@@ -288,9 +288,7 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
     }
 
     fn start_label(&self) -> Result<Status> {
-        let status = Status::State {
-            step: Step::Fetching,
-        };
+        let status = Status::from(Step::Fetching);
         Ok(status)
     }
 
@@ -404,12 +402,10 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
 
     fn start_label(&self) -> Result<Status> {
         let mode = Self::mode();
-        let status = Status::State {
-            step: Step::Downloading {
-                progress: 0,
-                build_type: mode,
-            },
-        };
+        let status = Status::from(Step::Downloading {
+            progress: 0,
+            build_type: mode,
+        });
         Ok(status)
     }
 
@@ -553,9 +549,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
 
     fn start_label(&self) -> Result<Status> {
         let mode = DownloadStep::mode();
-        let status = Status::State {
-            step: Step::Installing { build_type: mode },
-        };
+        let status = Status::from(Step::Installing { build_type: mode });
         Ok(status)
     }
 
@@ -631,9 +625,7 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
     }
 
     fn start_label(&self) -> Result<Status> {
-        Ok(Status::State {
-            step: Step::Launching,
-        })
+        Ok(Status::from(Step::Launching))
     }
 
     async fn execute<T: EventChannel>(
@@ -675,9 +667,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
     }
 
     fn start_label(&self) -> Result<Status> {
-        let status = Status::State {
-            step: Step::Launching,
-        };
+        let status = Status::from(Step::Launching);
         Ok(status)
     }
 

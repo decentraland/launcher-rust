@@ -2,17 +2,20 @@ use anyhow::{Context, Result};
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
+use crate::crash_attachment::CrashAttachment;
 #[cfg(target_os = "macos")]
 use crate::download_origin_metadata::DownloadOrigin;
 use crate::download_origin_metadata::campaign_anon_user_id_storage::CampaignAnonUserIdStorage;
 use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttributionMarker;
 use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
 use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
+use crate::environment::{AppEnvironment, Args};
 use crate::installs;
 use crate::instances::RunningInstances;
 use crate::launch_flow::{LaunchFlow, LaunchFlowState};
 use crate::monitoring::Monitoring;
 use crate::protocols::Protocol;
+use crate::report_flow::{ReportFlow, ReportFlowState, ReportSink};
 use crate::{analytics, logs, utils};
 use log::{error, info};
 use std::sync::Arc;
@@ -25,9 +28,13 @@ pub struct LaunchContext {
 }
 
 pub struct ReportContext {
-    // TODO
+    /// Shared so commands can release the `AppState` lock before awaiting the flow.
+    pub flow: Arc<ReportFlow>,
+    pub state: Arc<Mutex<ReportFlowState>>,
 }
 
+/// Which flow this process runs. Selected once at startup from the command line: the crash
+/// watchdog reopens the launcher with `--crash-report-with-attachment`, everything else launches.
 pub enum FlowContext {
     Launch(LaunchContext),
     Report(ReportContext),
@@ -95,20 +102,12 @@ impl AppState {
         }
 
         let analytics = Arc::new(Mutex::new(analytics));
-        let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
-        let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(
-            analytics.clone(),
-            running_instances.clone(),
-        )));
 
-        let flow = LaunchFlow::new(installs_hub, analytics.clone(), running_instances);
-        let flow_state = LaunchFlowState::default();
-
-        // TODO dependeing on the arg passed in cmd-args do launch or report flow
-        let context = FlowContext::Launch(LaunchContext {
-            flow,
-            state: Arc::new(Mutex::new(flow_state)),
-        });
+        let args = AppEnvironment::cmd_args();
+        let context = match report_context_from_args(&args) {
+            Some(report) => FlowContext::Report(report),
+            None => FlowContext::Launch(new_launch_context(analytics.clone())),
+        };
 
         let app_state = Self {
             context,
@@ -130,4 +129,47 @@ impl AppState {
             .await;
         analytics.cleanup().await;
     }
+}
+
+fn new_launch_context(analytics: Arc<Mutex<Analytics>>) -> LaunchContext {
+    let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
+    let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(
+        analytics.clone(),
+        running_instances.clone(),
+    )));
+
+    let flow = LaunchFlow::new(installs_hub, analytics, running_instances);
+    LaunchContext {
+        flow,
+        state: Arc::new(Mutex::new(LaunchFlowState::default())),
+    }
+}
+
+/// `Some` only when the watchdog handed over a readable attachment. An unreadable file is logged
+/// and the launcher falls back to the regular launch flow rather than showing an empty dialog.
+fn report_context_from_args(args: &Args) -> Option<ReportContext> {
+    let path = args.crash_report_attachment.as_ref()?;
+
+    let attachment = match CrashAttachment::read(path) {
+        Ok(attachment) => attachment,
+        Err(e) => {
+            error!("Cannot read crash attachment, falling back to the launch flow: {e:#}");
+            return None;
+        }
+    };
+
+    info!(
+        "Crash report flow selected for session {} (explorer {}, {})",
+        attachment.session_id, attachment.explorer_version, attachment.exit_code
+    );
+
+    // TODO(crash-report): read the wallet from the Explorer-written session-info.json once the
+    // client writes it; until then the report carries no wallet.
+    let wallet = None;
+
+    let state = ReportFlowState::new(attachment, path.clone(), wallet);
+    Some(ReportContext {
+        flow: Arc::new(ReportFlow::new(ReportSink::new_from_env())),
+        state: Arc::new(Mutex::new(state)),
+    })
 }

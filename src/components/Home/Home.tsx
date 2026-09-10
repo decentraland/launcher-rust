@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useState } from "react";
 import { Box, Typography } from "decentraland-ui2";
-import { Status, BuildType } from "./types";
+import { Status, LaunchStatus, ReportStep, BuildType } from "./types";
 import {
   Landscape,
   LoadingBar,
@@ -93,10 +93,21 @@ export const Home: React.FC = memo(() => {
     if (!currentStatus) return null;
 
     switch (currentStatus.event) {
+      case "launch":
+        return renderLaunchStatus(currentStatus.data);
+      case "report":
+        return renderReportStep(currentStatus.data);
+      default:
+        return null;
+    }
+  };
+
+  const renderLaunchStatus = (status: LaunchStatus) => {
+    switch (status.event) {
       case "state":
-        switch (currentStatus.data.step.event) {
+        switch (status.data.step.event) {
           case "launcherUpdate": {
-            const data = currentStatus.data.step.data;
+            const data = status.data.step.data;
             switch (data.event) {
               case "checkingForUpdate":
                 return renderStep("Checking for update...");
@@ -117,24 +128,28 @@ export const Home: React.FC = memo(() => {
           case "fetching":
             return renderFetchStep();
           case "downloading": {
-            let data = currentStatus.data.step.data;
+            let data = status.data.step.data;
             let isUpdate = data.buildType === BuildType.Update;
             let progress = data.progress;
             return renderDownloadStep(isUpdate, progress);
           }
           case "installing":
-            let data = currentStatus.data.step.data;
+            let data = status.data.step.data;
             let isUpdate = data.buildType === BuildType.Update;
             return renderInstallStep(isUpdate);
           case "launching":
             return renderLaunchStep();
         }
       case "error":
-        return renderError(currentStatus.data.message);
+        return renderError(status.data.message);
       default:
         return null;
     }
   };
+
+  // TODO: Placeholder until the crash-report screens land: proves the report arm renders.
+  const renderReportStep = (step: ReportStep) =>
+    renderStep(`Crash report: ${step.event}`);
 
   const renderDeeplinkOpeningStep = () => renderStep("Opening Deeplink...");
 

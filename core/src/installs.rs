@@ -125,6 +125,11 @@ pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
 }
 
+/// Crash attachments written by `client-crash-watchdog` and consumed by the report flow.
+pub fn crash_reports_dir() -> PathBuf {
+    explorer_path().join("crash-reports")
+}
+
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
