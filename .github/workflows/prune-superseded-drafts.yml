@@ -1,9 +1,10 @@
 name: Prune Superseded Draft Releases
 
 on:
-  release:
+  workflow_run:
+    workflows: ["Store Release"]
     types:
-      - published
+      - completed
   workflow_dispatch:
     inputs:
       dry_run:
@@ -26,20 +27,35 @@ jobs:
   prune:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'release')
 
     steps:
       - name: Delete draft releases below the highest published release
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           SEMVER='^app-v[0-9]+\.[0-9]+\.[0-9]+$'
+          MIN_AGE_HOURS=7
+          AUTO_MAX_DELETIONS=10
 
-          note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          log() { echo "$1"; echo "$1" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
 
-          highest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
-            --jq '.[] | select(.draft==false and .prerelease==false) | .tag_name' \
+          if [ "${EVENT_NAME:-}" = "workflow_run" ] \
+             || { [ "${EVENT_NAME:-}" = "workflow_dispatch" ] && [ "${DRY_RUN:-}" = "false" ]; }; then
+            mode="DELETE"
+          else
+            mode="DRY RUN"
+          fi
+
+          releases=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100")
+
+          highest=$(jq -r '.[] | select(.draft==false and .prerelease==false) | .tag_name' <<< "$releases" \
             | { grep -E "$SEMVER" || true; } | sort -V | tail -n1)
 
           if [ -z "$highest" ]; then
@@ -47,50 +63,87 @@ jobs:
             exit 1
           fi
 
-          dry="${DRY_RUN:-}"
-          if [ "$dry" = "true" ]; then
-            mode="DRY RUN"
-          else
-            mode="DELETE"
-          fi
-          echo "Highest published release: $highest  (mode: $mode)"
-          note "### Prune superseded drafts — $mode"
-          note "Highest published release: \`$highest\`"
-          note ""
+          log "### Prune superseded drafts — $mode"
+          log "Highest published release: \`$highest\`"
 
-          deleted=0
+          now=$(date -u +%s)
           kept=0
           skipped=0
+          targets=""
+          pending=0
 
-          while IFS=$'\t' read -r tag id; do
-            [ -n "$tag" ] || continue
+          while IFS=$'\t' read -r id tag created; do
+            [ -n "$id" ] || continue
 
             if ! printf '%s' "$tag" | grep -qE "$SEMVER"; then
-              echo "SKIP    $tag (not app-vX.Y.Z)"
-              note "- \`$tag\` — skipped, not app-vX.Y.Z"
+              log "- release \`$id\` (tag \`$tag\`) — skipped, not app-vX.Y.Z"
               skipped=$((skipped + 1))
               continue
             fi
 
-            if printf '%s\n%s\n' "${highest#app-v}" "${tag#app-v}" | sort -V -C; then
-              echo "KEEP    $tag (not superseded)"
-              note "- \`$tag\` — kept, not superseded"
+            if printf '%s\n%s\n' "$highest" "$tag" | sort -V -C; then
+              log "- \`$tag\` — kept, not superseded"
               kept=$((kept + 1))
               continue
             fi
 
-            if [ "$dry" = "true" ]; then
-              echo "WOULD   $tag"
-              note "- \`$tag\` — would delete"
-            else
-              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id" --silent
-              echo "DELETE  $tag"
-              note "- \`$tag\` — deleted"
-            fi
-            deleted=$((deleted + 1))
-          done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
-                     --jq '.[] | select(.draft==true) | [.tag_name, (.id|tostring)] | @tsv')
+            case "$created" in
+              ''|*[!0-9]*)
+                log "- \`$tag\` — kept, unparseable created_at"
+                kept=$((kept + 1))
+                continue
+                ;;
+            esac
 
-          echo "superseded=$deleted kept=$kept skipped=$skipped"
-          note ""
-          note "superseded: **$deleted** · kept: **$kept** · skipped: **$skipped**"
+            # release.yml hard-fails if its in-flight draft vanishes and sets no timeout, so the ceiling is GitHub's 6h default
+            if [ $(( (now - created) / 3600 )) -lt "$MIN_AGE_HOURS" ]; then
+              log "- \`$tag\` — kept, younger than ${MIN_AGE_HOURS}h"
+              kept=$((kept + 1))
+              continue
+            fi
+
+            targets="${targets}${id} ${tag}"$'\n'
+            pending=$((pending + 1))
+          done <<< "$(jq -r '.[] | select(.draft==true)
+                        | [(.id|tostring),
+                           ((.tag_name // "") | if . == "" then "(none)" else . end),
+                           ((.created_at // "1970-01-01T00:00:00Z") | fromdateiso8601 | tostring)]
+                        | @tsv' <<< "$releases")"
+
+          if [ "$mode" = "DELETE" ] && [ "${EVENT_NAME:-}" = "workflow_run" ] && [ "$pending" -gt "$AUTO_MAX_DELETIONS" ]; then
+            echo "::error title=Prune drafts::$pending superseded drafts exceeds the automatic limit of $AUTO_MAX_DELETIONS. Run this workflow manually to review and confirm."
+            exit 1
+          fi
+
+          superseded=0
+          failed=0
+
+          while read -r id tag; do
+            [ -n "$id" ] || continue
+
+            if [ "$mode" != "DELETE" ]; then
+              log "- \`$tag\` — would delete"
+              superseded=$((superseded + 1))
+              continue
+            fi
+
+            state=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id" --jq '.draft' 2>/dev/null || echo gone)
+            if [ "$state" != "true" ]; then
+              log "- \`$tag\` — kept, no longer a draft"
+              kept=$((kept + 1))
+              continue
+            fi
+
+            if gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id" --silent; then
+              log "- \`$tag\` — deleted"
+              superseded=$((superseded + 1))
+            else
+              log "- \`$tag\` — DELETE FAILED"
+              failed=$((failed + 1))
+            fi
+            sleep 1
+          done <<< "$targets"
+
+          log ""
+          log "superseded: **$superseded** · kept: **$kept** · skipped: **$skipped** · failed: **$failed**"
+          [ "$failed" -eq 0 ]
