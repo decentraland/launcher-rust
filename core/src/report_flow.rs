@@ -14,7 +14,10 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use crate::analytics::Analytics;
+use crate::analytics::event::Event;
 use crate::channel::EventChannel;
+use crate::config;
 use crate::crash_attachment::CrashAttachment;
 use crate::errors::FlowError;
 use crate::types::{IssueType, ReportStep, Status};
@@ -299,13 +302,17 @@ impl LogReportSink {
 
 /// Stateless: holds services only. Every method takes the shared state and ends by
 /// broadcasting the current step, so the UI always renders the latest state.
+///
+/// Analytics calls happen with the state lock released: they flush over the network and must
+/// not stall the next keystroke.
 pub struct ReportFlow {
     sink: ReportSink,
+    analytics: Arc<Mutex<Analytics>>,
 }
 
 impl ReportFlow {
-    pub const fn new(sink: ReportSink) -> Self {
-        Self { sink }
+    pub const fn new(sink: ReportSink, analytics: Arc<Mutex<Analytics>>) -> Self {
+        Self { sink, analytics }
     }
 
     /// First broadcast after the window opened on the "Something went wrong" screen.
@@ -314,12 +321,21 @@ impl ReportFlow {
         channel: &T,
         state: Arc<Mutex<ReportFlowState>>,
     ) -> Result<()> {
-        let guard = state.lock().await;
-        info!(
-            "Crash report dialog opened for session {} (exit {})",
-            guard.attachment.session_id, guard.attachment.exit_code
-        );
-        Self::broadcast(channel, &guard)
+        let event = {
+            let guard = state.lock().await;
+            info!(
+                "Crash report dialog opened for session {} (exit {})",
+                guard.attachment.session_id, guard.attachment.exit_code
+            );
+            Self::broadcast(channel, &guard)?;
+            Event::CRASH_REPORT_DIALOG_SHOWN {
+                session_id: guard.attachment.session_id.clone(),
+                explorer_version: guard.attachment.explorer_version.clone(),
+                exit_code: guard.attachment.exit_code.clone(),
+            }
+        };
+        self.track(event).await;
+        Ok(())
     }
 
     pub async fn set_field<T: EventChannel>(
@@ -345,12 +361,22 @@ impl ReportFlow {
                 "The submitted screen is reached only by submitting"
             ));
         }
-        let mut guard = state.lock().await;
-        if guard.phase == Phase::Submitting {
-            return Err(anyhow!("Cannot navigate while a submission is in flight"));
+        let form_opened = {
+            let mut guard = state.lock().await;
+            if guard.phase == Phase::Submitting {
+                return Err(anyhow!("Cannot navigate while a submission is in flight"));
+            }
+            let form_opened = guard.screen == Screen::Prompt && screen == Screen::Form;
+            guard.screen = screen;
+            Self::broadcast(channel, &guard)?;
+            form_opened.then(|| Event::CRASH_REPORT_FORM_OPENED {
+                session_id: guard.attachment.session_id.clone(),
+            })
+        };
+        if let Some(event) = form_opened {
+            self.track(event).await;
         }
-        guard.screen = screen;
-        Self::broadcast(channel, &guard)
+        Ok(())
     }
 
     /// SUBMIT. On failure the draft stays untouched and the form shows the message inline.
@@ -359,27 +385,36 @@ impl ReportFlow {
         channel: &T,
         state: Arc<Mutex<ReportFlowState>>,
     ) -> std::result::Result<(), FlowError> {
-        let mut guard = state.lock().await;
-
-        let draft = match guard.validated_draft() {
-            Ok(draft) => draft,
-            Err(message) => {
-                guard.phase = Phase::Failed {
-                    message: message.clone(),
-                };
-                Self::broadcast_silent(channel, &guard);
-                return Err(FlowError {
-                    user_message: message,
-                });
-            }
+        let report = {
+            let mut guard = state.lock().await;
+            let draft = match guard.validated_draft() {
+                Ok(draft) => draft,
+                Err(message) => {
+                    guard.phase = Phase::Failed {
+                        message: message.clone(),
+                    };
+                    Self::broadcast_silent(channel, &guard);
+                    return Err(FlowError {
+                        user_message: message,
+                    });
+                }
+            };
+            guard.phase = Phase::Submitting;
+            Self::broadcast_silent(channel, &guard);
+            CrashReport::new(draft, &guard)
         };
 
-        guard.phase = Phase::Submitting;
-        Self::broadcast_silent(channel, &guard);
+        self.track(Event::CRASH_REPORT_SUBMIT {
+            session_id: report.attachment.session_id.clone(),
+            issue_type: report.issue_type.label.to_owned(),
+            share_logs: report.share_logs,
+        })
+        .await;
 
-        let report = CrashReport::new(draft, &guard);
         let result = self.sink.submit(&report);
+        let session_id = report.attachment.session_id.clone();
 
+        let mut guard = state.lock().await;
         match result {
             Ok(()) => {
                 guard.submitted = true;
@@ -387,6 +422,9 @@ impl ReportFlow {
                 guard.phase = Phase::Idle;
                 CrashAttachment::delete(&guard.attachment_path);
                 Self::broadcast_silent(channel, &guard);
+                drop(guard);
+                self.track(Event::CRASH_REPORT_SUBMIT_SUCCESS { session_id })
+                    .await;
                 Ok(())
             }
             Err(e) => {
@@ -398,6 +436,12 @@ impl ReportFlow {
                     message: message.clone(),
                 };
                 Self::broadcast_silent(channel, &guard);
+                drop(guard);
+                self.track(Event::CRASH_REPORT_SUBMIT_ERROR {
+                    session_id,
+                    error: format!("{e:#}"),
+                })
+                .await;
                 Err(FlowError {
                     user_message: message,
                 })
@@ -406,13 +450,36 @@ impl ReportFlow {
     }
 
     /// RELAUNCH or X. The process exits or restarts right after, so nothing is broadcast.
+    /// A checked "Don't show this again" is persisted here, since this is the last chance.
     pub async fn dismiss(&self, state: Arc<Mutex<ReportFlowState>>, relaunch: bool) {
-        let guard = state.lock().await;
-        info!(
-            "Crash report dialog dismissed: relaunch={relaunch} submitted={} dont_show_again={}",
-            guard.submitted, guard.dont_show_again
-        );
-        CrashAttachment::delete(&guard.attachment_path);
+        let event = {
+            let guard = state.lock().await;
+            info!(
+                "Crash report dialog dismissed: relaunch={relaunch} submitted={} dont_show_again={}",
+                guard.submitted, guard.dont_show_again
+            );
+            if guard.dont_show_again {
+                if let Err(e) = config::set_crash_report_dialog_disabled(true) {
+                    log::error!("Cannot persist crash-report-dialog-disabled: {e:#}");
+                }
+            }
+            CrashAttachment::delete(&guard.attachment_path);
+            Event::CRASH_REPORT_DISMISSED {
+                session_id: guard.attachment.session_id.clone(),
+                submitted: guard.submitted,
+                relaunch,
+                dont_show_again: guard.dont_show_again,
+            }
+        };
+        self.track(event).await;
+    }
+
+    async fn track(&self, event: Event) {
+        self.analytics
+            .lock()
+            .await
+            .track_and_flush_silent(event)
+            .await;
     }
 
     fn broadcast<T: EventChannel>(channel: &T, state: &ReportFlowState) -> Result<()> {
@@ -480,7 +547,8 @@ mod tests {
     }
 
     fn flow() -> ReportFlow {
-        ReportFlow::new(ReportSink::new_from_env())
+        let analytics = Arc::new(Mutex::new(Analytics::new(None)));
+        ReportFlow::new(ReportSink::new_from_env(), analytics)
     }
 
     #[tokio::test]

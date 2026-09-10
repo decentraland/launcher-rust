@@ -96,6 +96,41 @@ pub enum Event {
     LAUNCHER_INSTALLER_FINISH {
         installer_file_name: String,
     },
+    /// Fired by `client-crash-watchdog` when the Explorer exits with a non-zero status.
+    EXPLORER_UNEXPECTED_EXIT {
+        session_id: String,
+        explorer_version: String,
+        exit_code: String,
+        /// The user opted out via "Don't show this again", so no dialog followed.
+        dialog_suppressed: bool,
+    },
+    CRASH_REPORT_DIALOG_SHOWN {
+        session_id: String,
+        explorer_version: String,
+        exit_code: String,
+    },
+    CRASH_REPORT_FORM_OPENED {
+        session_id: String,
+    },
+    CRASH_REPORT_SUBMIT {
+        session_id: String,
+        issue_type: String,
+        share_logs: bool,
+    },
+    CRASH_REPORT_SUBMIT_SUCCESS {
+        session_id: String,
+    },
+    CRASH_REPORT_SUBMIT_ERROR {
+        session_id: String,
+        error: String,
+    },
+    /// RELAUNCH or X on any screen. `shown / dismissed-without-submit` is the rejection rate.
+    CRASH_REPORT_DISMISSED {
+        session_id: String,
+        submitted: bool,
+        relaunch: bool,
+        dont_show_again: bool,
+    },
 }
 
 impl Display for Event {
@@ -134,6 +169,13 @@ impl Display for Event {
                 Event::CAMPAIGN_ATTRIBUTION_DETECTED { .. } => "Campaign Attribution Detected",
                 Event::LAUNCHER_INSTALLER_START { .. } => "Launcher Installer Start",
                 Event::LAUNCHER_INSTALLER_FINISH { .. } => "Launcher Installer Finish",
+                Event::EXPLORER_UNEXPECTED_EXIT { .. } => "Explorer Unexpected Exit",
+                Event::CRASH_REPORT_DIALOG_SHOWN { .. } => "Crash Report Dialog Shown",
+                Event::CRASH_REPORT_FORM_OPENED { .. } => "Crash Report Form Opened",
+                Event::CRASH_REPORT_SUBMIT { .. } => "Crash Report Submit",
+                Event::CRASH_REPORT_SUBMIT_SUCCESS { .. } => "Crash Report Submit Success",
+                Event::CRASH_REPORT_SUBMIT_ERROR { .. } => "Crash Report Submit Error",
+                Event::CRASH_REPORT_DISMISSED { .. } => "Crash Report Dismissed",
             }
         )
     }

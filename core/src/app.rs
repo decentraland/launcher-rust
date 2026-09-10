@@ -104,7 +104,7 @@ impl AppState {
         let analytics = Arc::new(Mutex::new(analytics));
 
         let args = AppEnvironment::cmd_args();
-        let context = match report_context_from_args(&args) {
+        let context = match report_context_from_args(&args, analytics.clone()) {
             Some(report) => FlowContext::Report(report),
             None => FlowContext::Launch(new_launch_context(analytics.clone())),
         };
@@ -147,7 +147,10 @@ fn new_launch_context(analytics: Arc<Mutex<Analytics>>) -> LaunchContext {
 
 /// `Some` only when the watchdog handed over a readable attachment. An unreadable file is logged
 /// and the launcher falls back to the regular launch flow rather than showing an empty dialog.
-fn report_context_from_args(args: &Args) -> Option<ReportContext> {
+fn report_context_from_args(
+    args: &Args,
+    analytics: Arc<Mutex<Analytics>>,
+) -> Option<ReportContext> {
     let path = args.crash_report_attachment.as_ref()?;
 
     let attachment = match CrashAttachment::read(path) {
@@ -169,7 +172,7 @@ fn report_context_from_args(args: &Args) -> Option<ReportContext> {
 
     let state = ReportFlowState::new(attachment, path.clone(), wallet);
     Some(ReportContext {
-        flow: Arc::new(ReportFlow::new(ReportSink::new_from_env())),
+        flow: Arc::new(ReportFlow::new(ReportSink::new_from_env(), analytics)),
         state: Arc::new(Mutex::new(state)),
     })
 }

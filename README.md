@@ -118,7 +118,8 @@ Example:
 {
   "analytics-user-id": "f31c8100-xxxx-xxxx-xxxx-46fc9b13ed0e",
   "client-additional-arguments": "--example-client-arg",
-  "cmd-arguments": "--example-launcher-arg"
+  "cmd-arguments": "--example-launcher-arg",
+  "crash-report-dialog-disabled": false
 }
 ```
 
@@ -135,6 +136,11 @@ Example:
   A string of arguments applied by the launcher in addition to the CLI arguments
   for the current execution.
   Parsed using the same rules as terminal argument strings.
+
+- **crash-report-dialog-disabled**
+  Boolean. Set by "Don't show this again" on the crash-report dialog. When `true`
+  the crash watchdog still records an unexpected Explorer exit but does not reopen
+  the launcher to ask for a report. Delete the key or set `false` to re-enable.
 
 #### Usage Examples
 
