@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::installs::crash_reports_dir;
-
-const FALLBACK_FILE_STEM: &str = "unknown-session";
+use crate::installs::{crash_reports_dir, safe_file_stem};
 
 /// Details of an unexpected Explorer exit, exchanged as a JSON file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,7 +21,7 @@ pub struct CrashAttachment {
 
 impl CrashAttachment {
     pub fn default_path(&self) -> PathBuf {
-        crash_reports_dir().join(format!("{}.json", file_stem_for(&self.session_id)))
+        crash_reports_dir().join(format!("{}.json", safe_file_stem(&self.session_id)))
     }
 
     /// Writes to [`Self::default_path`] and returns it.
@@ -56,20 +54,6 @@ impl CrashAttachment {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => log::warn!("Cannot remove crash attachment {}: {e}", path.display()),
         }
-    }
-}
-
-/// Session ids are UUIDs, but they arrive through argv, so anything that could escape the
-/// crash-reports directory is stripped before the id becomes a file name.
-fn file_stem_for(session_id: &str) -> String {
-    let stem: String = session_id
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
-        .collect();
-    if stem.is_empty() {
-        FALLBACK_FILE_STEM.to_owned()
-    } else {
-        stem
     }
 }
 
@@ -123,15 +107,15 @@ mod tests {
     }
 
     #[test]
-    fn delete_of_missing_file_is_silent() {
-        CrashAttachment::delete(&temp_file());
+    fn file_stem_strips_path_separators_and_falls_back_when_empty() {
+        assert_eq!(safe_file_stem("abc-123"), "abc-123");
+        assert_eq!(safe_file_stem("../../etc/passwd"), "etcpasswd");
+        assert_eq!(safe_file_stem("..\\..\\x"), "x");
+        assert_eq!(safe_file_stem("///"), "unknown");
     }
 
     #[test]
-    fn file_stem_strips_path_separators_and_falls_back_when_empty() {
-        assert_eq!(file_stem_for("abc-123"), "abc-123");
-        assert_eq!(file_stem_for("../../etc/passwd"), "etcpasswd");
-        assert_eq!(file_stem_for("..\\..\\x"), "x");
-        assert_eq!(file_stem_for("///"), FALLBACK_FILE_STEM);
+    fn delete_of_missing_file_is_silent() {
+        CrashAttachment::delete(&temp_file());
     }
 }

@@ -118,6 +118,8 @@ pub enum Event {
     },
     CRASH_REPORT_SUBMIT_SUCCESS {
         session_id: String,
+        /// An Intercom ticket was created; `false` means the report reached Sentry only.
+        intercom: bool,
     },
     CRASH_REPORT_SUBMIT_ERROR {
         session_id: String,

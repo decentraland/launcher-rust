@@ -130,9 +130,50 @@ pub fn crash_reports_dir() -> PathBuf {
     explorer_path().join("crash-reports")
 }
 
-/// See `explorer_session_info.rs` for the contents.
-pub fn session_info_path() -> PathBuf {
-    explorer_path().join("session-info.json")
+const SESSION_INFO_PREFIX: &str = "session-info-";
+
+/// One file per Explorer session; see `explorer_session_info.rs` for the contents.
+pub fn session_info_path(session_id: &str) -> PathBuf {
+    explorer_path().join(format!(
+        "{SESSION_INFO_PREFIX}{}.json",
+        safe_file_stem(session_id)
+    ))
+}
+
+/// Every session-info file currently in the app directory.
+pub fn session_info_files() -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(explorer_path()) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let is_session_file = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(SESSION_INFO_PREFIX));
+            let is_json = path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+            is_session_file && is_json
+        })
+        .collect()
+}
+
+/// Ids arrive through argv or files written by other processes, so anything that could escape
+/// the app directory is stripped before an id becomes a file name.
+pub fn safe_file_stem(id: &str) -> String {
+    const FALLBACK: &str = "unknown";
+    let stem: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if stem.is_empty() {
+        FALLBACK.to_owned()
+    } else {
+        stem
+    }
 }
 
 // There is no point to recovery if the app failed to create working directory

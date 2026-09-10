@@ -90,6 +90,28 @@ npm run prebuild-sidecars   # or: rust-script scripts/pre-build-sidecars.rs
 `TAURI_ENV_TARGET_TRIPLE=universal-apple-darwin` builds both macOS arches and stages the fat
 binary under the universal and both per-arch names.
 
+### Crash report delivery
+
+The report is recorded as a Sentry event and, when the Explorer left a session file, filed as
+an Intercom ticket through `intercom-proxy` using Decentraland Signed Fetch
+(`core/src/infra/signed_fetch`, `core/src/infra/intercom_proxy`). The Explorer writes
+`{APP_DIR}/session-info-<session_id>.json` after login and deletes it on a clean quit:
+
+```json
+{
+  "version": 1,
+  "session_id": "<the --session_id the launcher passed>",
+  "wallet": "0x…",
+  "explorer_version": "…",
+  "identity": { "address": "0x…", "key": "…", "expiration": "…", "ephemeralAuthChain": [ … ] }
+}
+```
+
+The launcher reads the file only in the report flow, refuses an expired identity, never logs
+it, and deletes the file once the report is submitted or dismissed. Without a valid identity
+the report reaches Sentry only. The proxy environment follows the install's `dclenv` (`org`
+by default in production builds, `zone` otherwise).
+
 ## Development Guidelines
 
 - Use `npm run format` for formatting and linting in both Rust and JavaScript.

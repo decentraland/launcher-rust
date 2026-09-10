@@ -22,6 +22,9 @@ use crate::config;
 use crate::crash_attachment::CrashAttachment;
 use crate::diagnostic_logs;
 use crate::errors::FlowError;
+use crate::explorer_session_info::ExplorerSessionInfo;
+use crate::infra::intercom_proxy::IntercomProxyClient;
+use crate::infra::signed_fetch::EphemeralIdentity;
 use crate::types::{IssueType, ReportStep, Status};
 use crate::utils::{app_version, get_os_name};
 
@@ -155,7 +158,7 @@ enum Phase {
 pub struct ReportFlowState {
     attachment: CrashAttachment,
     attachment_path: PathBuf,
-    wallet: Option<String>,
+    session_info: Option<ExplorerSessionInfo>,
     screen: Screen,
     draft: CrashReportDraft,
     dont_show_again: bool,
@@ -167,12 +170,12 @@ impl ReportFlowState {
     pub fn new(
         attachment: CrashAttachment,
         attachment_path: PathBuf,
-        wallet: Option<String>,
+        session_info: Option<ExplorerSessionInfo>,
     ) -> Self {
         Self {
             attachment,
             attachment_path,
-            wallet,
+            session_info,
             screen: Screen::Prompt,
             draft: CrashReportDraft::default(),
             dont_show_again: false,
@@ -183,6 +186,15 @@ impl ReportFlowState {
 
     pub const fn attachment(&self) -> &CrashAttachment {
         &self.attachment
+    }
+
+    pub fn wallet(&self) -> Option<String> {
+        self.session_info.as_ref().map(|info| info.wallet.clone())
+    }
+
+    /// Identity for signed fetch, if the Explorer left a valid one for this session.
+    pub fn identity(&self) -> Option<&EphemeralIdentity> {
+        self.session_info.as_ref()?.valid_identity()
     }
 
     pub const fn submitted(&self) -> bool {
@@ -273,7 +285,7 @@ impl CrashReport {
                 .unwrap_or(CRASH_FREEZE_ISSUE_TYPE),
             description: draft.description,
             share_logs: draft.share_logs,
-            wallet: state.wallet.clone(),
+            wallet: state.wallet(),
             attachment: state.attachment.clone(),
             launcher_version: app_version().to_owned(),
             os: get_os_name().to_owned(),
@@ -365,21 +377,67 @@ fn capture_sentry_event(report: &CrashReport) -> Option<String> {
     }
 }
 
+/// What happened to a submitted report beyond the Sentry event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Delivery {
+    Intercom { ticket_id: String },
+    SentryOnly,
+}
+
+impl Delivery {
+    pub const fn reached_intercom(&self) -> bool {
+        matches!(self, Self::Intercom { .. })
+    }
+}
+
 /// Where a submitted report goes. Same enum-dispatch shape as `Analytics::{Client, Null}`.
 pub enum ReportSink {
-    /// Stub until the intercom-proxy exposes a launcher-callable route: logs the payload.
+    /// Logs the payload only.
     Log(LogReportSink),
+    /// Creates an Intercom ticket through the proxy, signed with the session identity.
+    IntercomProxy(IntercomProxyClient),
 }
 
 impl ReportSink {
-    pub const fn new_from_env() -> Self {
+    pub fn new_from_env() -> Self {
+        match IntercomProxyClient::new_from_env() {
+            Ok(client) => Self::IntercomProxy(client),
+            Err(e) => {
+                log::error!("Cannot build the Intercom proxy client, reports stay local: {e:#}");
+                Self::log()
+            }
+        }
+    }
+
+    pub const fn log() -> Self {
         Self::Log(LogReportSink)
     }
 
-    // Sync for now: the only sink logs. Becomes async together with the first network sink.
-    pub fn submit(&self, report: &CrashReport) -> Result<()> {
+    /// Without a usable identity the proxy cannot be called; the report then reaches Sentry only.
+    pub async fn submit(
+        &self,
+        report: &CrashReport,
+        identity: Option<&EphemeralIdentity>,
+    ) -> Result<Delivery> {
         match self {
-            Self::Log(_) => LogReportSink::submit(report),
+            Self::Log(_) => {
+                LogReportSink::submit(report)?;
+                Ok(Delivery::SentryOnly)
+            }
+            Self::IntercomProxy(client) => match identity {
+                Some(identity) => {
+                    let ticket_id = client
+                        .create_ticket(identity, report.to_ticket_attributes())
+                        .await?;
+                    info!("Intercom ticket created: {ticket_id}");
+                    Ok(Delivery::Intercom { ticket_id })
+                }
+                None => {
+                    log::warn!("No valid session identity; crash report reaches Sentry only");
+                    LogReportSink::submit(report)?;
+                    Ok(Delivery::SentryOnly)
+                }
+            },
         }
     }
 }
@@ -512,20 +570,25 @@ impl ReportFlow {
             sentry_event_id: capture_sentry_event(&report),
             ..report
         };
-        let result = self.sink.submit(&report);
+        let identity = state.lock().await.identity().cloned();
+        let result = self.sink.submit(&report, identity.as_ref()).await;
         let session_id = report.attachment.session_id.clone();
 
         let mut guard = state.lock().await;
         match result {
-            Ok(()) => {
+            Ok(delivery) => {
                 guard.submitted = true;
                 guard.screen = Screen::Submitted;
                 guard.phase = Phase::Idle;
                 CrashAttachment::delete(&guard.attachment_path);
+                ExplorerSessionInfo::delete_for(&session_id);
                 Self::broadcast_silent(channel, &guard);
                 drop(guard);
-                self.track(Event::CRASH_REPORT_SUBMIT_SUCCESS { session_id })
-                    .await;
+                self.track(Event::CRASH_REPORT_SUBMIT_SUCCESS {
+                    session_id,
+                    intercom: delivery.reached_intercom(),
+                })
+                .await;
                 Ok(())
             }
             Err(e) => {
@@ -565,6 +628,7 @@ impl ReportFlow {
                 }
             }
             CrashAttachment::delete(&guard.attachment_path);
+            ExplorerSessionInfo::delete_for(&guard.attachment.session_id);
             Event::CRASH_REPORT_DISMISSED {
                 session_id: guard.attachment.session_id.clone(),
                 submitted: guard.submitted,
@@ -649,7 +713,7 @@ mod tests {
 
     fn flow() -> ReportFlow {
         let analytics = Arc::new(Mutex::new(Analytics::new(None)));
-        ReportFlow::new(ReportSink::new_from_env(), analytics)
+        ReportFlow::new(ReportSink::log(), analytics)
     }
 
     #[tokio::test]

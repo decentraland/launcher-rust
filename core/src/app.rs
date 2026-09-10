@@ -165,9 +165,10 @@ fn report_context_from_args(
         attachment.session_id, attachment.explorer_version, attachment.exit_code
     );
 
-    let wallet = ExplorerSessionInfo::read_for(&attachment.session_id).map(|info| info.wallet);
+    ExplorerSessionInfo::sweep_stale();
+    let session_info = ExplorerSessionInfo::read_for(&attachment.session_id);
 
-    let state = ReportFlowState::new(attachment, path.clone(), wallet);
+    let state = ReportFlowState::new(attachment, path.clone(), session_info);
     Some(ReportContext {
         flow: Arc::new(ReportFlow::new(ReportSink::new_from_env(), analytics)),
         state: Arc::new(Mutex::new(state)),

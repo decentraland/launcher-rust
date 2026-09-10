@@ -32,6 +32,7 @@ pub mod download_origin_metadata;
 pub mod environment;
 pub mod errors;
 pub mod explorer_session_info;
+pub mod infra;
 pub mod installs;
 pub mod instances;
 pub mod launch_flow;
