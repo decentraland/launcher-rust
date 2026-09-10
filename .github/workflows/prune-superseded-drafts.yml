@@ -1,0 +1,96 @@
+name: Prune Superseded Draft Releases
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List what would be deleted without deleting it"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prune-superseded-drafts
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Delete draft releases below the highest published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          SEMVER='^app-v[0-9]+\.[0-9]+\.[0-9]+$'
+
+          note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+
+          highest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+            --jq '.[] | select(.draft==false and .prerelease==false) | .tag_name' \
+            | { grep -E "$SEMVER" || true; } | sort -V | tail -n1)
+
+          if [ -z "$highest" ]; then
+            echo "::error title=Prune drafts::Could not determine the highest published release; refusing to prune."
+            exit 1
+          fi
+
+          dry="${DRY_RUN:-}"
+          if [ "$dry" = "true" ]; then
+            mode="DRY RUN"
+          else
+            mode="DELETE"
+          fi
+          echo "Highest published release: $highest  (mode: $mode)"
+          note "### Prune superseded drafts — $mode"
+          note "Highest published release: \`$highest\`"
+          note ""
+
+          deleted=0
+          kept=0
+          skipped=0
+
+          while IFS=$'\t' read -r tag id; do
+            [ -n "$tag" ] || continue
+
+            if ! printf '%s' "$tag" | grep -qE "$SEMVER"; then
+              echo "SKIP    $tag (not app-vX.Y.Z)"
+              note "- \`$tag\` — skipped, not app-vX.Y.Z"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            if printf '%s\n%s\n' "${highest#app-v}" "${tag#app-v}" | sort -V -C; then
+              echo "KEEP    $tag (not superseded)"
+              note "- \`$tag\` — kept, not superseded"
+              kept=$((kept + 1))
+              continue
+            fi
+
+            if [ "$dry" = "true" ]; then
+              echo "WOULD   $tag"
+              note "- \`$tag\` — would delete"
+            else
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id" --silent
+              echo "DELETE  $tag"
+              note "- \`$tag\` — deleted"
+            fi
+            deleted=$((deleted + 1))
+          done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" \
+                     --jq '.[] | select(.draft==true) | [.tag_name, (.id|tostring)] | @tsv')
+
+          echo "superseded=$deleted kept=$kept skipped=$skipped"
+          note ""
+          note "superseded: **$deleted** · kept: **$kept** · skipped: **$skipped**"
