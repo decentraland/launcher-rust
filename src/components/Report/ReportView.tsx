@@ -59,6 +59,10 @@ const labelSx = {
   },
 };
 
+// Same trick as the EXIT button in Home.tsx: the theme styles contained buttons through
+// `:not(:hover)` selectors no class specificity beats, so the secondary look is inline.
+const SECONDARY_STYLE = { background: "#2B0B45" };
+
 const CHECKBOX_OFF = <CheckboxBox checked={false} />;
 const CHECKBOX_ON = <CheckboxBox checked />;
 
@@ -105,7 +109,11 @@ const renderPrompt = (doNotShowAgain: boolean, send: SendCommand) => (
       label="Don't show this again"
     />
     <ButtonRow>
-      <SecondaryButton variant="contained" onClick={() => send("relaunch")}>
+      <SecondaryButton
+        variant="contained"
+        style={SECONDARY_STYLE}
+        onClick={() => send("relaunch")}
+      >
         RELAUNCH
       </SecondaryButton>
       <PrimaryButton variant="contained" onClick={() => navigate(send, "form")}>
@@ -187,6 +195,7 @@ const renderForm = (
     <ButtonRow>
       <SecondaryButton
         variant="contained"
+        style={SECONDARY_STYLE}
         disabled={data.submitting}
         onClick={() => navigate(send, "prompt")}
       >
