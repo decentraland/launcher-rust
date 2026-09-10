@@ -12,6 +12,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use log::info;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use tokio::sync::Mutex;
 
 use crate::analytics::Analytics;
@@ -19,6 +20,7 @@ use crate::analytics::event::Event;
 use crate::channel::EventChannel;
 use crate::config;
 use crate::crash_attachment::CrashAttachment;
+use crate::diagnostic_logs;
 use crate::errors::FlowError;
 use crate::types::{IssueType, ReportStep, Status};
 use crate::utils::{app_version, get_os_name};
@@ -243,6 +245,13 @@ impl ReportFlowState {
     }
 }
 
+/// Sentry tag + fingerprint prefix; lets Support pivot on all crash reports at once.
+const SENTRY_ERROR_CODE: &str = "CRASH_REPORT";
+const SENTRY_MESSAGE: &str = "Explorer crash report";
+
+const TICKET_TITLE_PREFIX: &str = "Bug Report: ";
+const DIAGNOSTICS_UNAVAILABLE: &str = "unavailable";
+
 /// The payload a sink delivers. Shaped after the Explorer's Intercom ticket so the proxy route,
 /// once it exists, is a drop-in.
 #[derive(Clone, Debug, Serialize)]
@@ -254,6 +263,9 @@ pub struct CrashReport {
     pub attachment: CrashAttachment,
     pub launcher_version: String,
     pub os: String,
+    /// Id of the launcher-side Sentry event carrying the tags and log tails; `None` when Sentry
+    /// is not configured.
+    pub sentry_event_id: Option<String>,
 }
 
 impl CrashReport {
@@ -267,7 +279,93 @@ impl CrashReport {
             attachment: state.attachment.clone(),
             launcher_version: app_version().to_owned(),
             os: get_os_name().to_owned(),
+            sentry_event_id: None,
         }
+    }
+
+    /// Body of the proxy's `ticket_attributes`, mirroring `IntercomTicketPayload.cs`. Only
+    /// attribute names declared on the "Bug Report" ticket type may appear (an unknown key
+    /// rejects the whole ticket), so crash specifics travel inside the description.
+    pub fn to_ticket_attributes(&self) -> Map<String, Value> {
+        let mut attributes = Map::new();
+        let mut put = |key: &str, value: String| {
+            attributes.insert(key.to_owned(), Value::String(value));
+        };
+        put(
+            "_default_title_",
+            format!("{TICKET_TITLE_PREFIX}{}", self.issue_type.label),
+        );
+        put("_default_description_", self.compose_description());
+        put("Issue Type", self.issue_type.option_id.to_owned());
+        put("Operating System", self.os.clone());
+        put("Client version", self.attachment.explorer_version.clone());
+        put("Launcher Version", self.launcher_version.clone());
+        attributes
+    }
+
+    /// Same layout as `BugReportService.ComposeTicketDescription`: free text, a separator, then
+    /// machine context one line each.
+    fn compose_description(&self) -> String {
+        let diagnostics = self
+            .sentry_event_id
+            .as_deref()
+            .map_or(DIAGNOSTICS_UNAVAILABLE.to_owned(), |id| {
+                format!("sentry event {id}")
+            });
+        format!(
+            "{}
+
+---
+Session: {}
+Exit code: {}
+Crashed at: {}
+Wallet: {}
+Internal diagnostics: {}",
+            self.description,
+            self.attachment.session_id,
+            self.attachment.exit_code,
+            self.attachment.crashed_at,
+            self.wallet.as_deref().unwrap_or("unknown"),
+            diagnostics
+        )
+    }
+}
+
+/// Records the report on the launcher's Sentry project so Support can join it with the
+/// Explorer's crash by `session_id` / `wallet`. Log tails ride along when the user allowed it.
+/// Returns the event id, or `None` when no Sentry client is bound (no DSN at build time).
+fn capture_sentry_event(report: &CrashReport) -> Option<String> {
+    let attachments = if report.share_logs {
+        diagnostic_logs::collect()
+    } else {
+        Vec::new()
+    };
+    let session_id = report.attachment.session_id.as_str();
+
+    let event_id = sentry::with_scope(
+        |scope| {
+            scope.set_tag("error_code", SENTRY_ERROR_CODE);
+            scope.set_tag("session_id", session_id);
+            scope.set_tag("explorer_version", &report.attachment.explorer_version);
+            scope.set_tag("exit_code", &report.attachment.exit_code);
+            scope.set_tag("issue_type", report.issue_type.label);
+            if let Some(wallet) = &report.wallet {
+                scope.set_tag("wallet", wallet);
+            }
+            scope.set_fingerprint(Some(&[SENTRY_ERROR_CODE, session_id]));
+            scope.set_extra("description", report.description.clone().into());
+            scope.set_extra("share_logs", report.share_logs.into());
+            for attachment in attachments {
+                scope.add_attachment(attachment);
+            }
+        },
+        || sentry::capture_message(SENTRY_MESSAGE, sentry::Level::Info),
+    );
+
+    if event_id.is_nil() {
+        None
+    } else {
+        Some(event_id.to_string())
     }
 }
 
@@ -295,7 +393,10 @@ pub struct LogReportSink;
 impl LogReportSink {
     fn submit(report: &CrashReport) -> Result<()> {
         let json = serde_json::to_string_pretty(report)?;
-        info!("Crash report (log sink, not delivered anywhere):\n{json}");
+        let ticket = serde_json::to_string_pretty(&report.to_ticket_attributes())?;
+        info!(
+            "Crash report (log sink, not delivered anywhere):\n{json}\nticket_attributes:\n{ticket}"
+        );
         Ok(())
     }
 }
@@ -411,6 +512,11 @@ impl ReportFlow {
         })
         .await;
 
+        // Sentry first, like the Explorer: the ticket description links to the diagnostics.
+        let report = CrashReport {
+            sentry_event_id: capture_sentry_event(&report),
+            ..report
+        };
         let result = self.sink.submit(&report);
         let session_id = report.attachment.session_id.clone();
 
@@ -725,6 +831,71 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    fn report(wallet: Option<&str>, sentry_event_id: Option<&str>) -> CrashReport {
+        CrashReport {
+            issue_type: CRASH_FREEZE_ISSUE_TYPE,
+            description: "it froze".to_owned(),
+            share_logs: false,
+            wallet: wallet.map(ToOwned::to_owned),
+            attachment: attachment(),
+            launcher_version: "9.9.9".to_owned(),
+            os: "macos".to_owned(),
+            sentry_event_id: sentry_event_id.map(ToOwned::to_owned),
+        }
+    }
+
+    #[test]
+    fn ticket_attributes_use_only_declared_keys_with_string_values() {
+        let attributes = report(Some("0xabc"), Some("evt")).to_ticket_attributes();
+
+        let mut keys: Vec<&str> = attributes.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                "Client version",
+                "Issue Type",
+                "Launcher Version",
+                "Operating System",
+                "_default_description_",
+                "_default_title_",
+            ]
+        );
+        assert!(attributes.values().all(Value::is_string));
+        assert_eq!(
+            attributes.get("Issue Type").and_then(Value::as_str),
+            Some(CRASH_FREEZE_ISSUE_TYPE.option_id)
+        );
+        assert_eq!(
+            attributes.get("_default_title_").and_then(Value::as_str),
+            Some("Bug Report: Crash / Freeze")
+        );
+        assert_eq!(
+            attributes.get("Client version").and_then(Value::as_str),
+            Some("v1.0.0")
+        );
+    }
+
+    #[test]
+    fn description_carries_crash_context_and_diagnostics_link() {
+        let with = report(Some("0xabc"), Some("evt")).compose_description();
+        assert!(with.starts_with("it froze\n\n---\n"));
+        assert!(with.contains("Session: session"));
+        assert!(with.contains("Exit code: exit 1"));
+        assert!(with.contains("Wallet: 0xabc"));
+        assert!(with.ends_with("Internal diagnostics: sentry event evt"));
+
+        let without = report(None, None).compose_description();
+        assert!(without.contains("Wallet: unknown"));
+        assert!(without.ends_with("Internal diagnostics: unavailable"));
+    }
+
+    #[test]
+    fn sentry_capture_without_client_yields_no_event_id() {
+        // Tests run without a DSN, so the hub has no client and capture returns the nil id.
+        assert!(capture_sentry_event(&report(None, None)).is_none());
     }
 
     #[test]

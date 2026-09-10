@@ -10,6 +10,7 @@ use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttrib
 use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
 use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::environment::{AppEnvironment, Args};
+use crate::explorer_session_info::ExplorerSessionInfo;
 use crate::installs;
 use crate::instances::RunningInstances;
 use crate::launch_flow::{LaunchFlow, LaunchFlowState};
@@ -166,9 +167,8 @@ fn report_context_from_args(
         attachment.session_id, attachment.explorer_version, attachment.exit_code
     );
 
-    // TODO(crash-report): read the wallet from the Explorer-written session-info.json once the
-    // client writes it; until then the report carries no wallet.
-    let wallet = None;
+    // Written by the Explorer after login; absent until the client ships that change.
+    let wallet = ExplorerSessionInfo::read_for(&attachment.session_id).map(|info| info.wallet);
 
     let state = ReportFlowState::new(attachment, path.clone(), wallet);
     Some(ReportContext {

@@ -130,6 +130,11 @@ pub fn crash_reports_dir() -> PathBuf {
     explorer_path().join("crash-reports")
 }
 
+/// Written by the Explorer after login; see `explorer_session_info.rs` for the contract.
+pub fn session_info_path() -> PathBuf {
+    explorer_path().join("session-info.json")
+}
+
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
@@ -220,6 +225,21 @@ pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<P
     {
         Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
     }
+}
+
+/// Among the processes that appeared under the `.app`, the one running the bundle's main
+/// executable. Unity helpers (crash handler, GPU workers) live under the same path but exiting
+/// with them is not an Explorer crash.
+#[cfg(target_os = "macos")]
+fn main_explorer_pid(app_path: &Path, registered: &[(u32, PathBuf)]) -> Option<u32> {
+    let main_exe = app_path
+        .join("Contents")
+        .join("MacOS")
+        .join(EXPLORER_MAC_APP_NAME);
+    registered
+        .iter()
+        .find(|(_, exe)| *exe == main_exe)
+        .map(|(pid, _)| *pid)
 }
 
 #[cfg(target_os = "macos")]
@@ -417,7 +437,8 @@ fn rename_latest_back_to_version(
     branch_path: &Path,
 ) -> DCLErrorResult {
     if target == branch_path {
-        return fs::remove_dir_all(latest_path).map_err(|e| DCLError::from_rename_back(latest_path, e));
+        return fs::remove_dir_all(latest_path)
+            .map_err(|e| DCLError::from_rename_back(latest_path, e));
     }
     if target.exists() {
         fs::remove_dir_all(target).map_err(|e| DCLError::from_rename_back(target, e))?;
@@ -511,7 +532,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         file_path: file_path.to_string_lossy().into_owned(),
         source,
     })?;
-    
+
     cleanup_versions(&current_version)
 }
 
@@ -720,22 +741,30 @@ impl InstallsHub {
 
             let poll = async {
                 loop {
-                    if self
+                    let registered = self
                         .running_instances
                         .lock()
                         .await
-                        .register_new_opened_instances_by_fuzzy_path(&explorer_launch_path)
-                    {
-                        break;
+                        .register_new_opened_instances_by_fuzzy_path(&explorer_launch_path);
+                    if !registered.is_empty() {
+                        return registered;
                     }
                     tokio::time::sleep(POLL_INTERVAL).await;
                 }
             };
 
-            if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
+            let Ok(registered) = tokio::time::timeout(POLL_TIMEOUT, poll).await else {
                 return Err(DCLError::E3011_EXPLORER_PROCESS_NOT_STARTED {
                     path: explorer_launch_path.to_string_lossy().into_owned(),
                 });
+            };
+
+            match main_explorer_pid(&explorer_launch_path, &registered) {
+                Some(pid) => self.spawn_crash_watchdog(pid, preferred_version).await,
+                None => log::warn!(
+                    "No main Explorer executable among new pids {:?}; crash watchdog not started",
+                    registered
+                ),
             }
         }
 
@@ -767,9 +796,19 @@ impl InstallsHub {
 
                 thread::sleep(CHECK_INTERVAL);
             }
+
+            self.spawn_crash_watchdog(child.id(), preferred_version)
+                .await;
         }
 
         Ok(())
+    }
+
+    /// The watchdog needs the same session id the Explorer received via `--session_id`.
+    async fn spawn_crash_watchdog(&self, pid: u32, preferred_version: Option<&str>) {
+        let session_id = self.analytics.lock().await.session_id().value().to_owned();
+        let version = Self::readable_version(preferred_version);
+        crate::crash_watchdog::spawn(pid, &session_id, &version);
     }
 
     #[cfg(target_os = "macos")]

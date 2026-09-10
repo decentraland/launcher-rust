@@ -36,12 +36,17 @@ impl RunningInstances {
         }
     }
 
+    /// Registers every not-yet-known process under `app_path` and returns the newly registered
+    /// `(pid, exe_path)` pairs; empty when nothing new appeared this poll.
     #[cfg(target_os = "macos")]
-    pub fn register_new_opened_instances_by_fuzzy_path(&self, app_path: &Path) -> bool {
+    pub fn register_new_opened_instances_by_fuzzy_path(
+        &self,
+        app_path: &Path,
+    ) -> Vec<(u32, PathBuf)> {
         use std::collections::hash_map::Entry;
 
         let mut content: Storage = Self::file_content(self.path.as_path());
-        let initial_count = content.processes.len();
+        let mut registered = Vec::new();
 
         for (raw_pid, name, exe_path) in Self::processes_under_path(app_path) {
             if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
@@ -52,11 +57,11 @@ impl RunningInstances {
                     exe_path.display()
                 );
                 e.insert(name);
+                registered.push((raw_pid, exe_path));
             }
         }
 
-        let found = content.processes.len() > initial_count;
-        if !found {
+        if registered.is_empty() {
             log::info!(
                 "No new Explorer instances found this poll under {}",
                 app_path.display()
@@ -64,7 +69,7 @@ impl RunningInstances {
         } else if let Err(e) = Self::write_content(&self.path, &content) {
             log::error!("Cannot persist running instance(s): {:#?}", e);
         }
-        found
+        registered
     }
 
     /// Scans the OS process list for every process whose executable lives under
