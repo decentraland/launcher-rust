@@ -98,7 +98,7 @@ export const CloseIcon: React.FC<IconProps> = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 12 12" fill="none">
     <path
       d="M2 2l8 8M10 2l-8 8"
-      stroke={OUTLINE}
+      stroke="#FFFFFF"
       strokeWidth="2.2"
       strokeLinecap="round"
     />

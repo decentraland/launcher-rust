@@ -38,19 +38,29 @@ export const Header = styled("div")({
   marginBottom: 12,
   background:
     "radial-gradient(ellipse 60% 70% at 50% 45%, rgba(150, 70, 220, 0.55) 0%, rgba(150, 70, 220, 0) 100%)",
-  "& svg": { display: "block", marginBottom: 12 },
+  // White outer outline around the dark stroke, as in the design's sticker-style icons. A
+  // four-direction zero-blur drop-shadow outlines the whole silhouette, multi-shape icons too.
+  "& svg": {
+    display: "block",
+    marginBottom: 12,
+    filter:
+      "drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff) drop-shadow(0 2px 0 #fff) drop-shadow(0 -2px 0 #fff)",
+  },
 });
 
+// Translucent rounded square with a white X (design frame, top-right corner).
 export const CloseButton = styled(IconButton)({
-  position: "absolute",
-  top: 14,
-  right: 14,
-  width: 26,
-  height: 26,
-  padding: 0,
-  borderRadius: 7,
-  backgroundColor: "rgba(255, 255, 255, 0.85)",
-  "&:hover": { backgroundColor: "#FFFFFF" },
+  "&&": {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    width: 28,
+    height: 28,
+    padding: 0,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+  },
+  "&&:hover": { backgroundColor: "rgba(255, 255, 255, 0.3)" },
 });
 
 export const Title = styled(Typography)({
@@ -136,8 +146,9 @@ export const ButtonRow = styled("div")({
   justifyContent: "center",
 });
 
-// `&&` doubles the specificity so these win over the theme's `containedPrimary` override,
-// which otherwise paints every contained button pink.
+// The theme paints contained buttons via `background` under a three-class selector
+// (`.MuiButton-root.MuiButton-sizeMedium.MuiButton-containedPrimary`), so these need four
+// classes to win. `background` shorthand is set for the same reason.
 const baseButton = {
   flex: 1,
   height: 46,
@@ -151,25 +162,25 @@ const baseButton = {
 };
 
 export const PrimaryButton = styled(Button)({
-  "&&": {
+  "&&&&": {
     ...baseButton,
-    backgroundColor: PRIMARY,
+    background: PRIMARY,
   },
-  "&&:hover": { backgroundColor: "#E5284C", boxShadow: "none" },
-  "&&.Mui-disabled": {
-    backgroundColor: "rgba(255, 45, 85, 0.45)",
+  "&&&&:hover": { background: "#E5284C", boxShadow: "none" },
+  "&&&&.Mui-disabled": {
+    background: "rgba(255, 45, 85, 0.45)",
     color: "rgba(255, 255, 255, 0.7)",
   },
 });
 
 export const SecondaryButton = styled(Button)({
-  "&&": {
+  "&&&&": {
     ...baseButton,
-    backgroundColor: "#2B0B45",
+    background: "#2B0B45",
   },
-  "&&:hover": { backgroundColor: "#1F0733", boxShadow: "none" },
-  "&&.Mui-disabled": {
-    backgroundColor: "rgba(43, 11, 69, 0.6)",
+  "&&&&:hover": { background: "#1F0733", boxShadow: "none" },
+  "&&&&.Mui-disabled": {
+    background: "rgba(43, 11, 69, 0.6)",
     color: "rgba(255, 255, 255, 0.6)",
   },
 });
