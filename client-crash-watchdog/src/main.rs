@@ -1,6 +1,6 @@
-//! `dcl_watchdog`: started by the launcher right after it spawned the Explorer. Waits for that
-//! process to exit; a non-zero exit writes a `CrashAttachment` and reopens the launcher with
-//! `--crash-report-with-attachment <path>` unless the user opted out of the dialog.
+//! `dcl_watchdog`: waits for an Explorer process to exit. A non-zero exit writes a
+//! `CrashAttachment` and starts the launcher with `--crash-report-with-attachment <path>`,
+//! unless the crash dialog is disabled in the config.
 
 // Avoid popup terminal window
 #![windows_subsystem = "windows"]
@@ -24,8 +24,7 @@ use process_wait::ExitOutcome;
 
 const EVENT_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Guards against pid reuse between the launcher reading the pid and the watchdog attaching:
-/// the Explorer's main executable is `Decentraland` / `Decentraland.exe`.
+/// Pid-reuse guard: the watched process must be the Explorer's main executable.
 const EXPLORER_PROCESS_NAME_FRAGMENT: &str = "decentraland";
 
 #[derive(Debug, PartialEq, Eq)]

@@ -5,14 +5,8 @@ use serde::Deserialize;
 
 use crate::installs::session_info_path;
 
-/// Wallet handed over by the Explorer.
-///
-/// Written by the Explorer after login into the launcher app dir (`session-info.json`), keyed by
-/// the `--session_id` the launcher passed on the command line. The launcher never learns the
-/// wallet any other way.
-///
-/// Contract (Explorer side, follow-up):
-/// `{ "session_id": "<--session_id arg>", "wallet": "0x…", "explorer_version": "…" }`
+/// Contents of `session-info.json`, written by the Explorer:
+/// `{ "session_id": "…", "wallet": "0x…", "explorer_version": "…" }`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct ExplorerSessionInfo {
     pub session_id: String,
@@ -22,8 +16,7 @@ pub struct ExplorerSessionInfo {
 }
 
 impl ExplorerSessionInfo {
-    /// The stored info only if it belongs to `session_id`: with several Explorer instances the
-    /// file holds the most recent login, which may not be the one that crashed.
+    /// The stored info only if it belongs to `session_id`.
     pub fn read_for(session_id: &str) -> Option<Self> {
         let path = session_info_path();
         let info = Self::read_from(&path)?;

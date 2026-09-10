@@ -1,9 +1,9 @@
 //! Crash-report flow.
 //!
-//! The launcher was reopened by `client-crash-watchdog` with `--crash-report-with-attachment
-//! <path>` and drives the three-screen dialog (Something went wrong → Bug Report form → Submitted).
+//! The three-screen dialog (prompt, bug report form, submitted) shown when the launcher starts
+//! with `--crash-report-with-attachment <path>`.
 //!
-//! `ReportFlow` is stateless and holds services only; everything the UI renders lives in
+//! `ReportFlow` is stateless and holds services only; all mutable data lives in
 //! `ReportFlowState` and is broadcast as a whole `ReportStep` after every mutation.
 
 use std::path::PathBuf;
@@ -26,7 +26,7 @@ use crate::types::{IssueType, ReportStep, Status};
 use crate::utils::{app_version, get_os_name};
 
 /// Options of the Intercom "Bug Report" ticket type, copied from the Explorer's
-/// `BugReportIssueTypes.cs` so tickets from both clients are shaped identically.
+/// `BugReportIssueTypes.cs`.
 pub const ISSUE_TYPES: [IssueType; 16] = [
     IssueType {
         label: "Performance (Lag/FPS)",
@@ -91,7 +91,7 @@ pub const ISSUE_TYPES: [IssueType; 16] = [
     },
 ];
 
-/// Preselected on the form: the dialog only ever opens after a crash.
+/// Preselected on the form.
 pub const CRASH_FREEZE_ISSUE_TYPE: IssueType = IssueType {
     label: "Crash / Freeze",
     option_id: "10ab00f9-e944-4a7f-8b75-c8bf4e4ff270",
@@ -113,7 +113,7 @@ pub enum Screen {
     Submitted,
 }
 
-/// The only way the UI mutates the draft: one field, its whole new value.
+/// One draft field with its whole new value.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum CrashReportField {
@@ -151,7 +151,7 @@ enum Phase {
     Failed { message: String },
 }
 
-/// Single source of truth for the dialog. The UI keeps nothing; it renders [`Self::step`].
+/// Single source of truth for the dialog, rendered through [`Self::step`].
 pub struct ReportFlowState {
     attachment: CrashAttachment,
     attachment_path: PathBuf,
@@ -193,7 +193,7 @@ impl ReportFlowState {
         self.dont_show_again
     }
 
-    /// The screen the UI must render right now.
+    /// The current screen.
     pub fn step(&self) -> ReportStep {
         match self.screen {
             Screen::Prompt => ReportStep::InfoSomethingWrongStep {
@@ -245,15 +245,14 @@ impl ReportFlowState {
     }
 }
 
-/// Sentry tag + fingerprint prefix; lets Support pivot on all crash reports at once.
+/// Sentry tag + fingerprint prefix shared by all crash reports.
 const SENTRY_ERROR_CODE: &str = "CRASH_REPORT";
 const SENTRY_MESSAGE: &str = "Explorer crash report";
 
 const TICKET_TITLE_PREFIX: &str = "Bug Report: ";
 const DIAGNOSTICS_UNAVAILABLE: &str = "unavailable";
 
-/// The payload a sink delivers. Shaped after the Explorer's Intercom ticket so the proxy route,
-/// once it exists, is a drop-in.
+/// The payload a sink delivers, shaped after the Explorer's Intercom ticket.
 #[derive(Clone, Debug, Serialize)]
 pub struct CrashReport {
     pub issue_type: IssueType,
@@ -263,8 +262,7 @@ pub struct CrashReport {
     pub attachment: CrashAttachment,
     pub launcher_version: String,
     pub os: String,
-    /// Id of the launcher-side Sentry event carrying the tags and log tails; `None` when Sentry
-    /// is not configured.
+    /// Id of the Sentry event this report produced; `None` when Sentry is not configured.
     pub sentry_event_id: Option<String>,
 }
 
@@ -283,9 +281,8 @@ impl CrashReport {
         }
     }
 
-    /// Body of the proxy's `ticket_attributes`, mirroring `IntercomTicketPayload.cs`. Only
-    /// attribute names declared on the "Bug Report" ticket type may appear (an unknown key
-    /// rejects the whole ticket), so crash specifics travel inside the description.
+    /// `ticket_attributes` body mirroring `IntercomTicketPayload.cs`. Only attribute names the
+    /// "Bug Report" ticket type declares are used; crash specifics travel inside the description.
     pub fn to_ticket_attributes(&self) -> Map<String, Value> {
         let mut attributes = Map::new();
         let mut put = |key: &str, value: String| {
@@ -331,9 +328,8 @@ Internal diagnostics: {}",
     }
 }
 
-/// Records the report on the launcher's Sentry project so Support can join it with the
-/// Explorer's crash by `session_id` / `wallet`. Log tails ride along when the user allowed it.
-/// Returns the event id, or `None` when no Sentry client is bound (no DSN at build time).
+/// Records the report as a Sentry event tagged for lookup by `session_id` / `wallet`, with log
+/// tails attached when allowed. Returns the event id, or `None` when no Sentry client is bound.
 fn capture_sentry_event(report: &CrashReport) -> Option<String> {
     let attachments = if report.share_logs {
         diagnostic_logs::collect()
@@ -402,10 +398,9 @@ impl LogReportSink {
 }
 
 /// Stateless: holds services only. Every method takes the shared state and ends by
-/// broadcasting the current step, so the UI always renders the latest state.
+/// broadcasting the current step.
 ///
-/// Analytics calls happen with the state lock released: they flush over the network and must
-/// not stall the next keystroke.
+/// Analytics calls run with the state lock released.
 pub struct ReportFlow {
     sink: ReportSink,
     analytics: Arc<Mutex<Analytics>>,
@@ -416,7 +411,7 @@ impl ReportFlow {
         Self { sink, analytics }
     }
 
-    /// First broadcast after the window opened on the "Something went wrong" screen.
+    /// First broadcast: the prompt screen.
     pub async fn open<T: EventChannel>(
         &self,
         channel: &T,
@@ -450,7 +445,7 @@ impl ReportFlow {
         Self::broadcast(channel, &guard)
     }
 
-    /// REPORT BUG (`Form`) and CANCEL (`Prompt`). The draft survives going back.
+    /// Moves between `Prompt` and `Form`; the draft is kept.
     pub async fn navigate<T: EventChannel>(
         &self,
         channel: &T,
@@ -480,7 +475,7 @@ impl ReportFlow {
         Ok(())
     }
 
-    /// SUBMIT. On failure the draft stays untouched and the form shows the message inline.
+    /// On failure the draft stays untouched and `Phase::Failed` carries the message.
     pub async fn submit<T: EventChannel>(
         &self,
         channel: &T,
@@ -512,7 +507,7 @@ impl ReportFlow {
         })
         .await;
 
-        // Sentry first, like the Explorer: the ticket description links to the diagnostics.
+        // Sentry first: the ticket description references the event id.
         let report = CrashReport {
             sentry_event_id: capture_sentry_event(&report),
             ..report
@@ -555,8 +550,8 @@ impl ReportFlow {
         }
     }
 
-    /// RELAUNCH or X. The process exits or restarts right after, so nothing is broadcast.
-    /// A checked "Don't show this again" is persisted here, since this is the last chance.
+    /// The caller exits or restarts the process right after, so nothing is broadcast.
+    /// A checked "Don't show this again" is persisted here.
     pub async fn dismiss(&self, state: Arc<Mutex<ReportFlowState>>, relaunch: bool) {
         let event = {
             let guard = state.lock().await;

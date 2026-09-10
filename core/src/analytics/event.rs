@@ -96,12 +96,11 @@ pub enum Event {
     LAUNCHER_INSTALLER_FINISH {
         installer_file_name: String,
     },
-    /// Fired by `client-crash-watchdog` when the Explorer exits with a non-zero status.
     EXPLORER_UNEXPECTED_EXIT {
         session_id: String,
         explorer_version: String,
         exit_code: String,
-        /// The user opted out via "Don't show this again", so no dialog followed.
+        /// No dialog followed because the user opted out.
         dialog_suppressed: bool,
     },
     CRASH_REPORT_DIALOG_SHOWN {
@@ -124,7 +123,6 @@ pub enum Event {
         session_id: String,
         error: String,
     },
-    /// RELAUNCH or X on any screen. `shown / dismissed-without-submit` is the rejection rate.
     CRASH_REPORT_DISMISSED {
         session_id: String,
         submitted: bool,

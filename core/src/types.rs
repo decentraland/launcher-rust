@@ -1,7 +1,7 @@
 use serde::Serialize;
 
-/// Everything the UI can render. The UI is a stateless renderer of the latest `Status` it
-/// received: each flow owns a separate arm so their protocols never share variants.
+/// Everything the UI can render. Each flow owns a separate arm so their protocols never share
+/// variants.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Status {
@@ -88,8 +88,7 @@ pub struct IssueType {
     pub option_id: &'static str,
 }
 
-/// Crash-report flow screens. The variant *is* the screen; each one carries exactly what its
-/// screen renders, so the UI keeps no state of its own.
+/// Crash-report flow screens. The variant is the screen and carries exactly what it renders.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum ReportStep {
@@ -104,9 +103,9 @@ pub enum ReportStep {
         issue_types: Vec<IssueType>,
         description: String,
         share_logs: bool,
-        /// SUBMIT is in flight: the UI disables the button and shows a spinner.
+        /// A submission is in flight.
         submitting: bool,
-        /// Last submission failure, rendered inline; the draft above is untouched.
+        /// Last submission failure.
         error: Option<String>,
     },
     BugReportSubmittedStep,

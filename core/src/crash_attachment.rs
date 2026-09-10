@@ -8,14 +8,10 @@ use crate::installs::crash_reports_dir;
 
 const FALLBACK_FILE_STEM: &str = "unknown-session";
 
-/// What the crash watchdog knows about an unexpected Explorer exit.
-///
-/// The watchdog writes it as `<app dir>/crash-reports/<session_id>.json` and starts the launcher
-/// with `--crash-report-with-attachment <path>`; the report flow reads it back and deletes it once
-/// the report is submitted or dismissed.
+/// Details of an unexpected Explorer exit, exchanged as a JSON file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrashAttachment {
-    /// The `--session_id` the launcher passed to the Explorer; joins launcher, Explorer and Sentry.
+    /// The launcher session id the Explorer was started with.
     pub session_id: String,
     pub explorer_version: String,
     /// Human readable exit description, e.g. `exit 1`, `signal SIGSEGV`, `0xC0000005`.

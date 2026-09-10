@@ -46,8 +46,7 @@ fn user_id() -> Result<String> {
 
 const CRASH_REPORT_DIALOG_DISABLED_KEY: &str = "crash-report-dialog-disabled";
 
-/// "Don't show this again" on the crash dialog. The watchdog reads it to skip reopening the
-/// launcher after an unexpected Explorer exit.
+/// User opt-out of the crash-report dialog ("Don't show this again").
 pub fn crash_report_dialog_disabled() -> bool {
     match config_content() {
         Ok(config) => bool_at(&config, CRASH_REPORT_DIALOG_DISABLED_KEY),

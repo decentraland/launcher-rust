@@ -125,12 +125,12 @@ pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
 }
 
-/// Crash attachments written by `client-crash-watchdog` and consumed by the report flow.
+/// Directory of `CrashAttachment` files.
 pub fn crash_reports_dir() -> PathBuf {
     explorer_path().join("crash-reports")
 }
 
-/// Written by the Explorer after login; see `explorer_session_info.rs` for the contract.
+/// See `explorer_session_info.rs` for the contents.
 pub fn session_info_path() -> PathBuf {
     explorer_path().join("session-info.json")
 }
@@ -228,8 +228,7 @@ pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<P
 }
 
 /// Among the processes that appeared under the `.app`, the one running the bundle's main
-/// executable. Unity helpers (crash handler, GPU workers) live under the same path but exiting
-/// with them is not an Explorer crash.
+/// executable; helper processes under the same path are not the Explorer.
 #[cfg(target_os = "macos")]
 fn main_explorer_pid(app_path: &Path, registered: &[(u32, PathBuf)]) -> Option<u32> {
     let main_exe = app_path

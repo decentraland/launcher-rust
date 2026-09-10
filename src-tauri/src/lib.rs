@@ -80,7 +80,6 @@ fn report_context(state: &AppState) -> Result<&ReportContext, String> {
 type ReportHandles = (Arc<ReportFlow>, Arc<Mutex<ReportFlowState>>);
 
 /// Clones the report flow handles so the `AppState` lock is released before the flow is awaited.
-/// Mutations still serialize: every flow method holds the `ReportFlowState` lock end to end.
 async fn report_handles(state: &State<'_, MutState>) -> Result<ReportHandles, String> {
     let guard = state.lock().await;
     let ctx = report_context(&guard)?;
@@ -110,8 +109,8 @@ async fn retry(
     launch_internal(app, state, channel).await
 }
 
-/// Single entry point invoked by the UI on mount. The UI never asks which flow it is in: the
-/// context selected at startup decides, and the UI renders whatever `Status` arrives.
+/// Single entry point invoked by the UI on mount; dispatches on the flow context selected at
+/// startup.
 #[tauri::command]
 async fn launch(
     app: AppHandle,
@@ -209,9 +208,8 @@ async fn crash_report_submit(
         .map_err(|e| e.user_message)
 }
 
-/// The dialog has no close button of its own: the system one closes the window. Before the
-/// process goes away the report flow still gets its dismissal (analytics, "don't show again",
-/// attachment cleanup). A launch-flow window closing needs nothing here.
+/// A system window close during the report flow still runs the flow's dismissal. A launch-flow
+/// window closing needs nothing here.
 fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     if !matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
         return;
@@ -230,8 +228,7 @@ fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     tauri::async_runtime::block_on(flow.dismiss(flow_state, false));
 }
 
-/// RELAUNCH: dismiss and restart this executable without the crash argument, so the regular
-/// launch flow runs (updater check, install, launch, fresh watchdog).
+/// Dismiss and restart this executable without the crash argument.
 #[tauri::command]
 async fn relaunch(app: AppHandle, state: State<'_, MutState>) -> Result<(), String> {
     info!("tauri command: relaunch");

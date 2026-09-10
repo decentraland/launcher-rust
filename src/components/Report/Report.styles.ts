@@ -11,8 +11,7 @@ const TEXT = "#FFFFFF";
 const INPUT_TEXT = "#1B1B1F";
 const FONT = "Inter, sans-serif";
 
-// Fills the window so the whole launcher reads as the dialog from the design. z-index keeps it
-// above the fixed version label Home always renders.
+// Fills the window so the whole launcher reads as the dialog from the design.
 export const Panel = styled("div")({
   position: "fixed",
   inset: 0,
@@ -130,9 +129,7 @@ export const ButtonRow = styled("div")({
   justifyContent: "center",
 });
 
-// The theme paints contained buttons via `background` under a three-class selector
-// (`.MuiButton-root.MuiButton-sizeMedium.MuiButton-containedPrimary`), so these need four
-// classes to win. `background` shorthand is set for the same reason.
+// Four classes and the `background` shorthand: the theme's contained-button rules use three.
 const baseButton = {
   flex: 1,
   height: 46,

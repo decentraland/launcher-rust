@@ -52,8 +52,7 @@ const labelSx = {
   },
 };
 
-// Same trick as the EXIT button in Home.tsx: the theme styles contained buttons through
-// `:not(:hover)` selectors no class specificity beats, so the secondary look is inline.
+// Inline, like the EXIT button in Home.tsx; class styles lose to the theme's button rules.
 const SECONDARY_STYLE = { background: "#2B0B45" };
 
 const CHECKBOX_OFF = <CheckboxBox checked={false} />;

@@ -30,8 +30,7 @@ pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
 /// Deeplink query key carrying a signin identity id (`AppArgsFlags.SIGNIN` in the client).
 /// The client defers unclaimed signin deeplinks instead of consuming them immediately.
 pub const ARG_SIGNIN: &str = "signin";
-/// Path to a `CrashAttachment` JSON written by `client-crash-watchdog`. Its presence selects the
-/// crash-report flow instead of the launch flow.
+/// Path to a `CrashAttachment` JSON.
 pub const ARG_CRASH_REPORT_WITH_ATTACHMENT: &str = "crash-report-with-attachment";
 
 #[derive(Debug)]
@@ -60,7 +59,6 @@ pub struct Args {
     pub local_scene: bool,
     pub bridge_only: bool,
 
-    /// Set only when the crash watchdog reopened the launcher after an unexpected Explorer exit.
     pub crash_report_attachment: Option<PathBuf>,
 }
 
@@ -190,8 +188,7 @@ impl AppEnvironment {
     }
 }
 
-/// Removes `--crash-report-with-attachment <path>` so a relaunch from the crash dialog starts the
-/// regular launch flow with every other argument intact.
+/// Removes `--crash-report-with-attachment <path>`, keeping every other argument.
 pub fn strip_crash_report_args(args: Vec<OsString>) -> Vec<OsString> {
     let flag = format!("--{ARG_CRASH_REPORT_WITH_ATTACHMENT}");
     let mut result = Vec::with_capacity(args.len());

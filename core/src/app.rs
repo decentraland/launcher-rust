@@ -29,13 +29,11 @@ pub struct LaunchContext {
 }
 
 pub struct ReportContext {
-    /// Shared so commands can release the `AppState` lock before awaiting the flow.
     pub flow: Arc<ReportFlow>,
     pub state: Arc<Mutex<ReportFlowState>>,
 }
 
-/// Which flow this process runs. Selected once at startup from the command line: the crash
-/// watchdog reopens the launcher with `--crash-report-with-attachment`, everything else launches.
+/// Which flow this process runs, selected once at startup from the command line.
 pub enum FlowContext {
     Launch(LaunchContext),
     Report(ReportContext),
@@ -167,7 +165,6 @@ fn report_context_from_args(
         attachment.session_id, attachment.explorer_version, attachment.exit_code
     );
 
-    // Written by the Explorer after login; absent until the client ships that change.
     let wallet = ExplorerSessionInfo::read_for(&attachment.session_id).map(|info| info.wallet);
 
     let state = ReportFlowState::new(attachment, path.clone(), wallet);

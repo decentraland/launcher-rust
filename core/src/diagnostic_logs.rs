@@ -1,5 +1,4 @@
-//! Log tails attached to the crash-report Sentry event when the user ticks
-//! "Share diagnostic logs".
+//! Log tails attached to the crash-report Sentry event.
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -9,7 +8,7 @@ use sentry::protocol::Attachment;
 
 use crate::installs;
 
-/// Same cap the Explorer applies to its own log attachment.
+/// Cap per attached log.
 pub const LOG_TAIL_MAX_BYTES: usize = 64 * 1024;
 
 const TEXT_PLAIN: &str = "text/plain";
