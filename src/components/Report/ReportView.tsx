@@ -10,7 +10,6 @@ import { CrashReportField, ReportScreen, ReportStep } from "../Home/types";
 import {
   Body,
   ButtonRow,
-  CloseButton,
   DescriptionField,
   ErrorText,
   Field,
@@ -23,13 +22,7 @@ import {
   SecondaryButton,
   Title,
 } from "./Report.styles";
-import {
-  BugIcon,
-  CheckboxBox,
-  CloseIcon,
-  SuccessIcon,
-  WarningIcon,
-} from "./Report.icons";
+import { BugIcon, CheckboxBox, SuccessIcon, WarningIcon } from "./Report.icons";
 
 // Every interaction is a Rust command; the snapshot in `step` is the only source of truth.
 export type SendCommand = (
@@ -81,9 +74,6 @@ export const ReportView: React.FC<ReportViewProps> = ({ step, send }) => {
 
 const renderPrompt = (doNotShowAgain: boolean, send: SendCommand) => (
   <Panel>
-    <CloseButton aria-label="close" onClick={() => send("crash_report_close")}>
-      <CloseIcon />
-    </CloseButton>
     <Header>
       <WarningIcon />
       <Title>Something went wrong</Title>
@@ -218,9 +208,6 @@ const renderForm = (
 
 const renderSubmitted = (send: SendCommand) => (
   <Panel>
-    <CloseButton aria-label="close" onClick={() => send("crash_report_close")}>
-      <CloseIcon />
-    </CloseButton>
     <Header>
       <SuccessIcon />
       <Title>Bug Report Submitted!</Title>

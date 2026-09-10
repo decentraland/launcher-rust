@@ -1,7 +1,6 @@
 import {
   styled,
   Button,
-  IconButton,
   Typography,
   TextField,
   Select,
@@ -46,21 +45,6 @@ export const Header = styled("div")({
     filter:
       "drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff) drop-shadow(0 2px 0 #fff) drop-shadow(0 -2px 0 #fff)",
   },
-});
-
-// Translucent rounded square with a white X (design frame, top-right corner).
-export const CloseButton = styled(IconButton)({
-  "&&": {
-    position: "absolute",
-    top: 14,
-    right: 14,
-    width: 28,
-    height: 28,
-    padding: 0,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
-  },
-  "&&:hover": { backgroundColor: "rgba(255, 255, 255, 0.3)" },
 });
 
 export const Title = styled(Typography)({

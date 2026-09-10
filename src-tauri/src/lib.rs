@@ -209,19 +209,25 @@ async fn crash_report_submit(
         .map_err(|e| e.user_message)
 }
 
-/// X on the prompt or the confirmation: dismiss and quit, no relaunch.
-#[tauri::command]
-async fn crash_report_close(app: AppHandle, state: State<'_, MutState>) -> Result<(), String> {
-    info!("tauri command: crash_report_close");
-    let guard = state.lock().await;
-    let ctx = report_context(&guard)?;
-    ctx.flow.dismiss(ctx.state.clone(), false).await;
-
-    guard.cleanup().await;
+/// The dialog has no close button of its own: the system one closes the window. Before the
+/// process goes away the report flow still gets its dismissal (analytics, "don't show again",
+/// attachment cleanup). A launch-flow window closing needs nothing here.
+fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if !matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+        return;
+    }
+    let state = window.state::<MutState>();
+    // try_lock: a launch flow may hold the lock for minutes; never stall the close for it.
+    let Ok(guard) = state.try_lock() else {
+        return;
+    };
+    let FlowContext::Report(ctx) = &guard.context else {
+        return;
+    };
+    info!("window close requested during the crash report flow");
+    let (flow, flow_state) = (ctx.flow.clone(), ctx.state.clone());
     drop(guard);
-    app.cleanup_before_exit();
-    app.exit(0);
-    Ok(())
+    tauri::async_runtime::block_on(flow.dismiss(flow_state, false));
 }
 
 /// RELAUNCH: dismiss and restart this executable without the crash argument, so the regular
@@ -426,9 +432,9 @@ pub fn run() {
             crash_report_set_field,
             crash_report_navigate,
             crash_report_submit,
-            crash_report_close,
             relaunch
         ])
+        .on_window_event(on_window_event)
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

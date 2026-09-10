@@ -94,17 +94,6 @@ export const SuccessIcon: React.FC<IconProps> = ({ size = 56 }) => (
   </svg>
 );
 
-export const CloseIcon: React.FC<IconProps> = ({ size = 12 }) => (
-  <svg width={size} height={size} viewBox="0 0 12 12" fill="none">
-    <path
-      d="M2 2l8 8M10 2l-8 8"
-      stroke="#FFFFFF"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-    />
-  </svg>
-);
-
 // White rounded box; the check is red when on. Passed as MUI Checkbox `icon` / `checkedIcon`.
 export const CheckboxBox: React.FC<{ checked: boolean }> = ({ checked }) => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
