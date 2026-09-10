@@ -45,6 +45,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Install Node.js
 brew install node # Or use your favorite package manager
 
+# Install rust-script (runs the sidecar build scripts in ./scripts)
+cargo install rust-script --locked
+
 # Clone and install
 git clone https://github.com/decentraland/launcher-rust.git
 cd launcher-rust
@@ -66,6 +69,26 @@ npm run tauri dev
 3. Ensure you have VITE_AWS_S3_BUCKET_PUBLIC_URL env var
 4. Execute in the root dir: npm i
 5. Execute tauri build: npm run tauri build
+
+## Crash watchdog sidecar
+
+`client-crash-watchdog/` builds `dcl_watchdog`, a Tauri sidecar (`bundle.externalBin`) the
+launcher starts next to every Explorer it launches. When the Explorer exits with a non-zero
+status the watchdog writes `{APP_DIR}/crash-reports/<session_id>.json` and reopens the
+launcher with `--crash-report-with-attachment <path>`, which shows the crash-report dialog
+instead of the launch flow. A clean exit ends the watchdog silently.
+
+The sidecar must be staged in `src-tauri/binaries/` before **any** `cargo` command in
+`src-tauri` (build, clippy, test): `tauri-build` copies it at compile time and fails when it is
+missing. `npm run tauri dev` / `tauri build` do this through `beforeDevCommand` /
+`beforeBuildCommand`; run it by hand with:
+
+```bash
+npm run prebuild-sidecars   # or: rust-script scripts/pre-build-sidecars.rs
+```
+
+`TAURI_ENV_TARGET_TRIPLE=universal-apple-darwin` builds both macOS arches and stages the fat
+binary under the universal and both per-arch names.
 
 ## Development Guidelines
 
@@ -107,6 +130,9 @@ C:\Users\<YourUsername>\AppData\Local\DecentralandLauncherLight\
 The application supports command-line arguments.
 The complete and up-to-date list is defined here:
 https://github.com/decentraland/launcher-rust/blob/main/core/src/environment.rs
+
+`--crash-report-with-attachment <path>` is reserved for `dcl_watchdog`: it selects the
+crash-report dialog flow and points at the crash attachment JSON to report.
 
 ### Configuration File
 
