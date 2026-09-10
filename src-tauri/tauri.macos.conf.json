@@ -1,0 +1,7 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeDevCommand": "rust-script scripts/pre-build-sidecars.rs && npm run dev",
+    "beforeBuildCommand": "npm run build-ui && rust-script scripts/pre-build-sidecars.rs"
+  }
+}

@@ -1,4 +1,4 @@
-//! Starts `client-crash-watchdog` next to a freshly launched Explorer.
+//! Starts `dcl_watchdog` (crate `client-crash-watchdog`) next to a freshly launched Explorer.
 //!
 //! The watchdog is a Tauri sidecar (`bundle.externalBin`), so it sits in the same directory as
 //! the launcher executable on both platforms. Failing to start it must never fail the launch.
@@ -8,7 +8,8 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow};
 
-pub const WATCHDOG_BINARY_NAME: &str = "client-crash-watchdog";
+/// Also the process name Task Manager / Activity Monitor show.
+pub const WATCHDOG_BINARY_NAME: &str = "dcl_watchdog";
 
 pub const ARG_PID: &str = "--pid";
 pub const ARG_SESSION_ID: &str = "--session-id";
