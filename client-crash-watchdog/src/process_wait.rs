@@ -136,9 +136,13 @@ mod imp {
     use dcl_launcher_core::anyhow::{Result, anyhow};
     use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
     use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, INFINITE, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, SYNCHRONIZE,
+        GetExitCodeProcess, INFINITE, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
         WaitForSingleObject,
     };
+
+    /// Standard access right needed by `WaitForSingleObject`. windows-sys files it under
+    /// `Win32::Storage::FileSystem`, which is not worth a feature for one constant.
+    const SYNCHRONIZE: u32 = 0x0010_0000;
 
     /// Exit codes at or above this are NTSTATUS failures (e.g. `0xC0000005` access violation).
     const NTSTATUS_FAILURE_BASE: u32 = 0x8000_0000;
