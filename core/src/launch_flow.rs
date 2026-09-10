@@ -7,7 +7,7 @@ use crate::protocols::{DeepLink, Protocol};
 use crate::{
     analytics::{Analytics, event::Event},
     environment::AppEnvironment,
-    errors::{FlowError, DCLErrorResult},
+    errors::{DCLErrorResult, FlowError},
     installs::{self, InstallsHub},
     s3::{self, ReleaseResponse},
     types::{BuildType, Status, Step},
@@ -116,9 +116,7 @@ impl LaunchFlow {
                 analytics: analytics.clone(),
                 running_instances: running_instances.clone(),
             },
-            deeplink_passthrough_step: DeeplinkPassthroughStep {
-                running_instances,
-            },
+            deeplink_passthrough_step: DeeplinkPassthroughStep { running_instances },
             app_launch_step,
             analytics,
         }
@@ -151,8 +149,7 @@ impl LaunchFlow {
                 }
                 std::result::Result::Err(e) => {
                     let final_attempt = is_final_attempt(attempt, &e);
-                    last_error =
-                        Some(self.report_attempt_error(e, attempt, final_attempt).await);
+                    last_error = Some(self.report_attempt_error(e, attempt, final_attempt).await);
                     if final_attempt {
                         break;
                     }
@@ -291,9 +288,7 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
     }
 
     fn start_label(&self) -> Result<Status> {
-        let status = Status::State {
-            step: Step::Fetching,
-        };
+        let status = Status::from(Step::Fetching);
         Ok(status)
     }
 
@@ -407,12 +402,10 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
 
     fn start_label(&self) -> Result<Status> {
         let mode = Self::mode();
-        let status = Status::State {
-            step: Step::Downloading {
-                progress: 0,
-                build_type: mode,
-            },
-        };
+        let status = Status::from(Step::Downloading {
+            progress: 0,
+            build_type: mode,
+        });
         Ok(status)
     }
 
@@ -535,8 +528,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
     async fn is_complete(&self, state: Arc<Mutex<LaunchFlowState>>) -> Result<bool> {
         let guard = state.lock().await;
 
-        Ok(guard.recent_download.is_none()
-            && installs::explorer_latest_version_path().exists())
+        Ok(guard.recent_download.is_none() && installs::explorer_latest_version_path().exists())
     }
 
     async fn on_skipped(&self, state: Arc<Mutex<LaunchFlowState>>) {
@@ -557,9 +549,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
 
     fn start_label(&self) -> Result<Status> {
         let mode = DownloadStep::mode();
-        let status = Status::State {
-            step: Step::Installing { build_type: mode },
-        };
+        let status = Status::from(Step::Installing { build_type: mode });
         Ok(status)
     }
 
@@ -635,9 +625,7 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
     }
 
     fn start_label(&self) -> Result<Status> {
-        Ok(Status::State {
-            step: Step::Launching,
-        })
+        Ok(Status::from(Step::Launching))
     }
 
     async fn execute<T: EventChannel>(
@@ -679,9 +667,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
     }
 
     fn start_label(&self) -> Result<Status> {
-        let status = Status::State {
-            step: Step::Launching,
-        };
+        let status = Status::from(Step::Launching);
         Ok(status)
     }
 
@@ -797,4 +783,3 @@ mod tests {
   const shouldRunDevVersion = getRunDevVersion();
   const customDownloadedFilePath = getDownloadedFilePath();
 */
-

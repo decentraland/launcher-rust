@@ -11,10 +11,12 @@
 #![allow(clippy::uninlined_format_args, clippy::used_underscore_binding)]
 
 use dcl_launcher_core::analytics::event::Event;
-use dcl_launcher_core::environment::{AppEnvironment, Args};
+use dcl_launcher_core::app::{FlowContext, LaunchContext, ReportContext};
+use dcl_launcher_core::environment::{strip_crash_report_args, AppEnvironment, Args};
 use dcl_launcher_core::errors::FlowError;
 use dcl_launcher_core::log::{error, info};
 use dcl_launcher_core::protocols::Protocol;
+use dcl_launcher_core::report_flow::{CrashReportField, ReportFlow, ReportFlowState, Screen};
 use dcl_launcher_core::types::LauncherUpdate;
 use dcl_launcher_core::utils;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
@@ -52,6 +54,40 @@ trait EventChannelExt: EventChannel {
 
 impl<T: EventChannel + ?Sized> EventChannelExt for T {}
 
+const CONTEXT_MISMATCH: &str =
+    "Context mismatch, the command must not be invoked and will be ignored";
+
+fn launch_context(state: &AppState) -> Result<&LaunchContext, String> {
+    match &state.context {
+        FlowContext::Launch(ctx) => Ok(ctx),
+        FlowContext::Report(_) => {
+            error!("{CONTEXT_MISMATCH}");
+            Err(CONTEXT_MISMATCH.to_owned())
+        }
+    }
+}
+
+fn report_context(state: &AppState) -> Result<&ReportContext, String> {
+    match &state.context {
+        FlowContext::Report(ctx) => Ok(ctx),
+        FlowContext::Launch(_) => {
+            error!("{CONTEXT_MISMATCH}");
+            Err(CONTEXT_MISMATCH.to_owned())
+        }
+    }
+}
+
+type ReportHandles = (Arc<ReportFlow>, Arc<Mutex<ReportFlowState>>);
+
+/// Clones the report flow handles so the `AppState` lock is released before the flow is awaited.
+async fn report_handles(state: &State<'_, MutState>) -> Result<ReportHandles, String> {
+    let guard = state.lock().await;
+    let ctx = report_context(&guard)?;
+    let handles = (ctx.flow.clone(), ctx.state.clone());
+    drop(guard);
+    Ok(handles)
+}
+
 #[tauri::command]
 async fn retry(
     app: AppHandle,
@@ -73,6 +109,8 @@ async fn retry(
     launch_internal(app, state, channel).await
 }
 
+/// Single entry point invoked by the UI on mount; dispatches on the flow context selected at
+/// startup.
 #[tauri::command]
 async fn launch(
     app: AppHandle,
@@ -80,6 +118,10 @@ async fn launch(
     channel: Channel<types::Status>,
 ) -> Result<(), String> {
     info!("tauri command: launch");
+    let is_report = matches!(state.lock().await.context, FlowContext::Report(_));
+    if is_report {
+        return crash_report_open(state, channel).await;
+    }
     launch_internal(app, state, channel).await
 }
 
@@ -90,14 +132,14 @@ async fn launch_internal(
 ) -> Result<(), String> {
     let status_channel = StatusChannel(channel);
     let guard = state.lock().await;
-
-    let flow_state = guard.state.clone();
+    let flow_context = launch_context(&guard)?;
+    let flow_state = flow_context.state.clone();
 
     if let Err(e) = update_if_needed_and_restart(&app, &guard, &status_channel).await {
         error!("Cannot update the launcher: {}", e);
     }
 
-    guard
+    flow_context
         .flow
         .launch(&status_channel, flow_state)
         .await
@@ -112,6 +154,95 @@ async fn launch_internal(
     app.exit(0);
 
     Ok(())
+}
+
+async fn crash_report_open(
+    state: State<'_, MutState>,
+    channel: Channel<types::Status>,
+) -> Result<(), String> {
+    info!("crash report: open");
+    let status_channel = StatusChannel(channel);
+    let (flow, flow_state) = report_handles(&state).await?;
+    flow.open(&status_channel, flow_state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn crash_report_set_field(
+    state: State<'_, MutState>,
+    channel: Channel<types::Status>,
+    field: CrashReportField,
+) -> Result<(), String> {
+    let status_channel = StatusChannel(channel);
+    let (flow, flow_state) = report_handles(&state).await?;
+    flow.set_field(&status_channel, flow_state, field)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn crash_report_navigate(
+    state: State<'_, MutState>,
+    channel: Channel<types::Status>,
+    screen: Screen,
+) -> Result<(), String> {
+    info!("tauri command: crash_report_navigate {screen:?}");
+    let status_channel = StatusChannel(channel);
+    let (flow, flow_state) = report_handles(&state).await?;
+    flow.navigate(&status_channel, flow_state, screen)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn crash_report_submit(
+    state: State<'_, MutState>,
+    channel: Channel<types::Status>,
+) -> Result<(), String> {
+    info!("tauri command: crash_report_submit");
+    let status_channel = StatusChannel(channel);
+    let (flow, flow_state) = report_handles(&state).await?;
+    flow.submit(&status_channel, flow_state)
+        .await
+        .map_err(|e| e.user_message)
+}
+
+/// A system window close during the report flow still runs the flow's dismissal. A launch-flow
+/// window closing needs nothing here.
+fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if !matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+        return;
+    }
+    let state = window.state::<MutState>();
+    // try_lock: a launch flow may hold the lock for minutes; never stall the close for it.
+    let Ok(guard) = state.try_lock() else {
+        return;
+    };
+    let FlowContext::Report(ctx) = &guard.context else {
+        return;
+    };
+    info!("window close requested during the crash report flow");
+    let (flow, flow_state) = (ctx.flow.clone(), ctx.state.clone());
+    drop(guard);
+    tauri::async_runtime::block_on(flow.dismiss(flow_state, false));
+}
+
+/// Dismiss and restart this executable without the crash argument.
+#[tauri::command]
+async fn relaunch(app: AppHandle, state: State<'_, MutState>) -> Result<(), String> {
+    info!("tauri command: relaunch");
+    let guard = state.lock().await;
+    let ctx = report_context(&guard)?;
+    ctx.flow.dismiss(ctx.state.clone(), true).await;
+
+    guard.cleanup().await;
+    drop(guard);
+    app.cleanup_before_exit();
+
+    let mut env = app.env();
+    env.args_os = strip_crash_report_args(env.args_os);
+    tauri::process::restart(&env);
 }
 
 fn current_updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
@@ -292,7 +423,15 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .setup(setup)
-        .invoke_handler(tauri::generate_handler![launch, retry])
+        .invoke_handler(tauri::generate_handler![
+            launch,
+            retry,
+            crash_report_set_field,
+            crash_report_navigate,
+            crash_report_submit,
+            relaunch
+        ])
+        .on_window_event(on_window_event)
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

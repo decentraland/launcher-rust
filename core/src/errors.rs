@@ -7,7 +7,7 @@ use crate::installs::downloads::{DownloadFileError, FileIncompleteError};
 
 use crate::deeplink_bridge::PlaceDeeplinkError;
 
-use super::types::Status;
+use super::types::{LaunchStatus, Status};
 
 pub struct FlowError {
     pub user_message: String,
@@ -15,9 +15,9 @@ pub struct FlowError {
 
 impl From<&FlowError> for Status {
     fn from(err: &FlowError) -> Self {
-        Self::Error {
+        Self::Launch(LaunchStatus::Error {
             message: err.user_message.clone(),
-        }
+        })
     }
 }
 

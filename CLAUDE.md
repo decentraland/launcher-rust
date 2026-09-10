@@ -21,6 +21,10 @@ The launcher manages the download-install-launch funnel for the Decentraland Exp
 
 `InstallStep::execute` calls `install_explorer` then `rename_explorer_to_latest`. Both must succeed before reporting `INSTALL_VERSION_SUCCESS` to analytics. Chain them into a single `Result` so a rename failure is reported as `INSTALL_VERSION_ERROR` — never fire SUCCESS before the full operation completes.
 
+### Crash watchdog and report flow
+
+`FlowContext` is selected once at startup in `core/src/app.rs`: `--crash-report-with-attachment <path>` (written by `dcl_watchdog`, crate `client-crash-watchdog/`) runs `ReportFlow`, anything else runs `LaunchFlow`. Flows are stateless service holders; mutable data lives in `*FlowState`. The UI is a stateless renderer of `Status` (`core/src/types.rs`, forked into `Launch` / `Report` arms) — every field edit is a Tauri command that mutates state and re-broadcasts. The watchdog is a Tauri sidecar: stage it with `npm run prebuild-sidecars` before any `cargo` command in `src-tauri`, or `tauri-build` fails on the missing `externalBin`.
+
 ### File-based deeplink bridge
 
 When a `decentraland://` link arrives while the Explorer is already running, the launcher writes the deeplink to `deeplink-bridge.json` and polls for the Explorer to consume (delete) it within 3 seconds. If the Explorer's main thread is blocked (ANR), the file is never consumed and `E3001_OPEN_DEEPLINK_TIMEOUT` fires.

@@ -125,6 +125,57 @@ pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
 }
 
+/// Directory of `CrashAttachment` files.
+pub fn crash_reports_dir() -> PathBuf {
+    explorer_path().join("crash-reports")
+}
+
+const SESSION_INFO_PREFIX: &str = "session-info-";
+
+/// One file per Explorer session; see `explorer_session_info.rs` for the contents.
+pub fn session_info_path(session_id: &str) -> PathBuf {
+    explorer_path().join(format!(
+        "{SESSION_INFO_PREFIX}{}.json",
+        safe_file_stem(session_id)
+    ))
+}
+
+/// Every session-info file currently in the app directory.
+pub fn session_info_files() -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(explorer_path()) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let is_session_file = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(SESSION_INFO_PREFIX));
+            let is_json = path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+            is_session_file && is_json
+        })
+        .collect()
+}
+
+/// Ids arrive through argv or files written by other processes, so anything that could escape
+/// the app directory is stripped before an id becomes a file name.
+pub fn safe_file_stem(id: &str) -> String {
+    const FALLBACK: &str = "unknown";
+    let stem: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if stem.is_empty() {
+        FALLBACK.to_owned()
+    } else {
+        stem
+    }
+}
+
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
@@ -215,6 +266,20 @@ pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<P
     {
         Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
     }
+}
+
+/// Among the processes that appeared under the `.app`, the one running the bundle's main
+/// executable; helper processes under the same path are not the Explorer.
+#[cfg(target_os = "macos")]
+fn main_explorer_pid(app_path: &Path, registered: &[(u32, PathBuf)]) -> Option<u32> {
+    let main_exe = app_path
+        .join("Contents")
+        .join("MacOS")
+        .join(EXPLORER_MAC_APP_NAME);
+    registered
+        .iter()
+        .find(|(_, exe)| *exe == main_exe)
+        .map(|(pid, _)| *pid)
 }
 
 #[cfg(target_os = "macos")]
@@ -412,7 +477,8 @@ fn rename_latest_back_to_version(
     branch_path: &Path,
 ) -> DCLErrorResult {
     if target == branch_path {
-        return fs::remove_dir_all(latest_path).map_err(|e| DCLError::from_rename_back(latest_path, e));
+        return fs::remove_dir_all(latest_path)
+            .map_err(|e| DCLError::from_rename_back(latest_path, e));
     }
     if target.exists() {
         fs::remove_dir_all(target).map_err(|e| DCLError::from_rename_back(target, e))?;
@@ -506,7 +572,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         file_path: file_path.to_string_lossy().into_owned(),
         source,
     })?;
-    
+
     cleanup_versions(&current_version)
 }
 
@@ -715,22 +781,30 @@ impl InstallsHub {
 
             let poll = async {
                 loop {
-                    if self
+                    let registered = self
                         .running_instances
                         .lock()
                         .await
-                        .register_new_opened_instances_by_fuzzy_path(&explorer_launch_path)
-                    {
-                        break;
+                        .register_new_opened_instances_by_fuzzy_path(&explorer_launch_path);
+                    if !registered.is_empty() {
+                        return registered;
                     }
                     tokio::time::sleep(POLL_INTERVAL).await;
                 }
             };
 
-            if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
+            let Ok(registered) = tokio::time::timeout(POLL_TIMEOUT, poll).await else {
                 return Err(DCLError::E3011_EXPLORER_PROCESS_NOT_STARTED {
                     path: explorer_launch_path.to_string_lossy().into_owned(),
                 });
+            };
+
+            match main_explorer_pid(&explorer_launch_path, &registered) {
+                Some(pid) => self.spawn_crash_watchdog(pid, preferred_version).await,
+                None => log::warn!(
+                    "No main Explorer executable among new pids {:?}; crash watchdog not started",
+                    registered
+                ),
             }
         }
 
@@ -762,9 +836,19 @@ impl InstallsHub {
 
                 thread::sleep(CHECK_INTERVAL);
             }
+
+            self.spawn_crash_watchdog(child.id(), preferred_version)
+                .await;
         }
 
         Ok(())
+    }
+
+    /// The watchdog needs the same session id the Explorer received via `--session_id`.
+    async fn spawn_crash_watchdog(&self, pid: u32, preferred_version: Option<&str>) {
+        let session_id = self.analytics.lock().await.session_id().value().to_owned();
+        let version = Self::readable_version(preferred_version);
+        crate::crash_watchdog::spawn(pid, &session_id, &version);
     }
 
     #[cfg(target_os = "macos")]

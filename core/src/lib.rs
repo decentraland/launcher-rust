@@ -22,19 +22,25 @@
 
 pub mod analytics;
 pub mod app;
-pub mod download_origin_metadata;
 pub mod channel;
 pub mod config;
+pub mod crash_attachment;
+pub mod crash_watchdog;
 mod deeplink_bridge;
+pub mod diagnostic_logs;
+pub mod download_origin_metadata;
 pub mod environment;
 pub mod errors;
-pub mod flow;
+pub mod explorer_session_info;
+pub mod infra;
 pub mod installs;
 pub mod instances;
+pub mod launch_flow;
 pub mod logs;
 mod monitoring;
 mod processes;
 pub mod protocols;
+pub mod report_flow;
 pub mod s3;
 pub mod types;
 pub mod utils;

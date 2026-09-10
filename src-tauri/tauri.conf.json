@@ -27,6 +27,9 @@
   "bundle": {
     "active": true,
     "publisher": "Decentraland Foundation",
+    "externalBin": [
+      "binaries/dcl_watchdog"
+    ],
     "targets": [
       "app",
       "dmg",
