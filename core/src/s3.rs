@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::environment::{AppEnvironment, Args};
-use crate::errors::{DCLError, DCLErrorTyped};
+use crate::errors::{DCLError, DCLResultTyped};
 use crate::utils::get_os_name;
 
 pub const RELEASE_PREFIX: &str = "@dcl/unity-explorer/releases";
@@ -36,7 +36,7 @@ fn latest_json_url() -> String {
     )
 }
 
-async fn fetch_explorer_latest_release() -> DCLErrorTyped<LatestRelease> {
+async fn fetch_explorer_latest_release() -> DCLResultTyped<LatestRelease> {
     let url = latest_json_url();
     log::info!(
         "[fetch_explorer_latest_release] Fetching latest release from: {}",
@@ -62,7 +62,7 @@ async fn fetch_explorer_latest_release() -> DCLErrorTyped<LatestRelease> {
     Ok(data)
 }
 
-pub async fn get_latest_explorer_release() -> DCLErrorTyped<ReleaseResponse> {
+pub async fn get_latest_explorer_release() -> DCLResultTyped<ReleaseResponse> {
     let url = AppEnvironment::bucket_url();
     let latest_release = fetch_explorer_latest_release().await?;
     let os = get_os_name();

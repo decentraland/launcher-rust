@@ -38,11 +38,11 @@ impl Display for AttemptError {
     }
 }
 
-pub type DCLErrorResult = std::result::Result<(), DCLError>;
+pub type DCLResult = std::result::Result<(), DCLError>;
 
-pub type DCLErrorTyped<T> = std::result::Result<T, DCLError>;
+pub type DCLResultTyped<T> = std::result::Result<T, DCLError>;
 
-impl<T> From<DCLError> for DCLErrorTyped<T> {
+impl<T> From<DCLError> for DCLResultTyped<T> {
     fn from(value: DCLError) -> Self {
         Self::Err(value)
     }

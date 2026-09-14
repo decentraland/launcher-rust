@@ -22,7 +22,7 @@ fn write_config(value: &Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
-fn user_id() -> Result<String> {
+fn user_id_or_new() -> Result<String> {
     const KEY: &str = "analytics-user-id";
     let config = config_content()?;
     if let Some(id) = config.get(KEY) {
@@ -45,7 +45,7 @@ fn user_id() -> Result<String> {
 }
 
 pub fn user_id_or_none() -> String {
-    user_id().unwrap_or_else(|e| {
+    user_id_or_new().unwrap_or_else(|e| {
         error!("Cannot get user id from config, fallback is used: {:#}", e);
         "none".to_owned()
     })

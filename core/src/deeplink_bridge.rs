@@ -13,7 +13,7 @@ use crate::{
         AppEnvironment, Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
         ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, ARG_SIGNIN,
     },
-    errors::{DCLError, DCLErrorResult},
+    errors::{DCLError, DCLResult},
     installs::deeplink_bridge_path,
     protocols::DeepLink,
     types::{Status, Step},
@@ -120,7 +120,7 @@ pub fn should_use_deeplink_bridge_for(deeplink: &DeepLink, any_is_running: bool)
 pub async fn execute_passthrough<T: EventChannel>(
     channel: &T,
     deeplink: &DeepLink,
-) -> DCLErrorResult {
+) -> DCLResult {
     const OPEN_DEEPLINK_TIMEOUT: Duration = Duration::from_secs(15);
 
     channel.send(Status::State {
@@ -155,13 +155,13 @@ pub async fn execute_passthrough<T: EventChannel>(
                     "Deeplink was not consumed within {}s; leaving the bridge file in place for the client's deferred signin window",
                     OPEN_DEEPLINK_TIMEOUT.as_secs()
                 );
-                return DCLErrorResult::Ok(());
+                return DCLResult::Ok(());
             }
             // Future is still alive: cancelling wakes its `token.cancelled()` arm, and awaiting it
             // to completion lets that arm remove the bridge file before we report the timeout.
             token.cancel();
             let _ = (&mut wait).await;
-            return DCLErrorResult::Err(DCLError::E3001_OPEN_DEEPLINK_TIMEOUT);
+            return DCLResult::Err(DCLError::E3001_OPEN_DEEPLINK_TIMEOUT);
         }
     };
 
@@ -173,9 +173,9 @@ pub async fn execute_passthrough<T: EventChannel>(
                 #[cfg(target_os = "macos")]
                 try_bring_explorer_to_front();
             }
-            DCLErrorResult::Ok(())
+            DCLResult::Ok(())
         }
-        PlaceDeeplinkResult::Err(error) => DCLErrorResult::Err(error.into()),
+        PlaceDeeplinkResult::Err(error) => DCLResult::Err(error.into()),
     }
 }
 
