@@ -17,6 +17,7 @@ const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
 const ARG_USE_UPDATER_URL: &str = "use-updater-url";
 
 const ARG_USE_LATEST_JSON_URL: &str = "use-latest-json-url";
+const ARG_PREFER_CANARY_RELEASE: &str = "prefer-canary-release";
 
 pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
 // Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
@@ -50,6 +51,7 @@ pub struct Args {
     pub use_updater_url: Option<String>,
 
     pub use_latest_json_url: Option<String>,
+    pub prefer_canary_release: bool,
 
     // used by the client
     pub local_scene: bool,
@@ -75,6 +77,7 @@ impl Args {
                 .use_latest_json_url
                 .clone()
                 .or_else(|| other.use_latest_json_url.clone()),
+            prefer_canary_release: self.prefer_canary_release || other.prefer_canary_release,
             local_scene: self.local_scene || other.local_scene,
             bridge_only: self.bridge_only || other.bridge_only,
         }
@@ -97,6 +100,10 @@ impl Args {
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
             use_latest_json_url: Self::value_by_flag(ARG_USE_LATEST_JSON_URL, &vector),
+            prefer_canary_release: Self::has_flag(
+                ARG_PREFER_CANARY_RELEASE,
+                &vector,
+            ),
             local_scene: Self::has_flag(ARG_LOCAL_SCENE, &vector),
             bridge_only: Self::has_flag(ARG_BRIDGE_ONLY, &vector),
         }

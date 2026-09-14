@@ -157,6 +157,11 @@ fn explorer_dev_version_path() -> PathBuf {
     explorer_path().join("dev")
 }
 
+pub fn latest_dir_exists() -> bool {
+    let path = explorer_latest_version_path();
+    std::fs::exists(path).map_or(false, |e| e)
+}
+
 fn get_version_data() -> Result<Map<String, Value>> {
     let path = explorer_version_path();
     if path.exists() {

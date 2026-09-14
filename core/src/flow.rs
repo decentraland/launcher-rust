@@ -1,4 +1,5 @@
 use crate::channel::EventChannel;
+use crate::{config, environment};
 use crate::deeplink_bridge::{execute_passthrough, should_use_deeplink_bridge_for};
 use crate::errors::{AttemptError, DCLError, DCLResultTyped};
 use crate::instances::RunningInstances;
@@ -308,7 +309,10 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
             .track_and_flush_silent(Event::FETCH_VERSION_START)
             .await;
 
-        let fetch_result = crate::s3::get_latest_explorer_release().await;
+        let prefer_canary_release = environment::AppEnvironment::cmd_args().prefer_canary_release;
+        let user_id = config::user_id_or_new()?;
+
+        let fetch_result = crate::s3::fetch_explorer_release(user_id, prefer_canary_release).await;
         if let Err(e) = &fetch_result {
             self.analytics
                 .lock()

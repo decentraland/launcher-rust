@@ -22,7 +22,7 @@ fn write_config(value: &Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
-fn user_id_or_new() -> Result<String> {
+pub fn user_id_or_new() -> Result<String> {
     const KEY: &str = "analytics-user-id";
     let config = config_content()?;
     if let Some(id) = config.get(KEY) {
