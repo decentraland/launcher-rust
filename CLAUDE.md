@@ -7,7 +7,7 @@ cargo build
 cargo test
 ```
 
-CI runs tests on both Windows and macOS.
+Test lanes: `npm run test-unit` runs each crate's inline unit tests (`--lib`/`--bins`); `npm run e2e` runs the `#[ignore]`-gated integration suites (tests-e2e Layer 1, src-tauri Layer 2) via `scripts/run-e2e.rs`. CI (`.github/workflows/tests.yml`) runs both lanes on Windows and macOS; src-tauri's unit tests run in the e2e job because compiling src-tauri needs staged sidecar binaries.
 
 ## Architecture
 

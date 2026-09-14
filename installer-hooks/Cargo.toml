@@ -24,6 +24,9 @@ rstest = "0.26.1"
 [dependencies.dcl-launcher-core]
 path = "../core"
 
+[dependencies.dcl-launcher-shared]
+path = "../src-shared"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61.2", features = [
   "Win32_System_Threading",

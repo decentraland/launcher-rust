@@ -113,9 +113,8 @@ fn hardware_concurrency() -> Option<u32> {
 // `LazyLock` once on first access instead. Includes the arch so multi-arch
 // builds (Apple Silicon vs Intel, ARM Windows) are distinguishable:
 // e.g. "macos/aarch64", "windows/x86_64".
-static PLATFORM: LazyLock<String> = LazyLock::new(|| {
-    format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH)
-});
+static PLATFORM: LazyLock<String> =
+    LazyLock::new(|| format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH));
 
 #[cfg(test)]
 mod tests {

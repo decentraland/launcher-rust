@@ -1,0 +1,33 @@
+[package]
+name = "dcl-launcher-shared"
+version = "1.21.6"
+edition = "2024"
+
+[lib]
+name = "dcl_launcher_shared"
+path = "src/lib.rs"
+
+[profile.dev]
+overflow-checks = true
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+overflow-checks = true
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = "symbols" # Ensures debug symbols are removed.
+
+[dependencies]
+anyhow = "1.0.97"
+dirs = "5.0"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# fix for the issue: https://github.com/ebarnard/rust-plist/issues/151
+deranged = "=0.4.0"
+plist = "=1.7.0"
+libc = "0.2.176"

@@ -289,13 +289,12 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.16.2"
+version = "1.22.2"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
  "core-foundation-sys",
- "deranged 0.4.0",
- "dirs",
+ "dcl-launcher-shared",
  "display-info",
  "fern",
  "flate2",
@@ -303,10 +302,8 @@ dependencies = [
  "get_if_addrs",
  "humantime",
  "iana-time-zone",
- "libc",
  "log",
  "nix 0.29.0",
- "plist",
  "pretty_env_logger",
  "regex",
  "reqwest",
@@ -319,6 +316,7 @@ dependencies = [
  "sentry-types",
  "serde",
  "serde_json",
+ "strum",
  "sys-locale",
  "sysinfo",
  "system-configuration",
@@ -332,6 +330,20 @@ dependencies = [
  "windows 0.61.3",
  "windows-sys 0.59.0",
  "zip",
+]
+
+[[package]]
+name = "dcl-launcher-shared"
+version = "1.21.6"
+dependencies = [
+ "anyhow",
+ "deranged 0.4.0",
+ "dirs",
+ "libc",
+ "log",
+ "plist",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1092,9 +1104,10 @@ dependencies = [
 
 [[package]]
 name = "installer-hooks"
-version = "1.21.6"
+version = "1.22.2"
 dependencies = [
  "dcl-launcher-core",
+ "dcl-launcher-shared",
  "rstest",
  "tokio",
  "windows-sys 0.61.2",
@@ -2197,7 +2210,7 @@ dependencies = [
 [[package]]
 name = "segment"
 version = "0.2.6"
-source = "git+https://github.com/decentraland/segment?branch=main#d847c53c015b16b54f9a536aff2b3ec1a8002e8e"
+source = "git+https://github.com/decentraland/segment?branch=main#6c97226b10d70f2d1576b529af432209c45415f0"
 dependencies = [
  "async-trait",
  "reqwest",
@@ -2488,6 +2501,27 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "strum"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
+dependencies = [
+ "strum_macros",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "subtle"

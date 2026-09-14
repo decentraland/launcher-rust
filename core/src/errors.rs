@@ -7,7 +7,7 @@ use crate::installs::downloads::{DownloadFileError, FileIncompleteError};
 
 use crate::deeplink_bridge::PlaceDeeplinkError;
 
-use super::types::Status;
+use dcl_launcher_shared::types::Status;
 
 pub struct FlowError {
     pub user_message: String,

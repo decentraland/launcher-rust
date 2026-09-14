@@ -6,7 +6,7 @@ use url::form_urlencoded;
 use log::{error, warn};
 
 static PROTOCOL_STATE: Mutex<Option<DeepLink>> = Mutex::new(None);
-const PROTOCOL_PREFIX: &str = "decentraland://";
+const PROTOCOL_PREFIX: &str = dcl_launcher_shared::environment::DEEPLINK_PREFIX;
 
 #[derive(Default, Clone)]
 pub struct Protocol {}
@@ -85,8 +85,9 @@ impl DeepLink {
         }
 
         match self.original.split_once('?') {
-            Some((_, query)) => form_urlencoded::parse(query.as_bytes())
-                .any(|(k, v)| k == key && !v.is_empty()),
+            Some((_, query)) => {
+                form_urlencoded::parse(query.as_bytes()).any(|(k, v)| k == key && !v.is_empty())
+            }
             None => false,
         }
     }
@@ -159,7 +160,8 @@ impl Protocol {
 
     pub fn try_seed_from_startup_location() {
         let Some(raw) =
-            crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage::read()
+            crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage::read(
+            )
         else {
             log::info!("No startup location found");
             return;
@@ -196,7 +198,7 @@ impl Protocol {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::environment::ARG_SIGNIN;
+    use dcl_launcher_shared::environment::ARG_SIGNIN;
     use rstest::rstest;
 
     fn deeplink(value: &str) -> Result<DeepLink, DeepLinkCreateError> {
@@ -214,14 +216,20 @@ mod tests {
     // unrelated value or key (must NOT match, since the client keys off an exact
     // parameter name).
     #[rstest]
-    #[case("decentraland://open?signin=anIdentityId&bridgeOnly=true&authRequestId=abc-123", true)]
+    #[case(
+        "decentraland://open?signin=anIdentityId&bridgeOnly=true&authRequestId=abc-123",
+        true
+    )]
     #[case("decentraland://?signin=anIdentityId", true)]
     #[case("decentraland://open/?signin=anIdentityId", true)]
     #[case("decentraland:///?signin=anIdentityId", true)]
     #[case("decentraland://signin=anIdentityId", true)]
     #[case("decentraland://open?signin=", false)]
     #[case("decentraland:///?realm=jerk.dcl.eth&dclenv=org", false)]
-    #[case("decentraland://realm=http%3A%2F%2F127.0.0.1%3A8000&position=0%2C0", false)]
+    #[case(
+        "decentraland://realm=http%3A%2F%2F127.0.0.1%3A8000&position=0%2C0",
+        false
+    )]
     #[case("decentraland:///?position=139,-40&dclenv=org", false)]
     #[case("decentraland:///?realm=signin.dcl.eth", false)]
     #[case("decentraland:///?position=10,20&comment=pleasesignin", false)]

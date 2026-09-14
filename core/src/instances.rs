@@ -72,6 +72,7 @@ impl RunningInstances {
     /// scan backing both the macOS instance tracker and the pre-install
     /// running-Explorer check.
     fn processes_under_path(path: &Path) -> Vec<(u32, String, PathBuf)> {
+        let path = resolve_symlinks(path);
         let system = sysinfo::System::new_all();
         let mut found = Vec::new();
 
@@ -79,7 +80,7 @@ impl RunningInstances {
             let Some(exe_path) = process.exe() else {
                 continue;
             };
-            if exe_path.starts_with(path) {
+            if exe_path.starts_with(&path) {
                 let name = process
                     .name()
                     .to_str()
@@ -187,5 +188,39 @@ impl Default for RunningInstances {
         Self {
             path: installs::running_instances_path(),
         }
+    }
+}
+
+/// The OS reports process exe paths with symlinks resolved (on macOS `/tmp`
+/// lives at `/private/tmp`), so a prefix used to match against them must be
+/// resolved the same way. Windows keeps the path as-is: `canonicalize` yields
+/// `\\?\`-prefixed paths that never prefix-match the plain paths sysinfo
+/// reports.
+fn resolve_symlinks(path: &Path) -> PathBuf {
+    if cfg!(windows) {
+        path.to_path_buf()
+    } else {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_symlinks_matches_the_os_reported_form() -> Result<()> {
+        let base = std::env::temp_dir().join(format!("dcl-symlink-test-{}", std::process::id()));
+        let real = base.join("real");
+        let link = base.join("link");
+        std::fs::create_dir_all(&real)?;
+        std::os::unix::fs::symlink(&real, &link)?;
+
+        let resolved = resolve_symlinks(&link);
+        let expected = real.canonicalize()?;
+        std::fs::remove_dir_all(&base)?;
+
+        assert_eq!(resolved, expected);
+        Ok(())
     }
 }

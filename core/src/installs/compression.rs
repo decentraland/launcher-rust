@@ -7,6 +7,16 @@ use std::{
 use tar::Archive;
 use zip::read::ZipArchive;
 
+/// Archives are not required to carry explicit directory entries — a legal
+/// zip/tar can list only files with nested paths, so every file's parent
+/// chain must be created before the file itself.
+fn new_file_with_parent(path: &Path) -> std::io::Result<fs::File> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::File::create(path)
+}
+
 pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> DCLErrorResult {
     if !source_path.exists() {
         return DCLError::E1001_FILE_NOT_FOUND {
@@ -58,7 +68,7 @@ pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> DCL
                 let mut content = Vec::new();
                 file.read_to_end(&mut content)?;
 
-                let mut output_file = fs::File::create(output_path)?;
+                let mut output_file = new_file_with_parent(&output_path)?;
                 output_file.write_all(&content)?;
             }
         }
@@ -141,6 +151,32 @@ mod tests {
         }
 
         fs::remove_dir_all(&source_dir)?;
+        Ok(())
+    }
+
+    /// Legal zips may list only files with nested paths and no directory
+    /// entries — extraction must create the missing parents itself.
+    #[test]
+    fn decompress_creates_missing_parent_dirs() -> anyhow::Result<()> {
+        use zip::write::SimpleFileOptions;
+
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file("nested/deeper/file.txt", SimpleFileOptions::default())?;
+        writer.write_all(b"payload")?;
+        let bytes = writer.finish()?.into_inner();
+
+        let base = std::env::temp_dir().join(format!("dcl-decompress-test-{}", std::process::id()));
+        let source = base.join("archive.zip");
+        let destination = base.join("out");
+        fs::create_dir_all(&base)?;
+        fs::write(&source, bytes)?;
+
+        let result = decompress_file(&source, &destination);
+        let payload = fs::read(destination.join("nested/deeper/file.txt"));
+        fs::remove_dir_all(&base)?;
+
+        result?;
+        assert_eq!(payload?.as_slice(), b"payload");
         Ok(())
     }
 }

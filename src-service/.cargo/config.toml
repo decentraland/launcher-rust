@@ -1,0 +1,21 @@
+[build]
+rustflags = [
+  "-Dwarnings",         # treat all warnings as errors
+  "-Dunsafe_code",      # deny unsafe blocks globally
+]
+
+# Cargo uses a single rustflags source: these target sections replace [build]
+# rather than adding to it, so the lint denials are repeated here.
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+  "-Dwarnings",
+  "-Dunsafe_code",
+  "-C", "target-feature=+crt-static",   # no vcruntime140.dll dependency
+]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = [
+  "-Dwarnings",
+  "-Dunsafe_code",
+  "-C", "target-feature=+crt-static",
+]

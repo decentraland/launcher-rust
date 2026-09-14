@@ -3,7 +3,7 @@ set -e
 
 echo "Running checks..."
 
-for dir in core src-tauri installer-hooks; do
+for dir in core src-shared src-ipc src-service src-tauri installer-hooks tests-e2e; do
   echo "Executing $dir"
   (
     cd "$dir"

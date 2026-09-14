@@ -7,9 +7,10 @@ use log::{error, info};
 use sentry::{ClientOptions, protocol::User};
 use sentry_types::Dsn;
 
+use dcl_launcher_shared::environment::AppEnvironment;
+
 use crate::{
     config,
-    environment::AppEnvironment,
     utils::{BUILD_COMMIT, BUILD_PR},
 };
 

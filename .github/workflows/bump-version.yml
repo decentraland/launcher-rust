@@ -94,8 +94,8 @@ jobs:
               cargo install rust-script
           fi
 
-          echo "Running ./update_version.rs $BUMP"
-          ./update_version.rs $BUMP
+          echo "Running scripts/update_version.rs $BUMP"
+          rust-script scripts/update_version.rs $BUMP
 
           VERSION=$(jq -r .version package.json)
           echo "Updated version: $VERSION"

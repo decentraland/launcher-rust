@@ -1,0 +1,42 @@
+[package]
+name = "dcl-launcher-tests-e2e"
+version = "1.21.6"
+edition = "2024"
+
+[lib]
+name = "dcl_launcher_tests_e2e"
+path = "src/lib.rs"
+
+[[bin]]
+name = "stub_explorer"
+path = "src/bin/stub_explorer.rs"
+
+[profile.dev]
+overflow-checks = true
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+overflow-checks = true
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = "symbols" # Ensures debug symbols are removed.
+
+[dependencies]
+anyhow = "1.0.97"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiny_http = "0.12"
+zip = "3.0.0"
+log = "0.4"
+tokio = { version = "1.44.1", features = ["rt-multi-thread", "macros", "time", "io-util", "net", "sync"] }
+
+[dependencies.dcl-launcher-ipc]
+path = "../src-ipc"
+
+[dependencies.dcl-launcher-shared]
+path = "../src-shared"
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
