@@ -3,7 +3,7 @@
 //! The binary is expected next to the launcher executable. Failing to start it must never fail
 //! the launch.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow};
@@ -14,9 +14,10 @@ pub const ARG_PID: &str = "--pid";
 pub const ARG_SESSION_ID: &str = "--session-id";
 pub const ARG_EXPLORER_VERSION: &str = "--explorer-version";
 pub const ARG_LAUNCHER_EXE: &str = "--launcher-exe";
+pub const ARG_EXPLORER_EXE: &str = "--explorer-exe";
 
-pub fn spawn(pid: u32, session_id: &str, explorer_version: &str) {
-    match spawn_internal(pid, session_id, explorer_version) {
+pub fn spawn(pid: u32, explorer_exe: &Path, session_id: &str, explorer_version: &str) {
+    match spawn_internal(pid, explorer_exe, session_id, explorer_version) {
         Ok(path) => log::info!(
             "Crash watchdog {} attached to Explorer pid {pid}",
             path.display()
@@ -25,7 +26,12 @@ pub fn spawn(pid: u32, session_id: &str, explorer_version: &str) {
     }
 }
 
-fn spawn_internal(pid: u32, session_id: &str, explorer_version: &str) -> Result<PathBuf> {
+fn spawn_internal(
+    pid: u32,
+    explorer_exe: &Path,
+    session_id: &str,
+    explorer_version: &str,
+) -> Result<PathBuf> {
     let launcher_exe = std::env::current_exe().context("Cannot resolve the launcher executable")?;
     let watchdog = binary_path(&launcher_exe)?;
     if !watchdog.exists() {
@@ -34,7 +40,13 @@ fn spawn_internal(pid: u32, session_id: &str, explorer_version: &str) -> Result<
 
     let mut command = Command::new(&watchdog);
     command
-        .args(args_for(pid, session_id, explorer_version, &launcher_exe))
+        .args(args_for(
+            pid,
+            explorer_exe,
+            session_id,
+            explorer_version,
+            &launcher_exe,
+        ))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -52,7 +64,7 @@ fn spawn_internal(pid: u32, session_id: &str, explorer_version: &str) -> Result<
     Ok(watchdog)
 }
 
-fn binary_path(launcher_exe: &std::path::Path) -> Result<PathBuf> {
+fn binary_path(launcher_exe: &Path) -> Result<PathBuf> {
     let dir = launcher_exe
         .parent()
         .ok_or_else(|| anyhow!("The launcher executable has no parent directory"))?;
@@ -64,13 +76,16 @@ fn binary_path(launcher_exe: &std::path::Path) -> Result<PathBuf> {
 
 fn args_for(
     pid: u32,
+    explorer_exe: &Path,
     session_id: &str,
     explorer_version: &str,
-    launcher_exe: &std::path::Path,
+    launcher_exe: &Path,
 ) -> Vec<String> {
     vec![
         ARG_PID.to_owned(),
         pid.to_string(),
+        ARG_EXPLORER_EXE.to_owned(),
+        explorer_exe.to_string_lossy().into_owned(),
         ARG_SESSION_ID.to_owned(),
         session_id.to_owned(),
         ARG_EXPLORER_VERSION.to_owned(),
@@ -83,7 +98,6 @@ fn args_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn watchdog_sits_next_to_the_launcher() {
@@ -100,12 +114,20 @@ mod tests {
 
     #[test]
     fn args_are_flag_value_pairs() {
-        let args = args_for(42, "sid", "v1.2.3", Path::new("/x/launcher"));
+        let args = args_for(
+            42,
+            Path::new("/apps/Decentraland.app/Contents/MacOS/Explorer"),
+            "sid",
+            "v1.2.3",
+            Path::new("/x/launcher"),
+        );
         assert_eq!(
             args,
             vec![
                 "--pid",
                 "42",
+                "--explorer-exe",
+                "/apps/Decentraland.app/Contents/MacOS/Explorer",
                 "--session-id",
                 "sid",
                 "--explorer-version",

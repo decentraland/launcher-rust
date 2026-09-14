@@ -16,7 +16,9 @@ use dcl_launcher_core::{
     anyhow::{Context, Result, anyhow},
     config,
     crash_attachment::CrashAttachment,
-    crash_watchdog::{ARG_EXPLORER_VERSION, ARG_LAUNCHER_EXE, ARG_PID, ARG_SESSION_ID},
+    crash_watchdog::{
+        ARG_EXPLORER_EXE, ARG_EXPLORER_VERSION, ARG_LAUNCHER_EXE, ARG_PID, ARG_SESSION_ID,
+    },
     environment::ARG_CRASH_REPORT_WITH_ATTACHMENT,
     log, logs,
 };
@@ -24,12 +26,10 @@ use process_wait::ExitOutcome;
 
 const EVENT_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Pid-reuse guard: the watched process must be the Explorer's main executable.
-const EXPLORER_PROCESS_NAME_FRAGMENT: &str = "decentraland";
-
 #[derive(Debug, PartialEq, Eq)]
 struct WatchConfig {
     pid: u32,
+    explorer_exe: PathBuf,
     session_id: String,
     explorer_version: String,
     launcher_exe: PathBuf,
@@ -41,6 +41,7 @@ impl WatchConfig {
             pid: value_of(args, ARG_PID)?
                 .parse()
                 .context("--pid is not a number")?,
+            explorer_exe: PathBuf::from(value_of(args, ARG_EXPLORER_EXE)?),
             session_id: value_of(args, ARG_SESSION_ID)?.to_owned(),
             explorer_version: value_of(args, ARG_EXPLORER_VERSION)?.to_owned(),
             launcher_exe: PathBuf::from(value_of(args, ARG_LAUNCHER_EXE)?),
@@ -76,11 +77,12 @@ fn run() -> Result<()> {
     log::info!("Args: {args:?}");
     let config = WatchConfig::parse(&args)?;
 
-    ensure_is_explorer(config.pid)?;
+    ensure_is_explorer(config.pid, &config.explorer_exe)?;
 
     log::info!(
-        "Watching Explorer pid {} (session {}, version {})",
+        "Watching Explorer pid {} at {} (session {}, version {})",
         config.pid,
+        config.explorer_exe.display(),
         config.session_id,
         config.explorer_version
     );
@@ -94,18 +96,37 @@ fn run() -> Result<()> {
     }
 }
 
-fn ensure_is_explorer(pid: u32) -> Result<()> {
+/// Pid-reuse guard: `pid` must still run `expected_exe`.
+fn ensure_is_explorer(pid: u32, expected_exe: &Path) -> Result<()> {
     let system = sysinfo::System::new_all();
     let process = system
         .process(sysinfo::Pid::from_u32(pid))
         .ok_or_else(|| anyhow!("Process {pid} is not running; nothing to watch"))?;
-    let name = process.name().to_string_lossy().to_lowercase();
-    if name.contains(EXPLORER_PROCESS_NAME_FRAGMENT) {
-        return Ok(());
+    match process.exe() {
+        Some(actual_exe) if is_same_executable(actual_exe, expected_exe) => Ok(()),
+        Some(actual_exe) => Err(anyhow!(
+            "Process {pid} runs `{}`, not `{}`; refusing to watch a reused pid",
+            actual_exe.display(),
+            expected_exe.display()
+        )),
+        None if is_named_after(process.name(), expected_exe) => Ok(()),
+        None => Err(anyhow!(
+            "Process {pid} is `{}` with no readable executable path, expected `{}`; refusing to watch a reused pid",
+            process.name().to_string_lossy(),
+            expected_exe.display()
+        )),
     }
-    Err(anyhow!(
-        "Process {pid} is `{name}`, not the Explorer; refusing to watch a reused pid"
-    ))
+}
+
+fn is_same_executable(actual: &Path, expected: &Path) -> bool {
+    let resolve = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    resolve(actual) == resolve(expected)
+}
+
+fn is_named_after(process_name: &std::ffi::OsStr, expected_exe: &Path) -> bool {
+    expected_exe
+        .file_name()
+        .is_some_and(|expected| expected.eq_ignore_ascii_case(process_name))
 }
 
 fn on_unexpected_exit(config: &WatchConfig, exit_code: String) -> Result<()> {
@@ -193,13 +214,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_all_four_flags_in_any_order() {
+    fn parses_all_five_flags_in_any_order() {
         let parsed = WatchConfig::parse(&args(&[
             "dcl_watchdog",
             "--launcher-exe",
             "/x/launcher",
             "--pid",
             "42",
+            "--explorer-exe",
+            "/apps/Decentraland.app/Contents/MacOS/Explorer",
             "--explorer-version",
             "v1.2.3",
             "--session-id",
@@ -211,6 +234,7 @@ mod tests {
             parsed,
             WatchConfig {
                 pid: 42,
+                explorer_exe: PathBuf::from("/apps/Decentraland.app/Contents/MacOS/Explorer"),
                 session_id: "sid".to_owned(),
                 explorer_version: "v1.2.3".to_owned(),
                 launcher_exe: PathBuf::from("/x/launcher"),
@@ -226,6 +250,8 @@ mod tests {
                 "dcl_watchdog",
                 "--pid",
                 "abc",
+                "--explorer-exe",
+                "/e",
                 "--session-id",
                 "s",
                 "--explorer-version",
@@ -240,6 +266,8 @@ mod tests {
             WatchConfig::parse(&args(&[
                 "dcl_watchdog",
                 "--pid",
+                "--explorer-exe",
+                "/e",
                 "--session-id",
                 "s",
                 "--explorer-version",
@@ -249,5 +277,51 @@ mod tests {
             ]))
             .is_err()
         );
+        assert!(
+            WatchConfig::parse(&args(&[
+                "dcl_watchdog",
+                "--pid",
+                "42",
+                "--session-id",
+                "s",
+                "--explorer-version",
+                "v",
+                "--launcher-exe",
+                "/l",
+            ]))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn same_executable_matches_identical_paths_even_when_missing_on_disk() {
+        let exe = Path::new("/apps/Decentraland.app/Contents/MacOS/Explorer");
+        assert!(is_same_executable(exe, exe));
+        assert!(!is_same_executable(
+            exe,
+            Path::new("/apps/Decentraland.app/Contents/MacOS/Decentraland")
+        ));
+    }
+
+    #[test]
+    fn same_executable_sees_through_path_spelling() {
+        let current = std::env::current_exe().unwrap_or_default();
+        let Some(parent) = current.parent() else {
+            return;
+        };
+        let Some(name) = current.file_name() else {
+            return;
+        };
+        let spelled_differently = parent.join(".").join(name);
+        assert!(is_same_executable(&current, &spelled_differently));
+    }
+
+    #[test]
+    fn named_after_compares_only_the_file_name() {
+        let exe = Path::new("/apps/Decentraland.app/Contents/MacOS/Explorer");
+        assert!(is_named_after(std::ffi::OsStr::new("Explorer"), exe));
+        assert!(is_named_after(std::ffi::OsStr::new("explorer"), exe));
+        assert!(!is_named_after(std::ffi::OsStr::new("Decentraland"), exe));
+        assert!(!is_named_after(std::ffi::OsStr::new("uuav-helper"), exe));
     }
 }
