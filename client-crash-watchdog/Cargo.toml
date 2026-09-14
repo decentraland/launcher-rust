@@ -1,0 +1,38 @@
+[package]
+name = "dcl_watchdog"
+version = "1.22.2"
+edition = "2024"
+description = "Watches the Decentraland Explorer process and reopens the launcher's crash-report dialog after an unexpected exit"
+
+# The binary name is what Task Manager / Activity Monitor show.
+[[bin]]
+name = "dcl_watchdog"
+path = "src/main.rs"
+
+[profile.dev]
+overflow-checks = true
+incremental = true # Compile your binary in smaller steps.
+
+[profile.release]
+overflow-checks = true
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true # Enables link-time-optimizations.
+opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort" # Higher performance by disabling panic handlers.
+strip = "symbols" # Ensures debug symbols are removed.
+
+[dependencies]
+sysinfo = "0.35.2"
+tokio = { version = "1.44.1", features = ["rt", "time"] }
+
+[dependencies.dcl-launcher-core]
+path = "../core"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+nix = { version = "0.29.0", features = ["event", "process"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_System_Threading",
+] }
