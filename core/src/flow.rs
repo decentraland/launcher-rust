@@ -1,13 +1,14 @@
 use crate::channel::EventChannel;
+use crate::{config, environment};
 use crate::deeplink_bridge::{execute_passthrough, should_use_deeplink_bridge_for};
-use crate::errors::{AttemptError, DCLError, DCLErrorTyped};
+use crate::errors::{AttemptError, DCLError, DCLResultTyped};
 use crate::instances::RunningInstances;
 use crate::logs::LogDestination;
 use crate::protocols::{DeepLink, Protocol};
 use crate::{
     analytics::{Analytics, event::Event},
     environment::AppEnvironment,
-    errors::{FlowError, DCLErrorResult},
+    errors::{FlowError, DCLResult},
     installs::{self, InstallsHub},
     s3::{self, ReleaseResponse},
     types::{BuildType, Status, Step},
@@ -42,7 +43,7 @@ trait WorkflowStep<TState, TOutput> {
         &self,
         channel: &T,
         state: Arc<Mutex<TState>>,
-    ) -> DCLErrorTyped<TOutput>;
+    ) -> DCLResultTyped<TOutput>;
 
     fn on_skipped(&self, _state: Arc<Mutex<TState>>) -> impl std::future::Future<Output = ()> {
         std::future::ready(())
@@ -53,12 +54,12 @@ trait WorkflowStep<TState, TOutput> {
         channel: &T,
         state: Arc<Mutex<TState>>,
         label: &str,
-    ) -> DCLErrorTyped<Option<TOutput>> {
+    ) -> DCLResultTyped<Option<TOutput>> {
         let complete = self.is_complete(state.clone()).await?;
         if complete {
             info!("Step {} is already complete", label);
             self.on_skipped(state).await;
-            return DCLErrorTyped::Ok(None);
+            return DCLResultTyped::Ok(None);
         }
 
         let status = self.start_label()?;
@@ -67,7 +68,7 @@ trait WorkflowStep<TState, TOutput> {
         info!("Step {} is started", label);
         let result = self.execute(channel, state).await?;
         info!("Step {} is finished", label);
-        DCLErrorTyped::Ok(Some(result))
+        DCLResultTyped::Ok(Some(result))
     }
 }
 
@@ -251,7 +252,7 @@ impl LaunchFlow {
         &self,
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
-    ) -> DCLErrorTyped<bool> {
+    ) -> DCLResultTyped<bool> {
         let handled_by_passthrough = self
             .deeplink_passthrough_step
             .execute_if_needed(channel, state.clone(), "deeplink_passthrough")
@@ -263,7 +264,7 @@ impl LaunchFlow {
             info!(
                 "Deeplink handled by passthrough (an Explorer instance is already running); skipping further steps"
             );
-            return DCLErrorTyped::Ok(true);
+            return DCLResultTyped::Ok(true);
         }
 
         self.fetch_step
@@ -276,7 +277,7 @@ impl LaunchFlow {
             .execute_if_needed(channel, state.clone(), "install")
             .await?;
 
-        DCLErrorTyped::Ok(false)
+        DCLResultTyped::Ok(false)
     }
 }
 
@@ -301,14 +302,17 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
         &self,
         _channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
-    ) -> DCLErrorResult {
+    ) -> DCLResult {
         self.analytics
             .lock()
             .await
             .track_and_flush_silent(Event::FETCH_VERSION_START)
             .await;
 
-        let fetch_result = crate::s3::get_latest_explorer_release().await;
+        let prefer_canary_release = environment::AppEnvironment::cmd_args().prefer_canary_release;
+        let user_id = config::user_id_or_new()?;
+
+        let fetch_result = crate::s3::fetch_explorer_release(user_id, prefer_canary_release).await;
         if let Err(e) = &fetch_result {
             self.analytics
                 .lock()
@@ -328,7 +332,7 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
             .track_and_flush_silent(Event::FETCH_VERSION_SUCCESS { version })
             .await;
 
-        DCLErrorResult::Ok(())
+        DCLResult::Ok(())
     }
 }
 
@@ -381,7 +385,9 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         let guard = state.lock().await;
         match &guard.latest_release {
             Some(release) => {
-                let version = release.version.as_str();
+                // TODO check that the algorithm is correct, supposedly it's always, since the 'always
+                // the latest release is in' policy exists
+                let version = &release.version;
                 let updated = crate::installs::is_explorer_updated(version);
                 Ok(updated)
             }
@@ -420,7 +426,7 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         &self,
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
-    ) -> DCLErrorResult {
+    ) -> DCLResult {
         let mode = Self::mode();
 
         let mut guard = state.lock().await;
@@ -480,9 +486,9 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
                     downloaded_path: target_path,
                 });
 
-                DCLErrorResult::Ok(())
+                DCLResult::Ok(())
             }
-            None => DCLErrorResult::Err(anyhow!("Latest release is not fetched").into()),
+            None => DCLResult::Err(anyhow!("Latest release is not fetched").into()),
         }
     }
 }
@@ -493,7 +499,7 @@ struct InstallStep {
 }
 
 impl InstallStep {
-    async fn execute_internal(&self, recent_download: RecentDownload) -> DCLErrorResult {
+    async fn execute_internal(&self, recent_download: RecentDownload) -> DCLResult {
         self.check_explorer_not_running().await?;
         installs::install_explorer(
             &recent_download.version,
@@ -502,7 +508,7 @@ impl InstallStep {
         .and_then(|()| installs::rename_explorer_to_latest())
     }
 
-    async fn check_explorer_not_running(&self) -> DCLErrorResult {
+    async fn check_explorer_not_running(&self) -> DCLResult {
         let running = self
             .running_instances
             .lock()
@@ -510,14 +516,14 @@ impl InstallStep {
             .explorer_processes_by_path();
         if running.is_empty() {
             // `Ok`/`Err` are shadowed by `anyhow::Ok` (imported at the top),
-            // so qualify with `DCLErrorResult` to stay on `DCLError`.
-            return DCLErrorResult::Ok(());
+            // so qualify with `DCLResult` to stay on `DCLError`.
+            return DCLResult::Ok(());
         }
         log::warn!(
             "Explorer is still running; refusing to install. Blocking processes: {:?}",
             running
         );
-        DCLErrorResult::Err(DCLError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
+        DCLResult::Err(DCLError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
     }
 
     async fn recent_download_and_update_state(
@@ -567,7 +573,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
         &self,
         _channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
-    ) -> DCLErrorResult {
+    ) -> DCLResult {
         let recent_download = Self::recent_download_and_update_state(state).await;
 
         if let Some(download) = recent_download {
@@ -599,7 +605,7 @@ impl WorkflowStep<LaunchFlowState, ()> for InstallStep {
             return result;
         }
 
-        DCLErrorResult::Ok(())
+        DCLResult::Ok(())
     }
 }
 
@@ -644,19 +650,19 @@ impl WorkflowStep<LaunchFlowState, bool> for DeeplinkPassthroughStep {
         &self,
         channel: &T,
         _: Arc<Mutex<LaunchFlowState>>,
-    ) -> DCLErrorTyped<bool> {
+    ) -> DCLResultTyped<bool> {
         let Some(deeplink) = Protocol::value() else {
-            return DCLErrorTyped::Ok(false);
+            return DCLResultTyped::Ok(false);
         };
 
         // Re-check the bridge policy against this snapshot: an open_url event may have
         // reassigned the protocol since `is_complete`, so decide and act on one value.
         if !self.should_use_deeplink_bridge_for(&deeplink).await? {
-            return DCLErrorTyped::Ok(false);
+            return DCLResultTyped::Ok(false);
         }
 
         execute_passthrough(channel, &deeplink).await?;
-        DCLErrorTyped::Ok(true)
+        DCLResultTyped::Ok(true)
     }
 }
 
@@ -689,7 +695,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
         &self,
         channel: &T,
         _state: Arc<Mutex<LaunchFlowState>>,
-    ) -> DCLErrorResult {
+    ) -> DCLResult {
         match Protocol::value() {
             Some(deeplink) => {
                 if self.should_use_deeplink_bridge_for(&deeplink).await? {
@@ -700,7 +706,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                         .await
                         .launch_explorer(Some(deeplink), None)
                         .await?;
-                    DCLErrorResult::Ok(())
+                    DCLResult::Ok(())
                 }
             }
             None => {
@@ -710,7 +716,7 @@ impl WorkflowStep<LaunchFlowState, ()> for AppLaunchStep {
                     .await
                     .launch_explorer(None, None)
                     .await?;
-                DCLErrorResult::Ok(())
+                DCLResult::Ok(())
             }
         }
     }

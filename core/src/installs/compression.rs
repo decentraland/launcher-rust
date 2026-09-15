@@ -1,4 +1,4 @@
-use crate::errors::{DCLError, DCLErrorResult};
+use crate::errors::{DCLError, DCLResult};
 use std::{
     fs,
     io::{Cursor, Read, Write},
@@ -7,7 +7,7 @@ use std::{
 use tar::Archive;
 use zip::read::ZipArchive;
 
-pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> DCLErrorResult {
+pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> DCLResult {
     if !source_path.exists() {
         return DCLError::E1001_FILE_NOT_FOUND {
             expected_path: Some(source_path.to_string_lossy().into_owned()),

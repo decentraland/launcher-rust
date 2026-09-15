@@ -6,7 +6,7 @@ use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
 use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage;
 use crate::environment::AppEnvironment;
-use crate::errors::{DCLError, DCLErrorResult, DCLErrorTyped};
+use crate::errors::{DCLError, DCLResult, DCLResultTyped};
 use crate::instances::RunningInstances;
 #[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
@@ -157,6 +157,11 @@ fn explorer_dev_version_path() -> PathBuf {
     explorer_path().join("dev")
 }
 
+pub fn latest_dir_exists() -> bool {
+    let path = explorer_latest_version_path();
+    std::fs::exists(path).is_ok_and(|e| e)
+}
+
 fn get_version_data() -> Result<Map<String, Value>> {
     let path = explorer_version_path();
     if path.exists() {
@@ -184,14 +189,14 @@ fn get_version_data_or_empty() -> Map<String, Value> {
     })
 }
 
-fn get_latest_version(version_data: &Map<String, Value>) -> DCLErrorTyped<&str> {
+fn get_latest_version(version_data: &Map<String, Value>) -> DCLResultTyped<&str> {
     version_data
         .get("version")
         .and_then(|v| v.as_str())
         .ok_or(DCLError::E3003_CANT_GET_VERSION)
 }
 
-pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<PathBuf> {
+pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLResultTyped<PathBuf> {
     let base_path = match version {
         None => explorer_latest_version_path(),
         Some("dev") => explorer_dev_version_path(),
@@ -315,7 +320,7 @@ fn remove_version_if_exists(version: &EntryVersion) {
     }
 }
 
-fn cleanup_versions(current_version: &EntryVersion) -> DCLErrorResult {
+fn cleanup_versions(current_version: &EntryVersion) -> DCLResult {
     const KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT: usize = 2;
 
     let explorer_path = explorer_path();
@@ -410,7 +415,7 @@ fn rename_latest_back_to_version(
     latest_path: &Path,
     target: &Path,
     branch_path: &Path,
-) -> DCLErrorResult {
+) -> DCLResult {
     if target == branch_path {
         return fs::remove_dir_all(latest_path).map_err(|e| DCLError::from_rename_back(latest_path, e));
     }
@@ -420,7 +425,7 @@ fn rename_latest_back_to_version(
     fs::rename(latest_path, target).map_err(|e| DCLError::from_rename_back(latest_path, e))
 }
 
-pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLErrorResult {
+pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLResult {
     let current_version: EntryVersion = EntryVersion::from_str(version)
         .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
 
@@ -510,7 +515,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     cleanup_versions(&current_version)
 }
 
-pub fn rename_explorer_to_latest() -> DCLErrorResult {
+pub fn rename_explorer_to_latest() -> DCLResult {
     let Ok(version_data) = get_version_data() else {
         return Err(DCLError::E3003_CANT_GET_VERSION);
     };
@@ -609,7 +614,7 @@ impl InstallsHub {
         &self,
         deeplink: Option<DeepLink>,
         preferred_version: Option<&str>,
-    ) -> DCLErrorResult {
+    ) -> DCLResult {
         let readable_version = Self::readable_version(preferred_version);
 
         self.send_analytics_event(Event::LAUNCH_CLIENT_START {
@@ -649,7 +654,7 @@ impl InstallsHub {
         &self,
         deeplink: Option<DeepLink>,
         preferred_version: Option<&str>,
-    ) -> DCLErrorResult {
+    ) -> DCLResult {
         log::info!("Launching Explorer...");
 
         // macOS uses .app instaed of launching direct binary

@@ -1,8 +1,10 @@
 use anyhow::{Context, Result, anyhow};
-use log::error;
+use log::{error, warn};
 use serde_json::{Map, Value};
 
 use crate::installs::config_path;
+
+const USE_CANARY_RELEASES_KEY: &str = "use-canary-releases";
 
 fn config_content() -> Result<Map<String, Value>> {
     let path = config_path();
@@ -22,7 +24,36 @@ fn write_config(value: &Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
-fn user_id() -> Result<String> {
+pub fn preserve_canary_releases_preference(preference: bool) -> Result<()> {
+    let mut config = config_content()?;
+    config.insert(USE_CANARY_RELEASES_KEY.to_owned(), Value::Bool(preference));
+    write_config(&config)?;
+    Ok(())
+}
+
+pub fn use_canary_releases() -> bool {
+    let Ok(config) = config_content() else {
+        warn!("[use_canary_releases] Config is not available, fallback to false");
+        return false;
+    };
+
+    if let Some(value) = config.get(USE_CANARY_RELEASES_KEY) {
+        match value {
+            Value::Bool(value) => {
+                *value
+            }
+            _ => {
+                warn!("[use_canary_releases] Config under {} doesn't have a bool value", USE_CANARY_RELEASES_KEY);
+                false
+            }
+        }
+    }
+    else {
+        return false;
+    }
+}
+
+pub fn user_id_or_new() -> Result<String> {
     const KEY: &str = "analytics-user-id";
     let config = config_content()?;
     if let Some(id) = config.get(KEY) {
@@ -45,7 +76,7 @@ fn user_id() -> Result<String> {
 }
 
 pub fn user_id_or_none() -> String {
-    user_id().unwrap_or_else(|e| {
+    user_id_or_new().unwrap_or_else(|e| {
         error!("Cannot get user id from config, fallback is used: {:#}", e);
         "none".to_owned()
     })
