@@ -21,6 +21,7 @@
 #![allow(clippy::significant_drop_tightening)]
 
 pub mod analytics;
+pub mod canary;
 pub mod app;
 pub mod download_origin_metadata;
 pub mod channel;
