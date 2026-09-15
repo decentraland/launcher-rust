@@ -147,6 +147,9 @@ pub enum DCLError {
         #[source]
         source: std::io::Error,
     },
+    E3014_INSTALL_INTEGRITY_CHECK_FAILED {
+        missing_file: String,
+    },
 }
 
 impl DCLError {
@@ -297,6 +300,9 @@ impl DCLError {
             }
             Self::E3013_EXPLORER_BINARY_ACCESS_FAILED { .. } => {
                 "We couldn't access the Decentraland files. If Decentraland is open, please close it and try again."
+            }
+            Self::E3014_INSTALL_INTEGRITY_CHECK_FAILED { .. } => {
+                "Some Decentraland files are missing or damaged. Your antivirus may have removed them. Please add Decentraland as an exception in your antivirus and try again to reinstall."
             }
         }
     }
