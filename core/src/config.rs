@@ -44,6 +44,37 @@ fn user_id() -> Result<String> {
     Ok(id)
 }
 
+const CRASH_REPORT_DIALOG_DISABLED_KEY: &str = "crash-report-dialog-disabled";
+
+/// User opt-out of the crash-report dialog ("Don't show this again").
+pub fn crash_report_dialog_disabled() -> bool {
+    match config_content() {
+        Ok(config) => bool_at(&config, CRASH_REPORT_DIALOG_DISABLED_KEY),
+        Err(e) => {
+            error!(
+                "Cannot read config, crash report dialog stays enabled: {:#}",
+                e
+            );
+            false
+        }
+    }
+}
+
+pub fn set_crash_report_dialog_disabled(disabled: bool) -> Result<()> {
+    let mut config = config_content()?;
+    config.insert(
+        CRASH_REPORT_DIALOG_DISABLED_KEY.to_owned(),
+        Value::Bool(disabled),
+    );
+    write_config(&config)
+}
+
+/// Missing or non-boolean values read as `false`, so a hand-edited config can't disable a feature
+/// by accident.
+fn bool_at(config: &Map<String, Value>, key: &str) -> bool {
+    config.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
 pub fn user_id_or_none() -> String {
     user_id().unwrap_or_else(|e| {
         error!("Cannot get user id from config, fallback is used: {:#}", e);
@@ -80,4 +111,35 @@ pub fn cmd_arguments() -> Vec<String> {
 pub fn client_additional_arguments() -> Vec<String> {
     const KEY: &str = "client-additional-arguments";
     arguments_from_key(KEY)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with(key: &str, value: Value) -> Map<String, Value> {
+        let mut map = Map::new();
+        map.insert(key.to_owned(), value);
+        map
+    }
+
+    #[test]
+    fn bool_at_reads_only_real_booleans() {
+        assert!(bool_at(
+            &config_with(CRASH_REPORT_DIALOG_DISABLED_KEY, Value::Bool(true)),
+            CRASH_REPORT_DIALOG_DISABLED_KEY
+        ));
+        assert!(!bool_at(
+            &config_with(CRASH_REPORT_DIALOG_DISABLED_KEY, Value::Bool(false)),
+            CRASH_REPORT_DIALOG_DISABLED_KEY
+        ));
+        assert!(!bool_at(
+            &config_with(
+                CRASH_REPORT_DIALOG_DISABLED_KEY,
+                Value::String("true".to_owned())
+            ),
+            CRASH_REPORT_DIALOG_DISABLED_KEY
+        ));
+        assert!(!bool_at(&Map::new(), CRASH_REPORT_DIALOG_DISABLED_KEY));
+    }
 }

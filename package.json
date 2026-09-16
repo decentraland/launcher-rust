@@ -14,11 +14,15 @@
     "format-tauri": "cd src-tauri && cargo fmt -- --check --verbose",
     "format-core": "cd core && cargo fmt -- --check --verbose",
     "format-installer-hooks": "cd installer-hooks && cargo fmt -- --check --verbose",
-    "format": "npm run format-ui && npm run format-tauri && npm run format-core && npm run format-installer-hooks",
+    "format-watchdog": "cd client-crash-watchdog && cargo fmt -- --check --verbose",
+    "format": "npm run format-ui && npm run format-tauri && npm run format-core && npm run format-installer-hooks && npm run format-watchdog",
     "analyze-tauri": "cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings",
     "analyze-core": "cd core && cargo clippy --all-targets --all-features -- -D warnings",
     "analyze-installer-hooks": "cd installer-hooks && cargo clippy --all-targets --all-features -- -D warnings",
-    "analyze": "npm run analyze-tauri && npm run analyze-core && npm run analyze-installer-hooks"
+    "analyze-watchdog": "cd client-crash-watchdog && cargo clippy --all-targets --all-features -- -D warnings",
+    "analyze": "npm run analyze-tauri && npm run analyze-core && npm run analyze-installer-hooks && npm run analyze-watchdog",
+    "prebuild-sidecars": "rust-script scripts/pre-build-sidecars.rs",
+    "test-watchdog": "cd client-crash-watchdog && cargo test"
   },
   "dependencies": {
     "@sentry/react": "^8.29.0",

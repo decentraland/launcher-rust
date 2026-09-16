@@ -45,6 +45,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Install Node.js
 brew install node # Or use your favorite package manager
 
+# Install rust-script (runs the sidecar build scripts in ./scripts)
+cargo install rust-script --locked
+
 # Clone and install
 git clone https://github.com/decentraland/launcher-rust.git
 cd launcher-rust
@@ -66,6 +69,48 @@ npm run tauri dev
 3. Ensure you have VITE_AWS_S3_BUCKET_PUBLIC_URL env var
 4. Execute in the root dir: npm i
 5. Execute tauri build: npm run tauri build
+
+## Crash watchdog sidecar
+
+`client-crash-watchdog/` builds `dcl_watchdog`, a Tauri sidecar (`bundle.externalBin`) the
+launcher starts next to every Explorer it launches. When the Explorer exits with a non-zero
+status the watchdog writes `{APP_DIR}/crash-reports/<session_id>.json` and reopens the
+launcher with `--crash-report-with-attachment <path>`, which shows the crash-report dialog
+instead of the launch flow. A clean exit ends the watchdog silently.
+
+The sidecar must be staged in `src-tauri/binaries/` before **any** `cargo` command in
+`src-tauri` (build, clippy, test): `tauri-build` copies it at compile time and fails when it is
+missing. `npm run tauri dev` / `tauri build` do this through `beforeDevCommand` /
+`beforeBuildCommand`; run it by hand with:
+
+```bash
+npm run prebuild-sidecars   # or: rust-script scripts/pre-build-sidecars.rs
+```
+
+`TAURI_ENV_TARGET_TRIPLE=universal-apple-darwin` builds both macOS arches and stages the fat
+binary under the universal and both per-arch names.
+
+### Crash report delivery
+
+The report is recorded as a Sentry event and, when the Explorer left a session file, filed as
+an Intercom ticket through `intercom-proxy` using Decentraland Signed Fetch
+(`core/src/infra/signed_fetch`, `core/src/infra/intercom_proxy`). The Explorer writes
+`{APP_DIR}/session-info-<session_id>.json` after login and deletes it on a clean quit:
+
+```json
+{
+  "version": 1,
+  "session_id": "<the --session_id the launcher passed>",
+  "wallet": "0x…",
+  "explorer_version": "…",
+  "identity": { "address": "0x…", "key": "…", "expiration": "…", "ephemeralAuthChain": [ … ] }
+}
+```
+
+The launcher reads the file only in the report flow, refuses an expired identity, never logs
+it, and deletes the file once the report is submitted or dismissed. Without a valid identity
+the report reaches Sentry only. The proxy environment follows the install's `dclenv` (`org`
+by default in production builds, `zone` otherwise).
 
 ## Development Guidelines
 
@@ -108,6 +153,9 @@ The application supports command-line arguments.
 The complete and up-to-date list is defined here:
 https://github.com/decentraland/launcher-rust/blob/main/core/src/environment.rs
 
+`--crash-report-with-attachment <path>` is reserved for `dcl_watchdog`: it selects the
+crash-report dialog flow and points at the crash attachment JSON to report.
+
 ### Configuration File
 
 The configuration file is located at `{APP_DIR}/config.json` and uses JSON format.
@@ -118,7 +166,8 @@ Example:
 {
   "analytics-user-id": "f31c8100-xxxx-xxxx-xxxx-46fc9b13ed0e",
   "client-additional-arguments": "--example-client-arg",
-  "cmd-arguments": "--example-launcher-arg"
+  "cmd-arguments": "--example-launcher-arg",
+  "crash-report-dialog-disabled": false
 }
 ```
 
@@ -135,6 +184,11 @@ Example:
   A string of arguments applied by the launcher in addition to the CLI arguments
   for the current execution.
   Parsed using the same rules as terminal argument strings.
+
+- **crash-report-dialog-disabled**
+  Boolean. Set by "Don't show this again" on the crash-report dialog. When `true`
+  the crash watchdog still records an unexpected Explorer exit but does not reopen
+  the launcher to ask for a report. Delete the key or set `false` to re-enable.
 
 #### Usage Examples
 

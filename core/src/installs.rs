@@ -43,9 +43,10 @@ const APP_NAME: &str = "DecentralandLauncherLight";
 const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
 
 #[cfg(target_os = "macos")]
-pub const EXPLORER_MAC_APP_NAME: &str = "Decentraland";
-#[cfg(target_os = "macos")]
-const EXPLORER_MAC_APP_PATH: &str = concat!("Decentraland", ".app");
+const EXPLORER_MAC_APP_PATH: &str = "Decentraland.app";
+/// Fallback when `Info.plist` has no readable `CFBundleExecutable`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const EXPLORER_MAC_BIN_NAME: &str = "Explorer";
 
 #[cfg(target_os = "windows")]
 const EXPLORER_WIN_BIN_PATH: &str = "Decentraland.exe";
@@ -123,6 +124,57 @@ pub fn dcl_env_bridge_path() -> PathBuf {
 
 pub fn campaign_attribution_reported_marker_path() -> PathBuf {
     explorer_path().join("campaign-attribution-reported-marker.txt")
+}
+
+/// Directory of `CrashAttachment` files.
+pub fn crash_reports_dir() -> PathBuf {
+    explorer_path().join("crash-reports")
+}
+
+const SESSION_INFO_PREFIX: &str = "session-info-";
+
+/// One file per Explorer session; see `explorer_session_info.rs` for the contents.
+pub fn session_info_path(session_id: &str) -> PathBuf {
+    explorer_path().join(format!(
+        "{SESSION_INFO_PREFIX}{}.json",
+        safe_file_stem(session_id)
+    ))
+}
+
+/// Every session-info file currently in the app directory.
+pub fn session_info_files() -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(explorer_path()) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let is_session_file = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(SESSION_INFO_PREFIX));
+            let is_json = path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+            is_session_file && is_json
+        })
+        .collect()
+}
+
+/// Ids arrive through argv or files written by other processes, so anything that could escape
+/// the app directory is stripped before an id becomes a file name.
+pub fn safe_file_stem(id: &str) -> String {
+    const FALLBACK: &str = "unknown";
+    let stem: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if stem.is_empty() {
+        FALLBACK.to_owned()
+    } else {
+        stem
+    }
 }
 
 // There is no point to recovery if the app failed to create working directory
@@ -215,6 +267,61 @@ pub(crate) fn get_explorer_launch_path(version: Option<&str>) -> DCLErrorTyped<P
     {
         Ok(base_path.join(EXPLORER_WIN_BIN_PATH))
     }
+}
+
+/// `Contents/MacOS/<CFBundleExecutable>` of the bundle at `app_path`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn main_explorer_exe(app_path: &Path) -> PathBuf {
+    app_path
+        .join("Contents")
+        .join("MacOS")
+        .join(bundle_executable_name(app_path))
+}
+
+/// Among the processes that appeared under the `.app`, the one running `main_exe`;
+/// helper processes under the same path are not the Explorer.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn main_explorer_pid(main_exe: &Path, registered: &[(u32, PathBuf)]) -> Option<u32> {
+    registered
+        .iter()
+        .find(|(_, exe)| exe == main_exe)
+        .map(|(pid, _)| *pid)
+}
+
+/// `CFBundleExecutable` from `Contents/Info.plist`, or [`EXPLORER_MAC_BIN_NAME`] when
+/// it cannot be read.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn bundle_executable_name(app_path: &Path) -> String {
+    let info_plist = app_path.join("Contents").join("Info.plist");
+    match read_bundle_executable(&info_plist) {
+        Ok(name) => name,
+        Err(e) => {
+            log::warn!(
+                "Cannot read CFBundleExecutable from {}: {:#}; falling back to {}",
+                info_plist.display(),
+                e,
+                EXPLORER_MAC_BIN_NAME
+            );
+            EXPLORER_MAC_BIN_NAME.to_owned()
+        }
+    }
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn read_bundle_executable(info_plist: &Path) -> Result<String> {
+    let plist = plist::Value::from_file(info_plist)?;
+    let name = plist
+        .as_dictionary()
+        .and_then(|dict| dict.get("CFBundleExecutable"))
+        .and_then(plist::Value::as_string)
+        .ok_or_else(|| anyhow!("CFBundleExecutable is missing or not a string"))?;
+    if name.is_empty() || name.contains(['/', '\\']) {
+        return Err(anyhow!(
+            "CFBundleExecutable {:?} is not a plain file name",
+            name
+        ));
+    }
+    Ok(name.to_owned())
 }
 
 #[cfg(target_os = "macos")]
@@ -412,7 +519,8 @@ fn rename_latest_back_to_version(
     branch_path: &Path,
 ) -> DCLErrorResult {
     if target == branch_path {
-        return fs::remove_dir_all(latest_path).map_err(|e| DCLError::from_rename_back(latest_path, e));
+        return fs::remove_dir_all(latest_path)
+            .map_err(|e| DCLError::from_rename_back(latest_path, e));
     }
     if target.exists() {
         fs::remove_dir_all(target).map_err(|e| DCLError::from_rename_back(target, e))?;
@@ -447,13 +555,11 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     #[cfg(target_os = "macos")]
     {
-        const EXPLORER_MAC_BIN_PATH: &str = "Decentraland.app/Contents/MacOS/Explorer";
-
         let from = &branch_path.join("build");
         let to = &branch_path;
         move_recursive(from, to).context("Cannot move build folder")?;
 
-        let explorer_bin_path = branch_path.join(EXPLORER_MAC_BIN_PATH);
+        let explorer_bin_path = main_explorer_exe(&branch_path.join(EXPLORER_MAC_APP_PATH));
         if explorer_bin_path.exists() {
             let metadata = fs::metadata(&explorer_bin_path)?;
             let mut permissions = metadata.permissions();
@@ -506,7 +612,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         file_path: file_path.to_string_lossy().into_owned(),
         source,
     })?;
-    
+
     cleanup_versions(&current_version)
 }
 
@@ -715,23 +821,26 @@ impl InstallsHub {
 
             let poll = async {
                 loop {
-                    if self
+                    let registered = self
                         .running_instances
                         .lock()
                         .await
-                        .register_new_opened_instances_by_fuzzy_path(&explorer_launch_path)
-                    {
-                        break;
+                        .register_new_opened_instances_by_fuzzy_path(&explorer_launch_path);
+                    if !registered.is_empty() {
+                        return registered;
                     }
                     tokio::time::sleep(POLL_INTERVAL).await;
                 }
             };
 
-            if tokio::time::timeout(POLL_TIMEOUT, poll).await.is_err() {
+            let Ok(registered) = tokio::time::timeout(POLL_TIMEOUT, poll).await else {
                 return Err(DCLError::E3011_EXPLORER_PROCESS_NOT_STARTED {
                     path: explorer_launch_path.to_string_lossy().into_owned(),
                 });
-            }
+            };
+
+            self.attach_crash_watchdog(&explorer_launch_path, &registered, preferred_version)
+                .await;
         }
 
         // Check is not applyable on macOS due the indirect launch via the open command
@@ -762,9 +871,45 @@ impl InstallsHub {
 
                 thread::sleep(CHECK_INTERVAL);
             }
+
+            self.spawn_crash_watchdog(child.id(), &explorer_launch_path, preferred_version)
+                .await;
         }
 
         Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn attach_crash_watchdog(
+        &self,
+        app_path: &Path,
+        registered: &[(u32, PathBuf)],
+        preferred_version: Option<&str>,
+    ) {
+        let main_exe = main_explorer_exe(app_path);
+        match main_explorer_pid(&main_exe, registered) {
+            Some(pid) => {
+                self.spawn_crash_watchdog(pid, &main_exe, preferred_version)
+                    .await;
+            }
+            None => log::warn!(
+                "No main Explorer executable {} among new pids {:?}; crash watchdog not started",
+                main_exe.display(),
+                registered
+            ),
+        }
+    }
+
+    /// The watchdog needs the same session id the Explorer received via `--session_id`.
+    async fn spawn_crash_watchdog(
+        &self,
+        pid: u32,
+        explorer_exe: &Path,
+        preferred_version: Option<&str>,
+    ) {
+        let session_id = self.analytics.lock().await.session_id().value().to_owned();
+        let version = Self::readable_version(preferred_version);
+        crate::crash_watchdog::spawn(pid, explorer_exe, &session_id, &version);
     }
 
     #[cfg(target_os = "macos")]
@@ -805,5 +950,104 @@ impl InstallsHub {
                     args
                 )
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> PathBuf {
+        PathBuf::from("/apps/Decentraland.app")
+    }
+
+    fn write_info_plist(executable: Option<&str>) -> Result<PathBuf> {
+        let dir = std::env::temp_dir().join(format!("dcl-bundle-{}", uuid::Uuid::new_v4()));
+        let contents = dir.join("Contents");
+        fs::create_dir_all(&contents)?;
+        let mut dict = plist::Dictionary::new();
+        dict.insert(
+            "CFBundleIdentifier".to_owned(),
+            plist::Value::String("org.decentraland.explorer".to_owned()),
+        );
+        if let Some(executable) = executable {
+            dict.insert(
+                "CFBundleExecutable".to_owned(),
+                plist::Value::String(executable.to_owned()),
+            );
+        }
+        plist::Value::Dictionary(dict).to_file_xml(contents.join("Info.plist"))?;
+        Ok(dir)
+    }
+
+    #[test]
+    fn main_explorer_pid_picks_the_bundle_main_binary_over_helpers() {
+        let main_exe = app().join("Contents/MacOS/Explorer");
+        let registered = vec![
+            (
+                17630,
+                app().join("Contents/PlugIns/uuav-helper.app/Contents/MacOS/uuav-helper"),
+            ),
+            (17631, main_exe.clone()),
+        ];
+        assert_eq!(main_explorer_pid(&main_exe, &registered), Some(17631));
+    }
+
+    #[test]
+    fn main_explorer_pid_is_none_when_only_helpers_spawned() {
+        let registered = vec![(
+            17630,
+            app().join("Contents/PlugIns/uuav-helper.app/Contents/MacOS/uuav-helper"),
+        )];
+        assert_eq!(
+            main_explorer_pid(&app().join("Contents/MacOS/Explorer"), &registered),
+            None
+        );
+    }
+
+    #[test]
+    fn main_explorer_exe_follows_cfbundleexecutable_not_the_app_name() -> Result<()> {
+        let dir = write_info_plist(Some("Explorer"))?;
+        assert_eq!(main_explorer_exe(&dir), dir.join("Contents/MacOS/Explorer"));
+        fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bundle_executable_name_reads_cfbundleexecutable() -> Result<()> {
+        let dir = write_info_plist(Some("Explorer"))?;
+        assert_eq!(bundle_executable_name(&dir), "Explorer");
+        fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bundle_executable_name_follows_a_renamed_binary() -> Result<()> {
+        let dir = write_info_plist(Some("Decentraland"))?;
+        assert_eq!(bundle_executable_name(&dir), "Decentraland");
+        fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bundle_executable_name_falls_back_when_key_is_missing() -> Result<()> {
+        let dir = write_info_plist(None)?;
+        assert_eq!(bundle_executable_name(&dir), EXPLORER_MAC_BIN_NAME);
+        fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn bundle_executable_name_falls_back_when_plist_is_missing() {
+        let dir = std::env::temp_dir().join(format!("dcl-no-bundle-{}", uuid::Uuid::new_v4()));
+        assert_eq!(bundle_executable_name(&dir), EXPLORER_MAC_BIN_NAME);
+    }
+
+    #[test]
+    fn read_bundle_executable_rejects_path_like_names() -> Result<()> {
+        let dir = write_info_plist(Some("../evil"))?;
+        assert!(read_bundle_executable(&dir.join("Contents/Info.plist")).is_err());
+        fs::remove_dir_all(dir)?;
+        Ok(())
     }
 }

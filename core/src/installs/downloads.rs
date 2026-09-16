@@ -152,12 +152,10 @@ pub async fn download_file<T: EventChannel>(
                         tasks.push(task);
                     }
 
-                    let event: Status = Status::State {
-                        step: Step::Downloading {
-                            progress,
-                            build_type: build_type.clone(),
-                        },
-                    };
+                    let event = Status::from(Step::Downloading {
+                        progress,
+                        build_type: build_type.clone(),
+                    });
                     channel
                         .send(event)
                         .context("Cannot send event to channel")?;
