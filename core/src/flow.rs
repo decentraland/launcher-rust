@@ -10,7 +10,7 @@ use crate::{
     environment::AppEnvironment,
     errors::{FlowError, DCLResult},
     installs::{self, InstallsHub},
-    s3::{self, ReleaseResponse},
+    s3::{self, ReleaseChannel, ReleaseResponse},
     types::{BuildType, Status, Step},
 };
 use anyhow::{Context, Ok, Result, anyhow};
@@ -309,10 +309,25 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
             .track_and_flush_silent(Event::FETCH_VERSION_START)
             .await;
 
-        let prefer_canary_release = environment::AppEnvironment::cmd_args().prefer_canary_release;
-        let user_id = config::user_id_or_new()?;
 
-        let fetch_result = crate::s3::fetch_explorer_release(user_id, prefer_canary_release).await;
+        let prefer_canary_release = { 
+            let enable_canary_releases_and_preserve =
+                environment::AppEnvironment::cmd_args().enable_canary_releases_and_preserve;
+
+            if enable_canary_releases_and_preserve {
+                config::preserve_canary_releases_preference(enable_canary_releases_and_preserve)?;
+                true
+            }
+            else {
+                config::use_canary_releases()
+            }
+        };
+
+        let user_id = config::user_id_or_new()?;
+        // Captured before the install step creates `latest/`, which is what makes a user "known".
+        let new_user = !installs::latest_dir_exists();
+
+        let fetch_result = crate::s3::fetch_explorer_release(&user_id, prefer_canary_release).await;
         if let Err(e) = &fetch_result {
             self.analytics
                 .lock()
@@ -324,13 +339,25 @@ impl WorkflowStep<LaunchFlowState, ()> for FetchStep {
         }
         let latest_release = fetch_result?;
         let version = latest_release.version.clone();
+        let channel = latest_release.channel;
         state.lock().await.latest_release = Some(latest_release);
 
-        self.analytics
-            .lock()
-            .await
-            .track_and_flush_silent(Event::FETCH_VERSION_SUCCESS { version })
-            .await;
+        {
+            let mut analytics = self.analytics.lock().await;
+            analytics
+                .track_and_flush_silent(Event::FETCH_VERSION_SUCCESS {
+                    version: version.clone(),
+                })
+                .await;
+            analytics
+                .track_and_flush_silent(Event::RELEASE_CHANNEL_SELECTED {
+                    channel: channel.as_str().to_owned(),
+                    version,
+                    new_user,
+                    forced_locally: prefer_canary_release,
+                })
+                .await;
+        }
 
         DCLResult::Ok(())
     }
@@ -348,6 +375,16 @@ impl DownloadStep {
         } else {
             BuildType::New
         }
+    }
+
+    /// Canary builds can be served from an arbitrary url (a nightly bucket, a custom
+    /// `canary.json`), which the bucket-shaped regex below cannot parse. For those, the version
+    /// declared by the release is authoritative; regular releases keep deriving it from the url.
+    async fn version_of(&self, release: &ReleaseResponse) -> Result<String> {
+        if release.channel == ReleaseChannel::Canary {
+            return Ok(release.version.clone());
+        }
+        self.version_from_url(&release.browser_download_url).await
     }
 
     async fn version_from_url(&self, url: &str) -> Result<String> {
@@ -435,7 +472,7 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         match release {
             Some(r) => {
                 let url = &r.browser_download_url;
-                let version = self.version_from_url(url).await?;
+                let version = self.version_of(r).await?;
 
                 let target_path = installs::target_download_path();
                 let path: &str = target_path

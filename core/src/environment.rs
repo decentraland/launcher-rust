@@ -17,7 +17,7 @@ const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
 const ARG_USE_UPDATER_URL: &str = "use-updater-url";
 
 const ARG_USE_LATEST_JSON_URL: &str = "use-latest-json-url";
-const ARG_PREFER_CANARY_RELEASE: &str = "prefer-canary-release";
+const ARG_ENABLE_CANARY_RELEASES_AND_PRESERVE: &str = "enable-canary-releases-and-preserve";
 
 pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
 // Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
@@ -51,7 +51,7 @@ pub struct Args {
     pub use_updater_url: Option<String>,
 
     pub use_latest_json_url: Option<String>,
-    pub prefer_canary_release: bool,
+    pub enable_canary_releases_and_preserve: bool,
 
     // used by the client
     pub local_scene: bool,
@@ -77,7 +77,7 @@ impl Args {
                 .use_latest_json_url
                 .clone()
                 .or_else(|| other.use_latest_json_url.clone()),
-            prefer_canary_release: self.prefer_canary_release || other.prefer_canary_release,
+            enable_canary_releases_and_preserve: self.enable_canary_releases_and_preserve || other.enable_canary_releases_and_preserve,
             local_scene: self.local_scene || other.local_scene,
             bridge_only: self.bridge_only || other.bridge_only,
         }
@@ -100,10 +100,7 @@ impl Args {
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
             use_latest_json_url: Self::value_by_flag(ARG_USE_LATEST_JSON_URL, &vector),
-            prefer_canary_release: Self::has_flag(
-                ARG_PREFER_CANARY_RELEASE,
-                &vector,
-            ),
+            enable_canary_releases_and_preserve: Self::has_flag(ARG_ENABLE_CANARY_RELEASES_AND_PRESERVE, &vector),
             local_scene: Self::has_flag(ARG_LOCAL_SCENE, &vector),
             bridge_only: Self::has_flag(ARG_BRIDGE_ONLY, &vector),
         }
@@ -261,6 +258,62 @@ mod tests {
     }
 
     #[test]
+    fn test_canary_args_parsed() {
+        let args = Args::parse(
+            [
+                "app",
+                "--prefer-canary-release",
+                "--use-canary-json-url",
+                "https://example.com/canary.json",
+            ]
+            .map(ToOwned::to_owned)
+            .into_iter(),
+        );
+
+        assert!(args.prefer_canary_release);
+        assert_eq!(
+            args.use_canary_json_url.as_deref(),
+            Some("https://example.com/canary.json")
+        );
+    }
+
+    #[test]
+    fn test_canary_args_default_to_off() {
+        let args = Args::parse(["app"].map(ToOwned::to_owned).into_iter());
+
+        assert!(!args.prefer_canary_release);
+        assert!(args.use_canary_json_url.is_none());
+        assert!(!args.prefers_canary_release());
+    }
+
+    #[test]
+    fn test_custom_canary_url_implies_the_preference() {
+        let args = Args::parse(
+            [
+                "app",
+                "--use-canary-json-url",
+                "https://example.com/canary.json",
+            ]
+            .map(ToOwned::to_owned)
+            .into_iter(),
+        );
+
+        assert!(!args.prefer_canary_release);
+        assert!(args.prefers_canary_release());
+    }
+
+    #[test]
+    fn test_flag_alone_prefers_canary() {
+        let args = Args::parse(
+            ["app", "--prefer-canary-release"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
+
+        assert!(args.prefers_canary_release());
+    }
+
+    #[test]
     fn test_merge_with() {
         let a = Args {
             skip_analytics: true,
@@ -270,6 +323,8 @@ mod tests {
             never_trigger_updater: false,
             use_updater_url: Some("https://one.com".into()),
             use_latest_json_url: None,
+            prefer_canary_release: true,
+            use_canary_json_url: None,
             local_scene: false,
             bridge_only: false,
         };
@@ -282,6 +337,8 @@ mod tests {
             never_trigger_updater: true,
             use_updater_url: Some("https://two.com".into()),
             use_latest_json_url: Some("https://one.com".into()),
+            prefer_canary_release: false,
+            use_canary_json_url: Some("https://canary.example.com/canary.json".into()),
             local_scene: false,
             bridge_only: false,
         };
@@ -292,7 +349,12 @@ mod tests {
         assert!(merged.open_new_client_instance);
         assert!(merged.always_trigger_updater);
         assert!(merged.never_trigger_updater);
+        assert!(merged.prefer_canary_release);
         assert!(!merged.local_scene);
+        assert_eq!(
+            merged.use_canary_json_url.as_deref(),
+            Some("https://canary.example.com/canary.json")
+        );
         // Should keep first if present
         assert_eq!(merged.use_updater_url.as_deref(), Some("https://one.com"));
         assert_eq!(
