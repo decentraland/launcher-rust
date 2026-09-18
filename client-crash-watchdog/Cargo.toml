@@ -1,6 +1,6 @@
 [package]
 name = "dcl_watchdog"
-version = "1.22.3"
+version = "1.23.0"
 edition = "2024"
 description = "Watches the Decentraland Explorer process and reopens the launcher's crash-report dialog after an unexpected exit"
 
