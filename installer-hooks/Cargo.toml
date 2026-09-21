@@ -1,6 +1,6 @@
 [package]
 name = "installer-hooks"
-version = "1.23.0"
+version = "1.23.1"
 edition = "2024"
 
 [profile.dev]
