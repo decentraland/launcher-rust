@@ -1,6 +1,8 @@
 pub mod macos;
 
 use log::info;
+use std::ffi::OsString;
+use std::path::PathBuf;
 
 use crate::config;
 
@@ -22,6 +24,14 @@ pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instan
 // Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
 pub const ARG_MULTI_INSTANCE: &str = "multi-instance";
 pub const ARG_LOCAL_SCENE: &str = "local-scene";
+/// When present, run in bridge-only mode (no client UI).
+/// Used for deeplink/file-bridge integrations and headless operations.
+pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
+/// Deeplink query key carrying a signin identity id (`AppArgsFlags.SIGNIN` in the client).
+/// The client defers unclaimed signin deeplinks instead of consuming them immediately.
+pub const ARG_SIGNIN: &str = "signin";
+/// Path to a `CrashAttachment` JSON.
+pub const ARG_CRASH_REPORT_WITH_ATTACHMENT: &str = "crash-report-with-attachment";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
@@ -47,6 +57,9 @@ pub struct Args {
 
     // used by the client
     pub local_scene: bool,
+    pub bridge_only: bool,
+
+    pub crash_report_attachment: Option<PathBuf>,
 }
 
 impl Args {
@@ -69,6 +82,11 @@ impl Args {
                 .clone()
                 .or_else(|| other.use_latest_json_url.clone()),
             local_scene: self.local_scene || other.local_scene,
+            bridge_only: self.bridge_only || other.bridge_only,
+            crash_report_attachment: self
+                .crash_report_attachment
+                .clone()
+                .or_else(|| other.crash_report_attachment.clone()),
         }
     }
 
@@ -90,6 +108,9 @@ impl Args {
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
             use_latest_json_url: Self::value_by_flag(ARG_USE_LATEST_JSON_URL, &vector),
             local_scene: Self::has_flag(ARG_LOCAL_SCENE, &vector),
+            bridge_only: Self::has_flag(ARG_BRIDGE_ONLY, &vector),
+            crash_report_attachment: Self::value_by_flag(ARG_CRASH_REPORT_WITH_ATTACHMENT, &vector)
+                .map(PathBuf::from),
         }
     }
 
@@ -167,9 +188,83 @@ impl AppEnvironment {
     }
 }
 
+/// Removes `--crash-report-with-attachment <path>`, keeping every other argument.
+pub fn strip_crash_report_args(args: Vec<OsString>) -> Vec<OsString> {
+    let flag = format!("--{ARG_CRASH_REPORT_WITH_ATTACHMENT}");
+    let mut result = Vec::with_capacity(args.len());
+    let mut iter = args.into_iter().peekable();
+
+    while let Some(arg) = iter.next() {
+        if arg != flag.as_str() {
+            result.push(arg);
+            continue;
+        }
+        if iter
+            .peek()
+            .is_some_and(|next| !next.to_string_lossy().starts_with("--"))
+        {
+            iter.next();
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    fn os_args(args: &[&str]) -> Vec<OsString> {
+        args.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn test_crash_report_attachment_parsed() {
+        let args = Args::parse(
+            ["app", "--crash-report-with-attachment", "/tmp/crash.json"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
+        assert_eq!(
+            args.crash_report_attachment.as_deref(),
+            Some(Path::new("/tmp/crash.json"))
+        );
+
+        let args = Args::parse(["app"].map(ToOwned::to_owned).into_iter());
+        assert!(args.crash_report_attachment.is_none());
+    }
+
+    #[test]
+    fn strip_crash_report_args_removes_flag_and_value_only() {
+        let stripped = strip_crash_report_args(os_args(&[
+            "app",
+            "--skip-analytics",
+            "--crash-report-with-attachment",
+            "/tmp/crash.json",
+            "--never-trigger-updater",
+        ]));
+        assert_eq!(
+            stripped,
+            os_args(&["app", "--skip-analytics", "--never-trigger-updater"])
+        );
+    }
+
+    #[test]
+    fn strip_crash_report_args_keeps_following_flag_when_value_missing() {
+        let stripped = strip_crash_report_args(os_args(&[
+            "app",
+            "--crash-report-with-attachment",
+            "--skip-analytics",
+        ]));
+        assert_eq!(stripped, os_args(&["app", "--skip-analytics"]));
+    }
+
+    #[test]
+    fn strip_crash_report_args_is_identity_without_the_flag() {
+        let args = os_args(&["app", "decentraland://open", "--skip-analytics"]);
+        assert_eq!(strip_crash_report_args(args.clone()), args);
+    }
 
     #[test]
     fn test_known_args_parsed() {
@@ -255,6 +350,8 @@ mod tests {
             use_updater_url: Some("https://one.com".into()),
             use_latest_json_url: None,
             local_scene: false,
+            bridge_only: false,
+            crash_report_attachment: None,
         };
 
         let b = Args {
@@ -266,6 +363,8 @@ mod tests {
             use_updater_url: Some("https://two.com".into()),
             use_latest_json_url: Some("https://one.com".into()),
             local_scene: false,
+            bridge_only: false,
+            crash_report_attachment: Some(PathBuf::from("b.json")),
         };
 
         let merged = a.merge_with(&b);
@@ -280,6 +379,10 @@ mod tests {
         assert_eq!(
             merged.use_latest_json_url.as_deref(),
             Some("https://one.com")
+        );
+        assert_eq!(
+            merged.crash_report_attachment.as_deref(),
+            Some(Path::new("b.json"))
         );
     }
 }

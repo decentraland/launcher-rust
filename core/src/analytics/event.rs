@@ -14,6 +14,13 @@ pub enum Event {
     LAUNCHER_CLOSE {
         version: String,
     },
+    FETCH_VERSION_START,
+    FETCH_VERSION_SUCCESS {
+        version: String,
+    },
+    FETCH_VERSION_ERROR {
+        error: String,
+    },
     DOWNLOAD_VERSION {
         version: String,
     },
@@ -32,6 +39,9 @@ pub enum Event {
     DOWNLOAD_VERSION_CANCELLED {
         version: String,
     },
+    DOWNLOAD_VERSION_SKIPPED {
+        version: String,
+    },
     INSTALL_VERSION_START {
         version: String,
     },
@@ -41,6 +51,9 @@ pub enum Event {
     INSTALL_VERSION_ERROR {
         version: Option<String>,
         error: String,
+    },
+    INSTALL_VERSION_SKIPPED {
+        version: String,
     },
     LAUNCH_CLIENT_START {
         version: String,
@@ -77,6 +90,47 @@ pub enum Event {
     CAMPAIGN_ATTRIBUTION_DETECTED {
         anon_user_id: String,
     },
+    LAUNCHER_INSTALLER_START {
+        installer_file_name: String,
+    },
+    LAUNCHER_INSTALLER_FINISH {
+        installer_file_name: String,
+    },
+    EXPLORER_UNEXPECTED_EXIT {
+        session_id: String,
+        explorer_version: String,
+        exit_code: String,
+        /// No dialog followed because the user opted out.
+        dialog_suppressed: bool,
+    },
+    CRASH_REPORT_DIALOG_SHOWN {
+        session_id: String,
+        explorer_version: String,
+        exit_code: String,
+    },
+    CRASH_REPORT_FORM_OPENED {
+        session_id: String,
+    },
+    CRASH_REPORT_SUBMIT {
+        session_id: String,
+        issue_type: String,
+        share_logs: bool,
+    },
+    CRASH_REPORT_SUBMIT_SUCCESS {
+        session_id: String,
+        /// An Intercom ticket was created; `false` means the report reached Sentry only.
+        intercom: bool,
+    },
+    CRASH_REPORT_SUBMIT_ERROR {
+        session_id: String,
+        error: String,
+    },
+    CRASH_REPORT_DISMISSED {
+        session_id: String,
+        submitted: bool,
+        relaunch: bool,
+        dont_show_again: bool,
+    },
 }
 
 impl Display for Event {
@@ -88,14 +142,19 @@ impl Display for Event {
             match self {
                 Event::LAUNCHER_OPEN { .. } => "Launcher Open",
                 Event::LAUNCHER_CLOSE { .. } => "Launcher Close",
+                Event::FETCH_VERSION_START => "Fetch Version Start",
+                Event::FETCH_VERSION_SUCCESS { .. } => "Fetch Version Success",
+                Event::FETCH_VERSION_ERROR { .. } => "Fetch Version Error",
                 Event::DOWNLOAD_VERSION { .. } => "Download Version",
                 Event::DOWNLOAD_VERSION_PROGRESS { .. } => "Download Version Progress",
                 Event::DOWNLOAD_VERSION_SUCCESS { .. } => "Download Version Success",
                 Event::DOWNLOAD_VERSION_ERROR { .. } => "Download Version Error",
                 Event::DOWNLOAD_VERSION_CANCELLED { .. } => "Download Version Cancelled",
+                Event::DOWNLOAD_VERSION_SKIPPED { .. } => "Download Version Skipped",
                 Event::INSTALL_VERSION_START { .. } => "Install Version Start",
                 Event::INSTALL_VERSION_SUCCESS { .. } => "Install Version Success",
                 Event::INSTALL_VERSION_ERROR { .. } => "Install Version Error",
+                Event::INSTALL_VERSION_SKIPPED { .. } => "Install Version Skipped",
                 Event::LAUNCH_CLIENT_START { .. } => "Launch Client Start",
                 Event::LAUNCH_CLIENT_SUCCESS { .. } => "Launch Client Success",
                 Event::LAUNCH_CLIENT_ERROR { .. } => "Launch Client Error",
@@ -108,6 +167,15 @@ impl Display for Event {
                 Event::FLOW_ATTEMPT_ERROR { .. } => "Launcher Attempt Error",
                 Event::RETRY_FLOW_BUTTON_CLICK { .. } => "Retry Flow Button Click",
                 Event::CAMPAIGN_ATTRIBUTION_DETECTED { .. } => "Campaign Attribution Detected",
+                Event::LAUNCHER_INSTALLER_START { .. } => "Launcher Installer Start",
+                Event::LAUNCHER_INSTALLER_FINISH { .. } => "Launcher Installer Finish",
+                Event::EXPLORER_UNEXPECTED_EXIT { .. } => "Explorer Unexpected Exit",
+                Event::CRASH_REPORT_DIALOG_SHOWN { .. } => "Crash Report Dialog Shown",
+                Event::CRASH_REPORT_FORM_OPENED { .. } => "Crash Report Form Opened",
+                Event::CRASH_REPORT_SUBMIT { .. } => "Crash Report Submit",
+                Event::CRASH_REPORT_SUBMIT_SUCCESS { .. } => "Crash Report Submit Success",
+                Event::CRASH_REPORT_SUBMIT_ERROR { .. } => "Crash Report Submit Error",
+                Event::CRASH_REPORT_DISMISSED { .. } => "Crash Report Dismissed",
             }
         )
     }

@@ -8,7 +8,7 @@
   "rust-analyzer.check.command": "clippy",
   "rust-analyzer.linkedProjects": [
     "core/Cargo.toml",
-    "src-auto-auth/Cargo.toml",
+    "installer-hooks/Cargo.toml",
     "src-tauri/Cargo.toml"
   ]
 }

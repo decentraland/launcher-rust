@@ -18,15 +18,17 @@ const PACKAGE_JSON_LOCK: &str = "package-lock.json";
 const APP_CONFIG_LOCK: &str = "src-tauri/tauri.conf.json";
 const APP_RS_TOML: &str = "src-tauri/Cargo.toml";
 const CORE_RS_TOML: &str = "core/Cargo.toml";
-const AUTO_AUTH_RS_TOML: &str = "src-auto-auth/Cargo.toml";
+const INSTALLER_HOOKS_RS_TOML: &str = "installer-hooks/Cargo.toml";
+const WATCHDOG_RS_TOML: &str = "client-crash-watchdog/Cargo.toml";
 
-const FILES: [&'static str; 6] = [
+const FILES: [&'static str; 7] = [
     PACKAGE_JSON,
     PACKAGE_JSON_LOCK,
     APP_CONFIG_LOCK,
     APP_RS_TOML,
     CORE_RS_TOML,
-    AUTO_AUTH_RS_TOML
+    INSTALLER_HOOKS_RS_TOML,
+    WATCHDOG_RS_TOML
 ];
 
 #[derive(Debug)]

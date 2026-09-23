@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useState } from "react";
 import { Box, Typography } from "decentraland-ui2";
-import { Status, BuildType } from "./types";
+import { Status, LaunchStatus, ReportStep, BuildType } from "./types";
 import {
   Landscape,
   LoadingBar,
@@ -9,6 +9,7 @@ import {
   ErrorDialogButton,
 } from "./Home.styles";
 import { versionLabel } from "./VersionLabel";
+import { ReportView } from "../Report/ReportView";
 
 import LANDSCAPE_IMG from "../../assets/background.jpg";
 import LOGO_SVG from "../../assets/logo.svg";
@@ -37,9 +38,38 @@ const errorWindowSize = {
   height: 358,
 };
 
+// Sizes from the design frames (2x screenshots read as logical px), tuned to fit 768px screens.
+const reportPromptWindowSize = { width: 600, height: 430 };
+const reportFormWindowSize = { width: 680, height: 700 };
+const reportSubmittedWindowSize = { width: 600, height: 400 };
+
+// Last size requested, so re-renders on every keystroke don't spam the window manager.
+// Plumbing, not UI state: nothing is rendered from it.
+let lastRequestedSize: WindowSize | null = null;
+
 const resizeWindow = async (size: WindowSize) => {
-  const logicalSize = asLogicalSize(size);
-  await getCurrentWindow().setSize(logicalSize).catch(console.error);
+  if (
+    lastRequestedSize &&
+    lastRequestedSize.width === size.width &&
+    lastRequestedSize.height === size.height
+  ) {
+    return;
+  }
+  lastRequestedSize = size;
+  const window = getCurrentWindow();
+  await window.setSize(asLogicalSize(size)).catch(console.error);
+  await window.center().catch(console.error);
+};
+
+const reportWindowSize = (step: ReportStep): WindowSize => {
+  switch (step.event) {
+    case "infoSomethingWrongStep":
+      return reportPromptWindowSize;
+    case "bugReportFormStep":
+      return reportFormWindowSize;
+    case "bugReportSubmittedStep":
+      return reportSubmittedWindowSize;
+  }
 };
 
 interface ChannelProxy {
@@ -76,10 +106,17 @@ const channel = newChannelProxy();
 export const Home: React.FC = memo(() => {
   const currentStatus = useChannelUpdates(channel);
 
-  const rustCall = async (functionName: string) => {
+  // Every command gets a fresh channel: whatever Rust broadcasts next lands in the same
+  // `currentStatus`, so the UI never keeps state of its own.
+  const rustCall = async (
+    functionName: string,
+    args: Record<string, unknown> = {},
+  ) => {
     const newChannel = new Channel<Status>();
     channel.assignNewChannel(newChannel);
-    await invoke(functionName, { channel: newChannel }).catch(console.error);
+    await invoke(functionName, { channel: newChannel, ...args }).catch(
+      console.error,
+    );
   };
 
   const launchFlow = async () => await rustCall("launch");
@@ -93,10 +130,21 @@ export const Home: React.FC = memo(() => {
     if (!currentStatus) return null;
 
     switch (currentStatus.event) {
+      case "launch":
+        return renderLaunchStatus(currentStatus.data);
+      case "report":
+        return renderReportStep(currentStatus.data);
+      default:
+        return null;
+    }
+  };
+
+  const renderLaunchStatus = (status: LaunchStatus) => {
+    switch (status.event) {
       case "state":
-        switch (currentStatus.data.step.event) {
+        switch (status.data.step.event) {
           case "launcherUpdate": {
-            const data = currentStatus.data.step.data;
+            const data = status.data.step.data;
             switch (data.event) {
               case "checkingForUpdate":
                 return renderStep("Checking for update...");
@@ -117,23 +165,28 @@ export const Home: React.FC = memo(() => {
           case "fetching":
             return renderFetchStep();
           case "downloading": {
-            let data = currentStatus.data.step.data;
+            let data = status.data.step.data;
             let isUpdate = data.buildType === BuildType.Update;
             let progress = data.progress;
             return renderDownloadStep(isUpdate, progress);
           }
           case "installing":
-            let data = currentStatus.data.step.data;
+            let data = status.data.step.data;
             let isUpdate = data.buildType === BuildType.Update;
             return renderInstallStep(isUpdate);
           case "launching":
             return renderLaunchStep();
         }
       case "error":
-        return renderError(currentStatus.data.message);
+        return renderError(status.data.message);
       default:
         return null;
     }
+  };
+
+  const renderReportStep = (step: ReportStep) => {
+    resizeWindow(reportWindowSize(step));
+    return <ReportView step={step} send={rustCall} />;
   };
 
   const renderDeeplinkOpeningStep = () => renderStep("Opening Deeplink...");

@@ -101,8 +101,10 @@ jobs:
         include:
           - os: macos-latest
             bundles: [dmg, macos]
+            args: --target universal-apple-darwin
           - os: windows-latest
             bundles: [nsis]
+            args: ""
 
     runs-on: ${{ matrix.os }}
 
@@ -114,7 +116,9 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            client-crash-watchdog
           cache-targets: true
           cache-provider: github
 
@@ -128,7 +132,16 @@ jobs:
         with:
           toolchain: 1.88.0
           components: clippy,rustfmt
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # The build scripts under ./scripts are rust-script files, and Tauri's
+      # beforeBuildCommand invokes them too, so this must precede any build.
+      - name: Install rust-script
+        run: |
+          if ! command -v rust-script &> /dev/null; then
+              echo "Installing rust-script..."
+              cargo install rust-script --locked
+          fi
 
       - run: npm ci
         env:
@@ -167,7 +180,7 @@ jobs:
           echo "Certificate imported."
 
       - name: Download CodeSignTool
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         shell: pwsh
         run: |
           $extractPath = "C:\CodeSignTool"
@@ -195,7 +208,7 @@ jobs:
           Write-Host "Set CODESIGN_JAVA to $($javaExe.FullName)"
           
       - name: Patch sign command in tauri.conf.json
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         shell: pwsh
         run: |
           cd src-tauri\scripts
@@ -203,22 +216,48 @@ jobs:
           cd -
 
       - name: Patch sign.ps1 path in tauri.conf.json
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         run: |
           SIGN_SCRIPT_PATH="${GITHUB_WORKSPACE}/src-tauri/scripts/sign.ps1"
           sed -i.bak "s|\"sign.ps1\"|\"${SIGN_SCRIPT_PATH//\\/\/}\"|g" src-tauri/tauri.conf.json
 
-      - name: Prebuild AutoAuth
+      - name: Prebuild InstallerHooks
         working-directory: ${{ github.workspace }}
         if: ${{ matrix.os == 'windows-latest' }}
-        run: powershell -ExecutionPolicy Bypass -File ./pre-build-auto-auth.ps1
+        env:
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+        run: powershell -ExecutionPolicy Bypass -File ./pre-build-installer-hooks.ps1
+
+      # Staged before any cargo command in src-tauri: tauri-build copies the
+      # externalBin at compile time and fails when it is missing.
+      - name: Prebuild Watchdog Sidecar
+        working-directory: ${{ github.workspace }}
+        if: ${{ matrix.os == 'windows-latest' }}
+        env:
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+        run: rust-script scripts/pre-build-watchdog.rs
+
+      # Builds both arches, lipo's them and stages the fat binary under the
+      # universal name (for the bundler) and both per-arch names (for
+      # tauri-build, which compiles each arch with its own triple).
+      - name: Prebuild Watchdog Sidecar (macOS universal)
+        working-directory: ${{ github.workspace }}
+        if: ${{ matrix.os == 'macos-latest' }}
+        env:
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          TAURI_ENV_TARGET_TRIPLE: universal-apple-darwin
+        run: rust-script scripts/pre-build-watchdog.rs
 
       - name: Code Analysis Core
         working-directory: ${{ github.workspace }}/core
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Code Analysis AutoAuth
-        working-directory: ${{ github.workspace }}/src-auto-auth
+      - name: Code Analysis Watchdog
+        working-directory: ${{ github.workspace }}/client-crash-watchdog
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Code Analysis InstallerHooks
+        working-directory: ${{ github.workspace }}/installer-hooks
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Code Analysis Tauri
@@ -240,6 +279,7 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           LAUNCHER_ENVIRONMENT: prod
+          DCL_INSTALLER_HOOKS_EXE: ${{ github.workspace }}\src-tauri\resources\installer-hooks.exe
           GIT_COMMIT: ${{ github.sha }}
           PR_NUMBER: ${{ inputs.pr-number || 'na' }}
           ES_USERNAME: ${{ secrets.ES_USERNAME }}
@@ -254,7 +294,7 @@ jobs:
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
-          args: ${{ secrets.args }}
+          args: ${{ matrix.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
       - name: Build Dry-Run
@@ -272,14 +312,24 @@ jobs:
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           LAUNCHER_ENVIRONMENT: dev
+          DCL_INSTALLER_HOOKS_EXE: ${{ github.workspace }}\src-tauri\resources\installer-hooks.exe
           GIT_COMMIT: ${{ github.sha }}
           PR_NUMBER: ${{ inputs.pr-number || 'na' }}
         with:
-          args: ${{ secrets.args }}
+          args: ${{ matrix.args }}
           projectPath: ${{ env.PROJECT_PATH }}
 
-      - name: Sign dcl_launcher.exe manually (Win)
+      - name: Verify static CRT linking (Win)
         if: ${{ matrix.os == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\src-tauri\scripts\assert-static-crt.ps1" `
+            "${{ github.workspace }}\src-tauri\target\release\dcl_launcher.exe" `
+            "${{ github.workspace }}\src-tauri\resources\installer-hooks.exe" `
+            "${{ github.workspace }}\src-tauri\target\release\dcl_watchdog.exe"
+
+      - name: Sign dcl_launcher.exe manually (Win)
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         shell: pwsh
         env:
           ES_USERNAME: ${{ secrets.ES_USERNAME }}
@@ -463,6 +513,25 @@ jobs:
             fi
           else
             echo "❌ Signed EXE not found"
+            exit 1
+          fi
+
+          # Tauri signs externalBin in place with the same signCommand and NSIS
+          # bundles that staged copy (target/release/dcl_watchdog.exe is never
+          # signed or shipped); an unsigned watchdog would trip SmartScreen the
+          # first time it reopens the launcher.
+          SIDECAR_EXE="src-tauri/binaries/dcl_watchdog-x86_64-pc-windows-msvc.exe"
+          echo "Checking watchdog sidecar signature..."
+          if [[ -f "$SIDECAR_EXE" ]]; then
+            powershell.exe -Command "Get-AuthenticodeSignature '$SIDECAR_EXE'"
+            SIDECAR_STATUS=$(powershell.exe -Command "(Get-AuthenticodeSignature '$SIDECAR_EXE').Status")
+            echo "Sidecar signature status: $SIDECAR_STATUS"
+            if [[ "$SIDECAR_STATUS" != "Valid" ]]; then
+              echo "❌ Watchdog sidecar is not signed or signature is invalid"
+              exit 1
+            fi
+          else
+            echo "❌ Watchdog sidecar not found at $SIDECAR_EXE"
             exit 1
           fi
 

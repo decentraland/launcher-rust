@@ -93,8 +93,9 @@ jobs:
           echo "[INFO] Excluding published short SHAs:"
           grep -Ff published_shas.txt draft_shas.txt || true
 
-          # Exclude published SHAs (short)
-          grep -vFf published_shas.txt draft_shas.txt > unpublished_drafts.txt
+          # Exclude published SHAs (short); grep exits 1 when every draft is
+          # published (no unpublished lines), which is not an error here.
+          grep -vFf published_shas.txt draft_shas.txt > unpublished_drafts.txt || true
 
           echo "[INFO] Unpublished draft-release SHAs:"
           cat unpublished_drafts.txt

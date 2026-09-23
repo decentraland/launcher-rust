@@ -3,6 +3,38 @@ use anyhow::Result;
 use log::{Metadata, Record, info};
 use sentry_log::SentryLogger;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LogDestination {
+    File,
+    Sentry,
+    All,
+}
+
+impl LogDestination {
+    const FILE_TARGET: &'static str = "dest:file";
+    const SENTRY_TARGET: &'static str = "dest:sentry";
+    const ALL_TARGET: &'static str = "dest:all";
+
+    #[must_use]
+    pub const fn as_target(self) -> &'static str {
+        match self {
+            Self::File => Self::FILE_TARGET,
+            Self::Sentry => Self::SENTRY_TARGET,
+            Self::All => Self::ALL_TARGET,
+        }
+    }
+}
+
+impl From<&str> for LogDestination {
+    fn from(target: &str) -> Self {
+        match target {
+            Self::FILE_TARGET => Self::File,
+            Self::SENTRY_TARGET => Self::Sentry,
+            _ => Self::All,
+        }
+    }
+}
+
 pub fn dispath_logs() -> Result<()> {
     let path = installs::log_file_path()?;
     let log_file = fern::log_file(&path)?;
@@ -16,7 +48,7 @@ pub fn dispath_logs() -> Result<()> {
                 "[{} {} {}] {}",
                 humantime::format_rfc3339(std::time::SystemTime::now()),
                 record.level(),
-                record.target(),
+                record.module_path().unwrap_or_else(|| record.target()),
                 message
             ));
         })
@@ -58,8 +90,14 @@ impl log::Log for CombinedLog {
     }
 
     fn log(&self, record: &Record) {
-        self.fern.log(record);
-        self.sentry.log(record);
+        match LogDestination::from(record.target()) {
+            LogDestination::File => self.fern.log(record),
+            LogDestination::Sentry => self.sentry.log(record),
+            LogDestination::All => {
+                self.fern.log(record);
+                self.sentry.log(record);
+            }
+        }
     }
 
     fn flush(&self) {

@@ -11,6 +11,7 @@ const PROTOCOL_PREFIX: &str = "decentraland://";
 #[derive(Default, Clone)]
 pub struct Protocol {}
 
+#[derive(Debug)]
 pub enum DeepLinkCreateError {
     WrongPrefix { original_content: String },
 }
@@ -35,6 +36,12 @@ impl DeepLink {
                 original_content: value,
             })
         }
+    }
+
+    pub(crate) fn from_query(query: &str) -> Self {
+        let original = format!("{PROTOCOL_PREFIX}{query}");
+        let args = Self::parsed_args(&original);
+        Self { original, args }
     }
 
     fn parsed_args(value: &str) -> HashMap<String, String> {
@@ -69,8 +76,28 @@ impl DeepLink {
         }
     }
 
+    /// True when the deeplink query carries a non-empty value for `key`, matching the client's
+    /// lookup semantics: an optional host segment (e.g. `decentraland://open?signin=...`) is
+    /// skipped, which `parsed_args` does not do (it would keep the key as `open?signin`).
+    pub fn has_non_empty_value(&self, key: &str) -> bool {
+        if self.args.get(key).is_some_and(|value| !value.is_empty()) {
+            return true;
+        }
+
+        match self.original.split_once('?') {
+            Some((_, query)) => form_urlencoded::parse(query.as_bytes())
+                .any(|(k, v)| k == key && !v.is_empty()),
+            None => false,
+        }
+    }
+
     pub fn original(&self) -> &str {
         &self.original
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_string(value: impl Into<String>) -> Result<Self, DeepLinkCreateError> {
+        Self::new(value.into())
     }
 }
 
@@ -97,28 +124,22 @@ impl Protocol {
         }
     }
 
+    pub(crate) fn store(deeplink: DeepLink) {
+        match PROTOCOL_STATE.lock() {
+            Ok(mut guard) => *guard = Some(deeplink),
+            Err(e) => error!("cannot acquire mutex of PROTOCOL_STATE: {}", e),
+        }
+    }
+
     pub fn try_assign_value(&self, value: String) {
         match DeepLink::new(value) {
-            Ok(deeplink) => {
-                let result = PROTOCOL_STATE.lock();
-                match result {
-                    Ok(guard) => {
-                        let mut guard = guard;
-                        *guard = Some(deeplink);
-                    }
-                    Err(e) => {
-                        error!("cannot acquire mutex of PROTOCOL_STATE: {}", e);
-                    }
-                }
+            Ok(deeplink) => Self::store(deeplink),
+            Err(DeepLinkCreateError::WrongPrefix { original_content }) => {
+                error!(
+                    "trying assing value that doesn't start with prefix protocol {}: {}",
+                    PROTOCOL_PREFIX, original_content
+                );
             }
-            Err(error) => match error {
-                DeepLinkCreateError::WrongPrefix { original_content } => {
-                    error!(
-                        "trying assing value that doesn't start with prefix protocol {}: {}",
-                        PROTOCOL_PREFIX, original_content
-                    );
-                }
-            },
         }
     }
 
@@ -134,5 +155,87 @@ impl Protocol {
             "none of values starts with prefix protocol {}: {:?}",
             PROTOCOL_PREFIX, value
         );
+    }
+
+    pub fn try_seed_from_startup_location() {
+        let Some(raw) =
+            crate::download_origin_metadata::startup_location_storage::StartupDeeplinkStorage::read()
+        else {
+            log::info!("No startup location found");
+            return;
+        };
+
+        let deeplink = match DeepLink::new(raw) {
+            Ok(deeplink) => deeplink,
+            Err(DeepLinkCreateError::WrongPrefix { original_content }) => {
+                error!(
+                    "startup location doesn't start with prefix protocol {}: {}",
+                    PROTOCOL_PREFIX, original_content
+                );
+                return;
+            }
+        };
+
+        match PROTOCOL_STATE.lock() {
+            Ok(mut guard) => {
+                if guard.is_some() {
+                    log::info!("URI deeplink already set; skipping startup location seed");
+                    return;
+                }
+                log::info!(
+                    "Seeding Protocol from startup location: {}",
+                    deeplink.original()
+                );
+                *guard = Some(deeplink);
+            }
+            Err(e) => error!("cannot acquire mutex of PROTOCOL_STATE: {}", e),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::environment::ARG_SIGNIN;
+    use rstest::rstest;
+
+    fn deeplink(value: &str) -> Result<DeepLink, DeepLinkCreateError> {
+        DeepLink::from_string(value.to_owned())
+    }
+
+    // The client (`DeepLinkHandleImplementation.HandleDeepLink`) defers exactly the
+    // deeplinks where `ValueOf(AppArgsFlags.SIGNIN)` is non-null/non-empty, after
+    // stripping an optional host segment. These cases pin `has_non_empty_value` against
+    // that same set: the live host-prefixed auth-site shape and its host-less sibling
+    // (both cited in `AppArgsTests.cs:16-27`), plus the mangled shapes `parsed_args`
+    // produces (`open?signin`, `open/?signin`, `/?signin`), a bare no-`?` form, an
+    // empty-value non-match, the three real Evidence-section navigation samples, and
+    // tricky non-signin shapes where "signin" appears only as a substring of an
+    // unrelated value or key (must NOT match, since the client keys off an exact
+    // parameter name).
+    #[rstest]
+    #[case("decentraland://open?signin=anIdentityId&bridgeOnly=true&authRequestId=abc-123", true)]
+    #[case("decentraland://?signin=anIdentityId", true)]
+    #[case("decentraland://open/?signin=anIdentityId", true)]
+    #[case("decentraland:///?signin=anIdentityId", true)]
+    #[case("decentraland://signin=anIdentityId", true)]
+    #[case("decentraland://open?signin=", false)]
+    #[case("decentraland:///?realm=jerk.dcl.eth&dclenv=org", false)]
+    #[case("decentraland://realm=http%3A%2F%2F127.0.0.1%3A8000&position=0%2C0", false)]
+    #[case("decentraland:///?position=139,-40&dclenv=org", false)]
+    #[case("decentraland:///?realm=signin.dcl.eth", false)]
+    #[case("decentraland:///?position=10,20&comment=pleasesignin", false)]
+    #[case("decentraland:///?autosignin=true&position=1,2", false)]
+    fn signin_discriminator_matches_client_deferral_set(
+        #[case] raw: &str,
+        #[case] expected: bool,
+    ) -> Result<(), DeepLinkCreateError> {
+        let link = deeplink(raw)?;
+        assert_eq!(
+            link.has_non_empty_value(ARG_SIGNIN),
+            expected,
+            "signin detection mismatch for {raw}"
+        );
+        Ok(())
     }
 }

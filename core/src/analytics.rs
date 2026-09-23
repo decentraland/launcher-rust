@@ -7,6 +7,7 @@ mod session;
 
 use anyhow::{Context, Result};
 use client::AnalyticsClient;
+use std::time::Duration;
 use event::Event;
 use log::{error, info};
 use null_client::NullClient;
@@ -125,6 +126,12 @@ impl Analytics {
     pub async fn cleanup(&self) {
         if let Self::Client(client) = &self {
             client.cleanup().await;
+        }
+    }
+
+    pub async fn cleanup_within(&self, timeout: Duration) {
+        if let Self::Client(client) = &self {
+            client.cleanup_within(timeout).await;
         }
     }
 }

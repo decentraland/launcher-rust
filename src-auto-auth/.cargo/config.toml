@@ -1,5 +1,0 @@
-[build]
-rustflags = [
-  "-Dwarnings",         # treat all warnings as errors
-  "-Dunsafe_code",      # deny unsafe blocks globally
-]
