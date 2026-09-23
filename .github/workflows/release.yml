@@ -516,9 +516,11 @@ jobs:
             exit 1
           fi
 
-          # Tauri signs externalBin with the same signCommand; an unsigned
-          # watchdog would trip SmartScreen the first time it reopens the launcher.
-          SIDECAR_EXE="src-tauri/target/release/dcl_watchdog.exe"
+          # Tauri signs externalBin in place with the same signCommand and NSIS
+          # bundles that staged copy (target/release/dcl_watchdog.exe is never
+          # signed or shipped); an unsigned watchdog would trip SmartScreen the
+          # first time it reopens the launcher.
+          SIDECAR_EXE="src-tauri/binaries/dcl_watchdog-x86_64-pc-windows-msvc.exe"
           echo "Checking watchdog sidecar signature..."
           if [[ -f "$SIDECAR_EXE" ]]; then
             powershell.exe -Command "Get-AuthenticodeSignature '$SIDECAR_EXE'"
