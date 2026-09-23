@@ -180,7 +180,7 @@ jobs:
           echo "Certificate imported."
 
       - name: Download CodeSignTool
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         shell: pwsh
         run: |
           $extractPath = "C:\CodeSignTool"
@@ -208,7 +208,7 @@ jobs:
           Write-Host "Set CODESIGN_JAVA to $($javaExe.FullName)"
           
       - name: Patch sign command in tauri.conf.json
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         shell: pwsh
         run: |
           cd src-tauri\scripts
@@ -216,7 +216,7 @@ jobs:
           cd -
 
       - name: Patch sign.ps1 path in tauri.conf.json
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         run: |
           SIGN_SCRIPT_PATH="${GITHUB_WORKSPACE}/src-tauri/scripts/sign.ps1"
           sed -i.bak "s|\"sign.ps1\"|\"${SIGN_SCRIPT_PATH//\\/\/}\"|g" src-tauri/tauri.conf.json
@@ -329,7 +329,7 @@ jobs:
             "${{ github.workspace }}\src-tauri\target\release\dcl_watchdog.exe"
 
       - name: Sign dcl_launcher.exe manually (Win)
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows-latest' && inputs.dry-run == false }}
         shell: pwsh
         env:
           ES_USERNAME: ${{ secrets.ES_USERNAME }}
@@ -516,9 +516,11 @@ jobs:
             exit 1
           fi
 
-          # Tauri signs externalBin with the same signCommand; an unsigned
-          # watchdog would trip SmartScreen the first time it reopens the launcher.
-          SIDECAR_EXE="src-tauri/target/release/dcl_watchdog.exe"
+          # Tauri signs externalBin in place with the same signCommand and NSIS
+          # bundles that staged copy (target/release/dcl_watchdog.exe is never
+          # signed or shipped); an unsigned watchdog would trip SmartScreen the
+          # first time it reopens the launcher.
+          SIDECAR_EXE="src-tauri/binaries/dcl_watchdog-x86_64-pc-windows-msvc.exe"
           echo "Checking watchdog sidecar signature..."
           if [[ -f "$SIDECAR_EXE" ]]; then
             powershell.exe -Command "Get-AuthenticodeSignature '$SIDECAR_EXE'"
