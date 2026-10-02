@@ -38,9 +38,10 @@ use std::time::Duration;
 
 pub mod compression;
 pub mod downloads;
+pub mod resumable;
 
 const APP_NAME: &str = "DecentralandLauncherLight";
-const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland.zip";
+const EXPLORER_DOWNLOADED_FILENAME: &str = "decentraland";
 
 #[cfg(target_os = "macos")]
 const EXPLORER_MAC_APP_PATH: &str = "Decentraland.app";
@@ -509,8 +510,42 @@ pub fn is_explorer_updated(version: &str) -> bool {
     is_explorer_installed(Some(version)) && is_app_updated(version)
 }
 
-pub fn target_download_path() -> PathBuf {
-    explorer_downloads_path().join(EXPLORER_DOWNLOADED_FILENAME)
+/// The download file of this version.
+///
+/// One file per version, so a part left by an earlier attempt is only ever continued as the
+/// same version. The version becomes part of a file name, so anything that could leave the
+/// downloads directory is refused here, even though the release URL already limits it.
+pub fn target_download_path(version: &str) -> DCLErrorTyped<PathBuf> {
+    if !is_plain_file_name_part(version) {
+        return Err(DCLError::E2007_INVALID_VERSION {
+            version: version.to_owned(),
+        });
+    }
+    Ok(explorer_downloads_path().join(format!("{EXPLORER_DOWNLOADED_FILENAME}-{version}.zip")))
+}
+
+fn is_plain_file_name_part(value: &str) -> bool {
+    !value.is_empty() && !value.contains(['/', '\\']) && !value.contains("..")
+}
+
+/// Partial and finished downloads of other versions (and the old fixed-name file): they can never
+/// be continued or installed.
+pub fn remove_other_downloads(keep: &Path) {
+    let Some(keep_name) = keep.file_name().and_then(|n| n.to_str()) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(explorer_downloads_path()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with(keep_name)
+            && let Err(e) = fs::remove_file(entry.path())
+        {
+            log::warn!("Cannot remove old download {name}: {e}");
+        }
+    }
 }
 
 fn rename_latest_back_to_version(
@@ -534,7 +569,10 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
 
     let explorer_path = explorer_path();
     let branch_path = explorer_path.join(version);
-    let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
+    let file_path = match downloaded_file_path {
+        Some(path) => path,
+        None => target_download_path(version)?,
+    };
 
     if !file_path.exists() {
         return DCLError::E1001_FILE_NOT_FOUND {
@@ -956,6 +994,16 @@ impl InstallsHub {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_file_names_take_only_plain_versions() {
+        for version in ["v0.184.0-alpha", "v1.2.3", "dev"] {
+            assert!(is_plain_file_name_part(version), "{version}");
+        }
+        for version in ["", "..", "v1.0.0/../x", r"v1.0.0\..\x", "a/b"] {
+            assert!(!is_plain_file_name_part(version), "{version}");
+        }
+    }
 
     fn app() -> PathBuf {
         PathBuf::from("/apps/Decentraland.app")

@@ -106,6 +106,14 @@ pub enum DCLError {
     },
     E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE(#[from] FileIncompleteError),
     E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
+    E2007_INVALID_VERSION {
+        version: String,
+    },
+    E2008_DOWNLOAD_SAVE_FAILED {
+        file_path: String,
+        #[source]
+        source: std::io::Error,
+    },
     E3001_OPEN_DEEPLINK_TIMEOUT,
     E3002_PLACE_DEEPLINK_ERROR(#[from] PlaceDeeplinkError),
     E3003_CANT_GET_VERSION,
@@ -259,6 +267,12 @@ impl DCLError {
             Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT => {
                 "The download is taking too long. Please check your internet connection and try again."
             }
+            Self::E2007_INVALID_VERSION { .. } => {
+                "We received an invalid update. Please close the launcher and open it again to try once more."
+            }
+            Self::E2008_DOWNLOAD_SAVE_FAILED { .. } => {
+                "The download finished but couldn't be saved. Please close Decentraland and try again."
+            }
             Self::E3001_OPEN_DEEPLINK_TIMEOUT => {
                 "We couldn't open the deeplink in Decentraland. Please close Decentraland and try again."
             }
@@ -380,6 +394,10 @@ impl From<DownloadFileError> for DCLError {
                 Self::E1007_FILE_CREATE_FAILED { file_path, source }
             }
             NetworkTimeout => Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
+            SaveFailed { source, file_path } => {
+                Self::E2008_DOWNLOAD_SAVE_FAILED { file_path, source }
+            }
+            HttpStatus { url, code } => Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { url, code },
         }
     }
 }
