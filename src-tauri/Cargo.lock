@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Decentraland-Launcher"
-version = "1.23.0"
+version = "1.23.3"
 dependencies = [
  "anyhow",
  "dcl-launcher-core",
@@ -741,7 +741,7 @@ dependencies = [
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.23.0"
+version = "1.23.3"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -4028,7 +4028,7 @@ dependencies = [
 [[package]]
 name = "segment"
 version = "0.2.6"
-source = "git+https://github.com/decentraland/segment?branch=main#51d89ce2556a36c57122b35cc9391e9727080435"
+source = "git+https://github.com/decentraland/segment?branch=main#c9d3a81bf377dc921f59bf45c0603dcfdd814e6e"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",

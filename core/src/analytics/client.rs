@@ -23,6 +23,7 @@ use super::fingerprint::ClientFingerprint;
 use super::session::SessionId;
 
 const APP_ID: &str = "decentraland-launcher-rust";
+const SEGMENT_HOST: &str = "https://api.e.decentraland.org";
 
 pub struct AnalyticsClient {
     anonymous_id: String,
@@ -49,7 +50,7 @@ impl AnalyticsClient {
         let batcher = QueuedBatcher::new(queue.clone(), Some(context));
         let session_id = SessionId::random();
 
-        let client = HttpClient::default();
+        let client = HttpClient::new_with_host(SEGMENT_HOST.to_owned());
         let mut send_daemon = AnalyticsEventSendDaemon::new(queue, None, write_key, client);
 
         send_daemon.start(|e| error!("{}", e));
