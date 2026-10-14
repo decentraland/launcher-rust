@@ -424,7 +424,8 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
                 let url = &r.browser_download_url;
                 let version = self.version_from_url(url).await?;
 
-                let target_path = installs::target_download_path();
+                let target_path = installs::target_download_path(&version)?;
+                installs::remove_other_downloads(&target_path);
                 let path: &str = target_path
                     .to_str()
                     .context("Cannot convert target download path")?;

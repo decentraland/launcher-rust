@@ -21,6 +21,10 @@ The launcher manages the download-install-launch funnel for the Decentraland Exp
 
 `InstallStep::execute` calls `install_explorer` then `rename_explorer_to_latest`. Both must succeed before reporting `INSTALL_VERSION_SUCCESS` to analytics. Chain them into a single `Result` so a rename failure is reported as `INSTALL_VERSION_ERROR` — never fire SUCCESS before the full operation completes.
 
+### Download flow
+
+`DownloadStep` downloads the release zip to `downloads/decentraland-<version>.zip` through `installs/downloads.rs`, which uses the resumable downloader in `installs/resumable.rs`: bytes go to `<file>.part` and survive a dropped or stalled connection, a failed attempt and a launcher restart; the next try continues with `Range` + `If-Range` (the validator is kept in `<file>.part.validator`). A stall is 15 s without bytes, or less than 50 KiB/s on average over 15 s (a degraded connection can trickle for a long time while a new one gets full speed); after 8 attempts in a row without new bytes the download fails with E2006. Downloads of other versions are deleted when a download starts. `core/tests/resumable_flaky.rs` tests it against a local server that drops and stalls connections.
+
 ### Crash watchdog and report flow
 
 `FlowContext` is selected once at startup in `core/src/app.rs`: `--crash-report-with-attachment <path>` (written by `dcl_watchdog`, crate `client-crash-watchdog/`) runs `ReportFlow`, anything else runs `LaunchFlow`. Flows are stateless service holders; mutable data lives in `*FlowState`. The UI is a stateless renderer of `Status` (`core/src/types.rs`, forked into `Launch` / `Report` arms) — every field edit is a Tauri command that mutates state and re-broadcasts. The watchdog is a Tauri sidecar: stage it with `npm run prebuild-sidecars` before any `cargo` command in `src-tauri`, or `tauri-build` fails on the missing `externalBin`.
