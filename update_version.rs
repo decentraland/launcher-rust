@@ -162,11 +162,15 @@ fn ensure_versions_are_equal(versions: Vec<VersionPair>) -> Result<()> {
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        println!("Usage: cargo run -- [patch|minor|major] or use directly ./update_version.rs [patch|minor|major]");
+        println!("Usage: cargo run -- [patch|minor|major|check] or use directly ./update_version.rs [patch|minor|major|check]");
         return Ok(());
     }
 
-    let bump = BumpType::from_str(&args[1])?;
+    // `check` only verifies that all manifests share one version, without bumping
+    let bump = match args[1].as_str() {
+        "check" => None,
+        other => Some(BumpType::from_str(other)?),
+    };
 
     let versions = FILES
         .iter()
@@ -178,6 +182,11 @@ fn main() -> Result<()> {
 
 
     ensure_versions_are_equal(versions)?;
+
+    let Some(bump) = bump else {
+        println!("All versions are equal");
+        return Ok(());
+    };
 
     for path in FILES {
         update_version(path, &bump)

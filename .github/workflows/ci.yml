@@ -21,6 +21,14 @@ jobs:
     secrets:
       DCL_BOT_REPO_WORKFLOW_TOKEN: ${{ secrets.DCL_BOT_REPO_WORKFLOW_TOKEN }}
 
+  # Fails PRs whose manifests disagree on the version, so the bump on main can't break after merge
+  version_integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: cargo install rust-script --locked
+      - run: ./update_version.rs check
+
   typechecking:
     if: needs.bump_version_check.outputs.should_run_tests_and_release == 'true'
     needs: [bump_version_check]
@@ -118,12 +126,16 @@ jobs:
       conclusion: ${{ needs.draft_release.result }}
 
   check_release_status:
-    needs: [draft_release]
+    needs: [draft_release, version_integrity]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check draft_release result
         run: |
+          if [[ "${{ needs.version_integrity.result }}" != "success" ]]; then
+            echo "Version integrity check failed: manifest versions are not aligned"
+            exit 1
+          fi
           result="${{ needs.draft_release.result }}"
           echo "draft_release result: $result"
           if [[ "$result" == "success" ]] || [[ "$result" == "skipped" ]]; then
