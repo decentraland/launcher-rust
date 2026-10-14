@@ -27,6 +27,7 @@ pub mod config;
 pub mod crash_attachment;
 pub mod crash_watchdog;
 mod deeplink_bridge;
+pub mod delta;
 pub mod diagnostic_logs;
 pub mod download_origin_metadata;
 pub mod environment;
