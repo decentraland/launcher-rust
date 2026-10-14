@@ -24,6 +24,8 @@ jobs:
   # Fails PRs whose manifests disagree on the version, so the bump on main can't break after merge
   version_integrity:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
       - run: cargo install rust-script --locked

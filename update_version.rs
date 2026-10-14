@@ -25,7 +25,9 @@ struct VersionPair {
 
 fn version_files() -> Result<Vec<String>> {
     let raw = fs::read_to_string(VERSION_FILES_JSON).context("Failed to read version files list")?;
-    serde_json::from_str(&raw).context("Failed to parse version files list")
+    let files: Vec<String> = serde_json::from_str(&raw).context("Failed to parse version files list")?;
+    anyhow::ensure!(!files.is_empty(), "{} lists no files", VERSION_FILES_JSON);
+    Ok(files)
 }
 
 #[derive(Debug)]
