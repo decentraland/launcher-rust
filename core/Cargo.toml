@@ -96,3 +96,5 @@ windows = { version = "0.61.3", features = [
 
 [dev-dependencies]
 rstest = "0.26.1"
+# Localhost bucket for the integration tests under `tests/`.
+tiny_http = "0.12"

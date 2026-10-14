@@ -252,6 +252,10 @@ jobs:
         working-directory: ${{ github.workspace }}/core
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Tests Core
+        working-directory: ${{ github.workspace }}/core
+        run: cargo test
+
       - name: Code Analysis Watchdog
         working-directory: ${{ github.workspace }}/client-crash-watchdog
         run: cargo clippy --all-targets --all-features -- -D warnings

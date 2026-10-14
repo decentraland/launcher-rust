@@ -49,6 +49,11 @@ pub enum DownloadFileError {
     },
     FileIncomplete(#[from] FileIncompleteError),
     NetworkTimeout,
+    /// The server answered, but not with the file (for example a 404 for a missing release).
+    HttpStatus {
+        url: String,
+        code: u16,
+    },
 }
 
 impl Display for DownloadFileError {
@@ -69,6 +74,9 @@ impl Display for DownloadFileError {
                 file_path, source
             ),
             Self::NetworkTimeout => write!(f, "Download failed due network timeout"),
+            Self::HttpStatus { url, code } => {
+                write!(f, "Download failed due HTTP status {} from url: {}", code, url)
+            }
         }
     }
 }
@@ -104,6 +112,12 @@ pub async fn download_file<T: EventChannel>(
     let client = Client::new();
 
     let res = client.get(url).send().await?;
+    if !res.status().is_success() {
+        return Err(DownloadFileError::HttpStatus {
+            url: url.to_owned(),
+            code: res.status().as_u16(),
+        });
+    }
     let total_size =
         res.content_length()
             .ok_or_else(|| DownloadFileError::ContentLengthNotFound {

@@ -177,6 +177,17 @@ pub fn safe_file_stem(id: &str) -> String {
     }
 }
 
+/// Replaces the app directory (`<local data>/DecentralandLauncherLight`) with the given path.
+/// Set by the integration tests so a whole install runs inside a temp dir; unset in production.
+pub const DATA_DIR_ENV: &str = "DCL_LAUNCHER_DATA_DIR";
+
+// TODO if the data dir failed to be created there is no point to run the app futher, just .except()
+fn app_dir_override() -> Option<PathBuf> {
+    std::env::var_os(DATA_DIR_ENV)
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+}
+
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
@@ -185,7 +196,7 @@ fn get_app_base_path() -> PathBuf {
 
 #[allow(clippy::expect_used)]
 fn explorer_path() -> PathBuf {
-    let path = get_app_base_path().join(APP_NAME);
+    let path = app_dir_override().unwrap_or_else(|| get_app_base_path().join(APP_NAME));
     create_dir_all(&path).expect("Cannot create app directory");
     path
 }
@@ -528,30 +539,52 @@ fn rename_latest_back_to_version(
     fs::rename(latest_path, target).map_err(|e| DCLError::from_rename_back(latest_path, e))
 }
 
-pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLErrorResult {
-    let current_version: EntryVersion = EntryVersion::from_str(version)
-        .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
-
-    let explorer_path = explorer_path();
-    let branch_path = explorer_path.join(version);
-    let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
-
-    if !file_path.exists() {
-        return DCLError::E1001_FILE_NOT_FOUND {
-            expected_path: Some(file_path.to_string_lossy().into_owned()),
-        }
-        .into();
+/// Version strings become folder names under the app directory, so a separator would let a
+/// crafted `latest.json` write outside it.
+fn validate_version_for_path(version: &str) -> DCLErrorTyped<EntryVersion> {
+    if version.contains(['/', '\\']) {
+        return Err(anyhow!("Version value contains a path separator: {version}").into());
     }
+    EntryVersion::from_str(version)
+        .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}").into())
+}
 
+/// Folder a build of `version` is installed into before it becomes `latest`.
+pub fn explorer_version_dir(version: &str) -> PathBuf {
+    explorer_path().join(version)
+}
+
+/// Removes a half-installed `<version>/` left by an earlier attempt so the new build starts from
+/// an empty folder.
+fn remove_stale_version_dir(branch_path: &Path) -> DCLErrorResult {
     if branch_path.exists() {
-        fs::remove_dir_all(&branch_path).map_err(|source| {
+        fs::remove_dir_all(branch_path).map_err(|source| {
             DCLError::E3005_STALE_BUILD_CLEANUP_FAILED {
                 path: branch_path.to_string_lossy().into_owned(),
                 source,
             }
         })?;
     }
-    compression::decompress_file(&file_path, &branch_path)?;
+    Ok(())
+}
+
+/// Extracts the downloaded zip into `<app>/<version>/`.
+///
+/// On macOS it also lifts the `build/` folder and marks the main executable. Touches nothing
+/// outside that folder: `latest/` and `version.json` are only changed by [`commit_install`].
+pub fn materialize_from_zip(version: &str, downloaded_file_path: &Path) -> DCLErrorResult {
+    validate_version_for_path(version)?;
+    let branch_path = explorer_version_dir(version);
+
+    if !downloaded_file_path.exists() {
+        return DCLError::E1001_FILE_NOT_FOUND {
+            expected_path: Some(downloaded_file_path.to_string_lossy().into_owned()),
+        }
+        .into();
+    }
+
+    remove_stale_version_dir(&branch_path)?;
+    compression::decompress_file(&downloaded_file_path.to_path_buf(), &branch_path)?;
 
     #[cfg(target_os = "macos")]
     {
@@ -567,6 +600,27 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
             fs::set_permissions(explorer_bin_path, permissions)?;
         }
     }
+
+    Ok(())
+}
+
+/// Downloads a zip, extracts it and commits it. Kept as the single entry point for the zip path;
+/// the delta path calls its own materialize step and then [`commit_install`].
+pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLErrorResult {
+    let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
+    materialize_from_zip(version, &file_path)?;
+    commit_install(version, Some(&file_path))
+}
+
+/// Makes `<app>/<version>/` the current build.
+///
+/// Records it in `version.json`, renames the previous `latest/` back to its version folder,
+/// removes the consumed download and prunes old versions. [`rename_explorer_to_latest`] then
+/// renames the new folder to `latest/`.
+pub fn commit_install(version: &str, downloaded_file_path: Option<&Path>) -> DCLErrorResult {
+    let current_version = validate_version_for_path(version)?;
+    let explorer_path = explorer_path();
+    let branch_path = explorer_version_dir(version);
 
     let mut version_data = get_version_data_or_empty();
 
@@ -608,10 +662,12 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         .map_err(|source| DCLError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
     // Remove the downloaded file
-    fs::remove_file(&file_path).map_err(|source| DCLError::E1006_FILE_DELETE_FAILED {
-        file_path: file_path.to_string_lossy().into_owned(),
-        source,
-    })?;
+    if let Some(file_path) = downloaded_file_path {
+        fs::remove_file(file_path).map_err(|source| DCLError::E1006_FILE_DELETE_FAILED {
+            file_path: file_path.to_string_lossy().into_owned(),
+            source,
+        })?;
+    }
 
     cleanup_versions(&current_version)
 }

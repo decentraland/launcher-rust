@@ -143,7 +143,7 @@ impl LaunchFlow {
         let mut last_error: Option<AttemptError> = None;
 
         for attempt in 1..=SILENT_ATTEMPTS_COUNT {
-            match self.prepare_internal(channel, state.clone()).await {
+            match self.prepare(channel, state.clone()).await {
                 std::result::Result::Ok(handled_by_passthrough) => {
                     return std::result::Result::Ok(handled_by_passthrough);
                 }
@@ -244,7 +244,10 @@ impl LaunchFlow {
         attempt_error
     }
 
-    async fn prepare_internal<T: EventChannel>(
+    /// One pass of fetch, download and install without launching the Explorer and without the
+    /// silent retries. `Ok(true)` means a running Explorer consumed the deeplink instead.
+    /// Public so the integration tests can drive the update funnel without the UI.
+    pub async fn prepare<T: EventChannel>(
         &self,
         channel: &T,
         state: Arc<Mutex<LaunchFlowState>>,
@@ -344,7 +347,7 @@ impl DownloadStep {
     async fn version_from_url(&self, url: &str) -> Result<String> {
         let pattern = format!(
             r"(^{}\/{}\/(v?\d+\.\d+\.\d+-?\w*)\/(\w+.zip))",
-            AppEnvironment::bucket_url(),
+            regex::escape(&AppEnvironment::bucket_url()),
             s3::RELEASE_PREFIX
         );
         let re = Regex::new(&pattern)?;
