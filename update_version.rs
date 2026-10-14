@@ -13,29 +13,21 @@ use semver::{Version};
 use std::{env, fs};
 use toml_edit::{DocumentMut, value};
 
-const PACKAGE_JSON: &str = "package.json";
-const PACKAGE_JSON_LOCK: &str = "package-lock.json";
-const APP_CONFIG_LOCK: &str = "src-tauri/tauri.conf.json";
-const APP_RS_TOML: &str = "src-tauri/Cargo.toml";
-const CORE_RS_TOML: &str = "core/Cargo.toml";
-const INSTALLER_HOOKS_RS_TOML: &str = "installer-hooks/Cargo.toml";
-const WATCHDOG_RS_TOML: &str = "client-crash-watchdog/Cargo.toml";
-
-const FILES: [&'static str; 7] = [
-    PACKAGE_JSON,
-    PACKAGE_JSON_LOCK,
-    APP_CONFIG_LOCK,
-    APP_RS_TOML,
-    CORE_RS_TOML,
-    INSTALLER_HOOKS_RS_TOML,
-    WATCHDOG_RS_TOML
-];
+// Single source of truth for versioned manifests, shared with .github/workflows/bump-version.yml
+const VERSION_FILES_JSON: &str = "version-files.json";
 
 #[derive(Debug)]
 struct VersionPair {
     #[allow(dead_code)]
-    path: &'static str,
+    path: String,
     version: Version,
+}
+
+fn version_files() -> Result<Vec<String>> {
+    let raw = fs::read_to_string(VERSION_FILES_JSON).context("Failed to read version files list")?;
+    let files: Vec<String> = serde_json::from_str(&raw).context("Failed to parse version files list")?;
+    anyhow::ensure!(!files.is_empty(), "{} lists no files", VERSION_FILES_JSON);
+    Ok(files)
 }
 
 #[derive(Debug)]
@@ -162,24 +154,35 @@ fn ensure_versions_are_equal(versions: Vec<VersionPair>) -> Result<()> {
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        println!("Usage: cargo run -- [patch|minor|major] or use directly ./update_version.rs [patch|minor|major]");
+        println!("Usage: cargo run -- [patch|minor|major|check] or use directly ./update_version.rs [patch|minor|major|check]");
         return Ok(());
     }
 
-    let bump = BumpType::from_str(&args[1])?;
+    // `check` only verifies that all manifests share one version, without bumping
+    let bump = match args[1].as_str() {
+        "check" => None,
+        other => Some(BumpType::from_str(other)?),
+    };
 
-    let versions = FILES
+    let files = version_files()?;
+
+    let versions = files
         .iter()
         .map(|path| {
             let version = version_from(path)?;
-            Ok(VersionPair { path, version })
+            Ok(VersionPair { path: path.clone(), version })
         })
         .collect::<Result<_>>()?;
 
 
     ensure_versions_are_equal(versions)?;
 
-    for path in FILES {
+    let Some(bump) = bump else {
+        println!("All versions are equal");
+        return Ok(());
+    };
+
+    for path in &files {
         update_version(path, &bump)
             .with_context(|| format!("Cannot bump version in {}", path))?;
     }
