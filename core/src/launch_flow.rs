@@ -6,10 +6,9 @@ use crate::logs::LogDestination;
 use crate::protocols::{DeepLink, Protocol};
 use crate::{
     analytics::{Analytics, event::Event},
-    environment::AppEnvironment,
     errors::{DCLErrorResult, FlowError},
     installs::{self, InstallsHub},
-    s3::{self, ReleaseResponse},
+    s3::ReleaseResponse,
     types::{BuildType, Status, Step},
 };
 use anyhow::{Context, Ok, Result, anyhow};
@@ -344,33 +343,36 @@ impl DownloadStep {
         }
     }
 
-    async fn version_from_url(&self, url: &str) -> Result<String> {
-        let pattern = format!(
-            r"(^{}\/{}\/(v?\d+\.\d+\.\d+-?\w*)\/(\w+.zip))",
-            regex::escape(&AppEnvironment::bucket_url()),
-            s3::RELEASE_PREFIX
-        );
-        let re = Regex::new(&pattern)?;
-
-        let captures = re
-            .captures(url)
-            .context(format!("cannot find matches in the url: {}", url))?;
-        let version = captures.get(2).map(|m| m.as_str());
-
-        match version {
-            Some(v) => Ok(v.to_owned()),
-            None => {
+    /// The release version, refused (and reported) when it is not shaped like a version: it
+    /// becomes a folder name under the app directory.
+    async fn validated_version(&self, release: &ReleaseResponse) -> Result<String> {
+        match validate_version(&release.version) {
+            std::result::Result::Ok(version) => Ok(version),
+            Err(e) => {
                 self.analytics
                     .lock()
                     .await
                     .track_and_flush_silent(Event::DOWNLOAD_VERSION_ERROR {
                         version: None,
-                        error: "No version provided".to_owned(),
+                        error: e.to_string(),
                     })
                     .await;
-                Err(anyhow!("url doesn't contain version"))
+                Err(e)
             }
         }
+    }
+}
+
+/// `v?MAJOR.MINOR.PATCH` with an optional `-suffix`, the shape the producer publishes in
+/// `latest.json`.
+fn validate_version(version: &str) -> Result<String> {
+    let re = Regex::new(r"^v?\d+\.\d+\.\d+-?\w*$")?;
+    if re.is_match(version) {
+        Ok(version.to_owned())
+    } else {
+        Err(anyhow!(
+            "latest.json version has an unexpected shape: {version:?}"
+        ))
     }
 }
 
@@ -425,7 +427,7 @@ impl WorkflowStep<LaunchFlowState, ()> for DownloadStep {
         match release {
             Some(r) => {
                 let url = &r.browser_download_url;
-                let version = self.version_from_url(url).await?;
+                let version = self.validated_version(r).await?;
 
                 let target_path = installs::target_download_path();
                 let path: &str = target_path
@@ -750,6 +752,25 @@ mod tests {
     #[test]
     fn silent_attempts_budget_is_three() {
         assert_eq!(SILENT_ATTEMPTS_COUNT, 3);
+    }
+
+    #[rstest]
+    #[case("v0.187.0-alpha")]
+    #[case("v1.2.3")]
+    #[case("1.2.3")]
+    fn validate_version_accepts_release_shapes(#[case] version: &str) {
+        assert_eq!(validate_version(version).ok().as_deref(), Some(version));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("latest")]
+    #[case("v1.2")]
+    #[case("../v1.2.3")]
+    #[case("v1.2.3/..")]
+    #[case("v1.2.3 extra")]
+    fn validate_version_rejects_anything_else(#[case] version: &str) {
+        assert!(validate_version(version).is_err(), "{version:?}");
     }
 }
 

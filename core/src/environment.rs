@@ -1,8 +1,10 @@
 pub mod macos;
 
+use anyhow::{Context, Result};
 use log::info;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use url::Url;
 
 use crate::config;
 
@@ -158,14 +160,11 @@ impl AppEnvironment {
         String::from(provider)
     }
 
-    /// The bucket every release artifact is fetched from, without a trailing slash.
-    /// `--use-bucket-url` overrides the compiled-in value.
-    pub fn bucket_url() -> String {
-        Self::cmd_args()
-            .use_bucket_url
-            .map_or_else(|| String::from(BUCKET_URL), |url| {
-                url.trim_end_matches('/').to_owned() // TODO the method should return a Url/Uri object to avoid weird path trimming hacks
-            })
+    /// The bucket every release artifact is fetched from. `--use-bucket-url` overrides the
+    /// compiled-in value. Append path segments with `Url::path_segments_mut`, never by string
+    /// formatting, so a trailing slash in either source makes no difference.
+    pub fn bucket_url() -> Result<Url> {
+        parse_bucket_url(Self::cmd_args().use_bucket_url.as_deref())
     }
 
     pub fn launcher_environment() -> LauncherEnvironment {
@@ -201,6 +200,11 @@ impl AppEnvironment {
         let (from_cmd, from_config) = Self::args_sources();
         from_cmd.chain(from_config)
     }
+}
+
+fn parse_bucket_url(override_url: Option<&str>) -> Result<Url> {
+    let raw = override_url.unwrap_or(BUCKET_URL);
+    Url::parse(raw).with_context(|| format!("bucket URL is not a valid URL: {raw:?}"))
 }
 
 /// Removes `--crash-report-with-attachment <path>`, keeping every other argument.
@@ -402,6 +406,19 @@ mod tests {
             Some(Path::new("b.json"))
         );
         assert_eq!(merged.use_bucket_url.as_deref(), Some("http://127.0.0.1:1/"));
+    }
+
+    #[test]
+    fn compiled_in_bucket_url_is_a_valid_url() {
+        assert!(parse_bucket_url(None).is_ok(), "{BUCKET_URL:?}");
+    }
+
+    #[test]
+    fn bucket_url_override_is_parsed_or_rejected() -> Result<()> {
+        let url = parse_bucket_url(Some("http://127.0.0.1:8080"))?;
+        assert_eq!(url.as_str(), "http://127.0.0.1:8080/");
+        assert!(parse_bucket_url(Some("not a url")).is_err());
+        Ok(())
     }
 
     #[test]

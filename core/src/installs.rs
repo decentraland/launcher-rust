@@ -181,13 +181,6 @@ pub fn safe_file_stem(id: &str) -> String {
 /// Set by the integration tests so a whole install runs inside a temp dir; unset in production.
 pub const DATA_DIR_ENV: &str = "DCL_LAUNCHER_DATA_DIR";
 
-// TODO if the data dir failed to be created there is no point to run the app futher, just .except()
-fn app_dir_override() -> Option<PathBuf> {
-    std::env::var_os(DATA_DIR_ENV)
-        .filter(|dir| !dir.is_empty())
-        .map(PathBuf::from)
-}
-
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
@@ -196,7 +189,10 @@ fn get_app_base_path() -> PathBuf {
 
 #[allow(clippy::expect_used)]
 fn explorer_path() -> PathBuf {
-    let path = app_dir_override().unwrap_or_else(|| get_app_base_path().join(APP_NAME));
+    let path = match std::env::var_os(DATA_DIR_ENV) {
+        Some(dir) => PathBuf::from(dir),
+        None => get_app_base_path().join(APP_NAME),
+    };
     create_dir_all(&path).expect("Cannot create app directory");
     path
 }
