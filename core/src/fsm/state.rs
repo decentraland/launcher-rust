@@ -1,6 +1,8 @@
 use crate::protocols::DeepLink;
 
-use super::values::{Attempt, Installations, Manifest, Version};
+use crate::version::Version;
+
+use super::values::{Attempt, Installations, Manifest};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Config {
