@@ -43,7 +43,7 @@ pub enum LauncherEnvironment {
 pub struct AppEnvironment {}
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Args {
     pub skip_analytics: bool,
     pub force_in_memory_analytics_queue: bool,
@@ -99,10 +99,8 @@ impl Args {
                 ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE,
                 &vector,
             ),
-            open_new_client_instance: Self::has_flag(
-                ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
-                &vector,
-            ) || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
+            open_new_client_instance: Self::has_flag(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, &vector)
+                || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
             always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
@@ -305,7 +303,11 @@ mod tests {
 
     #[test]
     fn test_multi_instance_is_alias_of_open_deeplink_in_new_instance() {
-        let args = Args::parse(["app", "--multi-instance"].map(ToOwned::to_owned).into_iter());
+        let args = Args::parse(
+            ["app", "--multi-instance"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
         assert!(args.open_new_client_instance);
 
         // The original flag still works on its own.

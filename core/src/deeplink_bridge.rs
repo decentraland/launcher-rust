@@ -1,8 +1,8 @@
+use serde::Serialize;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
-use serde::Serialize;
 use tokio::fs::remove_file;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -10,8 +10,8 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     channel::EventChannel,
     environment::{
-        AppEnvironment, Args, ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE,
-        ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, ARG_SIGNIN,
+        ARG_BRIDGE_ONLY, ARG_LOCAL_SCENE, ARG_MULTI_INSTANCE, ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
+        ARG_SIGNIN, AppEnvironment, Args,
     },
     errors::{DCLError, DCLErrorResult},
     installs::deeplink_bridge_path,
@@ -98,11 +98,7 @@ fn try_bring_explorer_to_front() {
     }
 }
 
-pub fn should_use_deeplink_bridge(
-    deeplink: &DeepLink,
-    args: &Args,
-    any_is_running: bool,
-) -> bool {
+pub fn should_use_deeplink_bridge(deeplink: &DeepLink, args: &Args, any_is_running: bool) -> bool {
     let open_new_instance = deeplink.has_true_value(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE)
         || deeplink.has_true_value(ARG_MULTI_INSTANCE)
         || args.open_new_client_instance;
@@ -130,7 +126,8 @@ pub async fn execute_passthrough<T: EventChannel>(
     // the file is consumed, because `open <app>` would launch a spurious new instance when the
     // packaged app is not the consumer. Bringing the window to front is only appropriate for the
     // regular passthrough case, where the running instance is one the launcher itself started.
-    let bridge_only = deeplink.has_true_value(ARG_BRIDGE_ONLY) || AppEnvironment::cmd_args().bridge_only;
+    let bridge_only =
+        deeplink.has_true_value(ARG_BRIDGE_ONLY) || AppEnvironment::cmd_args().bridge_only;
     let bring_to_front = !bridge_only;
 
     let token = CancellationToken::new();
@@ -246,7 +243,10 @@ mod tests {
     #[test]
     fn no_bridge_when_new_instance_requested_via_deeplink() -> Result<(), DeepLinkCreateError> {
         assert!(!should_use_deeplink_bridge(
-            &deeplink(&format!("decentraland://{}=true", ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE))?,
+            &deeplink(&format!(
+                "decentraland://{}=true",
+                ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE
+            ))?,
             &args(&["app"]),
             true
         ));

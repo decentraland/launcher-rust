@@ -55,6 +55,16 @@ pub enum Event {
     INSTALL_VERSION_SKIPPED {
         version: String,
     },
+    UPDATE_STRATEGY_DECIDED {
+        version: String,
+        strategy: String,
+        leaf: String,
+    },
+    UPDATE_STRATEGY_FALLBACK {
+        version: String,
+        phase: String,
+        error: String,
+    },
     LAUNCH_CLIENT_START {
         version: String,
     },
@@ -155,6 +165,8 @@ impl Display for Event {
                 Event::INSTALL_VERSION_SUCCESS { .. } => "Install Version Success",
                 Event::INSTALL_VERSION_ERROR { .. } => "Install Version Error",
                 Event::INSTALL_VERSION_SKIPPED { .. } => "Install Version Skipped",
+                Event::UPDATE_STRATEGY_DECIDED { .. } => "Update Strategy Decided",
+                Event::UPDATE_STRATEGY_FALLBACK { .. } => "Update Strategy Fallback",
                 Event::LAUNCH_CLIENT_START { .. } => "Launch Client Start",
                 Event::LAUNCH_CLIENT_SUCCESS { .. } => "Launch Client Success",
                 Event::LAUNCH_CLIENT_ERROR { .. } => "Launch Client Error",

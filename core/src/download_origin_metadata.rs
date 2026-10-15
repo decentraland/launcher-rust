@@ -4,9 +4,9 @@ pub mod campaign_anon_user_id_storage;
 pub mod campaign_attribution_marker;
 pub mod dcl_env;
 pub mod dcl_env_storage;
-pub mod startup_location_storage;
 pub mod referrer;
 pub mod referrer_storage;
+pub mod startup_location_storage;
 
 use anyhow::Result;
 #[cfg(target_os = "macos")]
@@ -285,8 +285,9 @@ impl DownloadOrigin {
             match DownloadOriginData::from_url(attr) {
                 Ok(parsed) => {
                     result.auth_token = result.auth_token.or(parsed.auth_token);
-                    result.campaign_anon_user_id =
-                        result.campaign_anon_user_id.or(parsed.campaign_anon_user_id);
+                    result.campaign_anon_user_id = result
+                        .campaign_anon_user_id
+                        .or(parsed.campaign_anon_user_id);
                     result.startup_position = result.startup_position.or(parsed.startup_position);
                     result.startup_realm = result.startup_realm.or(parsed.startup_realm);
                     result.referrer = result.referrer.or(parsed.referrer);
@@ -417,7 +418,9 @@ mod tests {
             Some("391a85da-a3bb-49e2-a45e-96c740c38424")
         );
         assert_eq!(
-            origin.campaign_anon_user_id.map(|id| id.as_str().to_owned()),
+            origin
+                .campaign_anon_user_id
+                .map(|id| id.as_str().to_owned()),
             Some("abc-123".to_owned())
         );
         assert_eq!(origin.startup_position.as_deref(), Some("5,10"));
