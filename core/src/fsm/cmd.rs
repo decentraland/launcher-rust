@@ -5,7 +5,7 @@ use crate::errors::DCLError;
 use crate::protocols::DeepLink;
 use crate::version::Version;
 
-use super::values::UpdateStrategy;
+use super::values::{Attempt, UpdateStrategy};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FetchRequest {
@@ -29,7 +29,12 @@ pub enum LaunchCmd {
     CheckRunningInstances,
 
     FireAnalyticsEvent(Event),
-    ReportError(Arc<DCLError>),
+    /// Sentry and the file log: a breadcrumb unless final, then a capture. The UI reads errors from State.
+    ReportToSentry {
+        error: Arc<DCLError>,
+        attempt: Attempt,
+        is_final: bool,
+    },
 
     Multi(Vec<LaunchCmd>),
 }

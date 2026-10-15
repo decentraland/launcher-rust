@@ -6,6 +6,6 @@ mod values;
 
 pub use cmd::{FetchRequest, LaunchCmd};
 pub use msg::LaunchMsg;
-pub use state::{Config, NetworkResource, Session, State, UserIntention};
+pub use state::{Config, LaunchStep, NetworkResource, State, UserIntention};
 pub use update::update;
 pub use values::{Attempt, Installation, Percent, ReadyInstallation, UpdateStrategy};
