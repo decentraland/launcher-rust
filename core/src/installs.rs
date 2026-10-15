@@ -11,12 +11,9 @@ use crate::instances::RunningInstances;
 #[cfg(target_os = "windows")]
 use crate::processes::CommandExtDetached;
 use crate::protocols::DeepLink;
+use crate::version::Version;
 use anyhow::{Context, Result, anyhow};
-use semver::Version;
 use serde_json::{Map, Value};
-use std::cmp::Ordering;
-use std::fmt;
-use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -355,65 +352,8 @@ fn move_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-struct EntryVersion {
-    version: Version,
-    v_prefixed: bool,
-}
-
-impl EntryVersion {
-    pub fn from_str(entry: &str) -> Option<Self> {
-        let strip = entry.strip_prefix('v');
-        let v_prefixed = strip.is_some();
-
-        let unprefixed_entry = strip.unwrap_or(entry);
-
-        if let Ok(version) = Version::parse(unprefixed_entry) {
-            return Some(Self {
-                version,
-                v_prefixed,
-            });
-        }
-
-        None
-    }
-
-    pub fn to_restored(&self) -> String {
-        if self.v_prefixed {
-            format!("v{}", self.version)
-        } else {
-            self.version.to_string()
-        }
-    }
-}
-
-impl PartialEq for EntryVersion {
-    fn eq(&self, other: &Self) -> bool {
-        self.version == other.version
-    }
-}
-
-impl Eq for EntryVersion {}
-
-impl PartialOrd for EntryVersion {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for EntryVersion {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.version.cmp(&other.version)
-    }
-}
-
-impl Display for EntryVersion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.version.fmt(f)
-    }
-}
-
-fn remove_version_if_exists(version: &EntryVersion) {
-    let folder_path = explorer_path().join(version.to_restored());
+fn remove_version_if_exists(version: &Version) {
+    let folder_path = explorer_path().join(version.to_string());
     if folder_path.exists() {
         match fs::remove_dir_all(&folder_path) {
             Ok(()) => log::info!("Removed old version: {}", version),
@@ -422,14 +362,14 @@ fn remove_version_if_exists(version: &EntryVersion) {
     }
 }
 
-fn cleanup_versions(current_version: &EntryVersion) -> DCLErrorResult {
+fn cleanup_versions(current_version: &Version) -> DCLErrorResult {
     const KEEP_VERSIONS_FOR_ROLLBACK_AMOUNT: usize = 2;
 
     let explorer_path = explorer_path();
     let entries =
         fs::read_dir(&explorer_path).map_err(|e| DCLError::from_cleanup(&explorer_path, e))?;
 
-    let mut installations: Vec<EntryVersion> = Vec::new();
+    let mut installations: Vec<Version> = Vec::new();
 
     for entry in entries {
         let Ok(entry) = entry else { continue };
@@ -444,7 +384,7 @@ fn cleanup_versions(current_version: &EntryVersion) -> DCLErrorResult {
             )
         })?;
 
-        if let Some(version) = EntryVersion::from_str(entry_name) {
+        if let Some(version) = Version::parse(entry_name).filter(|v| !v.is_dev()) {
             installations.push(version);
         }
     }
@@ -529,7 +469,8 @@ fn rename_latest_back_to_version(
 }
 
 pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLErrorResult {
-    let current_version: EntryVersion = EntryVersion::from_str(version)
+    let current_version = Version::parse(version)
+        .filter(|v| !v.is_dev())
         .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
 
     let explorer_path = explorer_path();

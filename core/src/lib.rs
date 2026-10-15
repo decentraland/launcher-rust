@@ -46,6 +46,7 @@ pub mod report_flow;
 pub mod s3;
 pub mod types;
 pub mod utils;
+pub mod version;
 
 pub use anyhow;
 pub use log;
