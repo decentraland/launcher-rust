@@ -28,6 +28,13 @@ impl UpdateStrategy {
             Self::ByZip { target } | Self::ByDelta { target, .. } => target,
         }
     }
+
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::ByZip { .. } => "zip",
+            Self::ByDelta { .. } => "delta",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -36,8 +43,12 @@ pub enum Installation {
     Downloading {
         strategy: UpdateStrategy,
         percent: Percent,
+        attempt: Attempt,
     },
-    Installing,
+    Installing {
+        strategy: UpdateStrategy,
+        attempt: Attempt,
+    },
     Failed {
         error: Arc<DCLError>,
         attempt: Attempt,
