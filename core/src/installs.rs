@@ -445,26 +445,17 @@ pub fn is_explorer_installed(version: Option<&str>) -> bool {
     }
 }
 
-/// Versions whose executable is present on disk: the version folders plus the one behind `latest`.
+/// The build behind `latest`, named by `version.json`, plus `dev`. Rollback folders are not
+/// launchable as `latest`, so they are not ready.
 pub fn ready_installations() -> Vec<Version> {
-    let mut versions: Vec<Version> = fs::read_dir(explorer_path())
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter_map(|entry| entry.file_name().to_str().and_then(Version::parse))
-                .collect()
-        })
-        .unwrap_or_default();
-    if let Some(latest) = get_version_data()
+    let latest = get_version_data()
         .ok()
-        .and_then(|data| get_latest_version(&data).ok().and_then(Version::parse))
-    {
-        versions.push(latest);
-    }
-    versions.sort();
-    versions.dedup();
-    versions.retain(|version| is_explorer_installed(Some(&version.to_string())));
-    versions
+        .and_then(|data| get_latest_version(&data).ok().and_then(Version::parse));
+    latest
+        .into_iter()
+        .chain(std::iter::once(Version::Dev))
+        .filter(|version| is_explorer_installed(Some(&version.to_string())))
+        .collect()
 }
 
 pub fn is_explorer_updated(version: &str) -> bool {

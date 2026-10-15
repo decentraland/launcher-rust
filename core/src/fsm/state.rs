@@ -90,6 +90,7 @@ impl LocalInstallations {
 pub enum ExplorerLaunch {
     #[default]
     Idle,
+    AwaitingRunningInstancesCheck(Version),
     Launching(Version),
     Launched(Version),
     Failed {

@@ -86,7 +86,10 @@ fn is_launch_in_progress(state: &State) -> bool {
         || matches!(state.local_installations, LocalInstallations::Scanning)
         || matches!(state.latest_version, NetworkResource::Fetching { .. })
         || matches!(state.delta_manifest, NetworkResource::Fetching { .. })
-        || matches!(state.launch, ExplorerLaunch::Launching(_))
+        || matches!(
+            state.launch,
+            ExplorerLaunch::AwaitingRunningInstancesCheck(_) | ExplorerLaunch::Launching(_)
+        )
         || state
             .local_installations
             .scanned()
@@ -179,10 +182,16 @@ fn on_running_instances_checked(state: &mut State, any: bool, checked_at: System
     }
     match intended_deeplink(state) {
         Some(deeplink) if should_use_deeplink_bridge(&deeplink, &state.config.args, any) => {
+            state.launch = ExplorerLaunch::Idle;
             state.deeplink_handoff = DeeplinkHandoff::HandingOff { attempt: 1 };
             Cmd::HandoffDeeplink(deeplink)
         }
-        _ => scan_installations_and_fetch_latest_version(state),
+        _ => match state.launch.clone() {
+            ExplorerLaunch::AwaitingRunningInstancesCheck(version) => {
+                start_version_launch(state, version)
+            }
+            _ => scan_installations_and_fetch_latest_version(state),
+        },
     }
 }
 
@@ -419,6 +428,8 @@ fn start_version_download(state: &mut State, strategy: UpdateStrategy, attempt: 
     let Some(installations) = state.local_installations.scanned_mut() else {
         return Cmd::Ignore("download requested before the local presence scan");
     };
+    // An Explorer may start while the download runs; the launch checks again.
+    state.running_instances = RunningInstances::Unknown;
     let target = strategy.target().clone();
     installations.insert(
         target.clone(),
@@ -567,6 +578,12 @@ fn on_version_installation_completed(
 
 fn start_version_launch(state: &mut State, version: Version) -> Cmd {
     let deeplink = intended_deeplink(state);
+    let check_is_current = matches!(state.running_instances, RunningInstances::Checked { .. });
+    if deeplink.is_some() && !check_is_current {
+        state.launch = ExplorerLaunch::AwaitingRunningInstancesCheck(version);
+        state.running_instances = RunningInstances::Checking;
+        return Cmd::CheckRunningInstances;
+    }
     state.launch = ExplorerLaunch::Launching(version.clone());
     Cmd::LaunchVersion(version, deeplink)
 }
@@ -1070,6 +1087,78 @@ mod tests {
             c,
             Cmd::FireAnalyticsEvent(Event::INSTALL_VERSION_SKIPPED { .. })
         )));
+    }
+
+    fn installed_with_deeplink(any_running_at_start: bool) -> State {
+        let (state, _) = step_msg(
+            State::default(),
+            Msg::LaunchIntentionReceived(Some(deeplink())),
+        );
+        let (state, _) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: any_running_at_start,
+                checked_at: SystemTime::now(),
+            },
+        );
+        let (state, _) = step_msg(state, Msg::LocalInstallationPresenceConfirmed(vec![]));
+        let (state, _) = fetched(state, "v2.0.0");
+        assert!(matches!(state.running_instances, RunningInstances::Unknown));
+        let strategy = UpdateStrategy::ByZip {
+            target: version("v2.0.0"),
+        };
+        let (state, _) = step_msg(state, Msg::VersionDownloadCompleted(strategy));
+        let (state, cmds) = step_msg(
+            state,
+            Msg::VersionInstallationCompleted(
+                version("v2.0.0"),
+                ReadyInstallation(version("v2.0.0")),
+            ),
+        );
+        assert!(has(&cmds, |c| matches!(c, Cmd::CheckRunningInstances)));
+        assert!(!has(&cmds, |c| matches!(c, Cmd::LaunchVersion(..))));
+        assert!(matches!(
+            state.launch,
+            ExplorerLaunch::AwaitingRunningInstancesCheck(_)
+        ));
+        state
+    }
+
+    #[test]
+    fn install_with_a_deeplink_rechecks_instances_before_launching() {
+        let state = installed_with_deeplink(false);
+        let (state, cmds) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: false,
+                checked_at: SystemTime::now(),
+            },
+        );
+        assert!(matches!(state.launch, ExplorerLaunch::Launching(_)));
+        assert!(has(&cmds, |c| matches!(c, Cmd::LaunchVersion(_, Some(_)))));
+        assert!(!has(&cmds, |c| matches!(
+            c,
+            Cmd::FireAnalyticsEvent(Event::INSTALL_VERSION_SKIPPED { .. })
+        )));
+    }
+
+    #[test]
+    fn instance_appearing_during_the_download_takes_the_deeplink() {
+        let state = installed_with_deeplink(false);
+        let (state, cmds) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: true,
+                checked_at: SystemTime::now(),
+            },
+        );
+        assert!(matches!(state.launch, ExplorerLaunch::Idle));
+        assert!(matches!(
+            state.deeplink_handoff,
+            DeeplinkHandoff::HandingOff { attempt: 1 }
+        ));
+        assert!(has(&cmds, |c| matches!(c, Cmd::HandoffDeeplink(_))));
+        assert!(!has(&cmds, |c| matches!(c, Cmd::LaunchVersion(..))));
     }
 
     #[test]
