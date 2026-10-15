@@ -1,11 +1,9 @@
+use log::{error, info, warn};
 use std::fmt::Debug;
 use std::future::Future;
-use std::sync::Arc;
-
-use crossbeam::atomic::AtomicCell;
-use log::{error, info, warn};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 pub trait CmdExecutor<Cmd, Msg> {
@@ -23,7 +21,7 @@ pub struct FsmRuntime<Model, Msg, Cmd, E> {
     tag: &'static str,
     inbox: UnboundedSender<Msg>,
     queue: Option<UnboundedReceiver<Msg>>,
-    model: Arc<AtomicCell<Model>>,
+    model: watch::Sender<Model>,
     update: Update<Model, Msg, Cmd>,
     executor: Option<E>,
     tokio: Handle,
@@ -32,7 +30,7 @@ pub struct FsmRuntime<Model, Msg, Cmd, E> {
 
 impl<Model, Msg, Cmd, E> FsmRuntime<Model, Msg, Cmd, E>
 where
-    Model: Copy + Debug + Send + 'static,
+    Model: Clone + Debug + Send + Sync + 'static,
     Msg: Debug + Send + 'static,
     Cmd: Debug + Send + 'static,
     E: CmdExecutor<Cmd, Msg> + Send + 'static,
@@ -50,7 +48,7 @@ where
             tag,
             inbox,
             queue: Some(queue),
-            model: Arc::new(AtomicCell::new(init_model)),
+            model: watch::Sender::new(init_model),
             update,
             executor: Some(executor),
             tokio,
@@ -67,7 +65,11 @@ where
     }
 
     pub fn snapshot(&self) -> Model {
-        self.model.load()
+        self.model.borrow().clone()
+    }
+
+    pub fn watch(&self) -> watch::Receiver<Model> {
+        self.model.subscribe()
     }
 
     pub fn start(&mut self) {
@@ -79,7 +81,7 @@ where
 
         let tag = self.tag;
         let inbox = self.inbox.clone();
-        let model = Arc::clone(&self.model);
+        let model = self.model.clone();
         let update = self.update;
         let cancellation = self.cancellation.clone();
 
@@ -95,9 +97,9 @@ where
 
                 info!("[{}] msg: {:?}", tag, msg);
 
-                let (next, cmd) = update(model.load(), msg);
-                model.store(next);
+                let (next, cmd) = update(model.borrow().clone(), msg);
                 info!("[{}] model: {:?} cmd: {:?}", tag, next, cmd);
+                model.send_replace(next);
 
                 if let Err(e) = executor.execute(cmd, &inbox).await {
                     error!("[{}] cmd failed: {:#}", tag, e);
