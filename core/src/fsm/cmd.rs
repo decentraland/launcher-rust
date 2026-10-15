@@ -1,8 +1,9 @@
 use crate::analytics::event::Event;
 use crate::errors::DCLError;
 use crate::protocols::DeepLink;
+use crate::version::Version;
 
-use super::values::{UpdateStrategy, Version};
+use super::values::UpdateStrategy;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FetchRequest {

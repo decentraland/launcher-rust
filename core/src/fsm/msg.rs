@@ -1,7 +1,8 @@
 use crate::errors::DCLError;
 use crate::protocols::DeepLink;
+use crate::version::Version;
 
-use super::values::{FailureReason, Manifest, Percent, ReadyInstallation, UpdateStrategy, Version};
+use super::values::{FailureReason, Manifest, Percent, ReadyInstallation, UpdateStrategy};
 
 #[derive(Debug)]
 pub enum LaunchMsg {

@@ -8,5 +8,5 @@ pub use msg::LaunchMsg;
 pub use state::{Config, LaunchState, NetworkResource, UserIntention};
 pub use values::{
     Attempt, ErrorCode, ExpectedReason, Failure, FailureReason, Installation, Installations,
-    Manifest, Percent, ReadyInstallation, UpdateStrategy, Version,
+    Manifest, Percent, ReadyInstallation, UpdateStrategy,
 };
