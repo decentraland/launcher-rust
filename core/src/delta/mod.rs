@@ -3,7 +3,6 @@
 //! The producer lives in unity-explorer `scripts/delta`, documented in its `docs/delta-updates.md`.
 //! TODO: we will need to merge 2 impls into one, it shouldn't be a problem since both are in rust
 
-
 pub mod apply;
 pub mod download;
 pub mod fetch;

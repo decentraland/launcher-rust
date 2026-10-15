@@ -120,14 +120,13 @@ async fn launch_internal(
     let status_channel = StatusChannel(channel);
 
     // The lock covers only the updater check; the wait below runs without it.
-    let (inbox, watch) = {
-        let guard = state.lock().await;
-        let runtime = launch_runtime(&guard)?;
-        if let Err(e) = update_if_needed_and_restart(&app, &guard, &status_channel).await {
-            error!("Cannot update the launcher: {}", e);
-        }
-        (runtime.inbox(), runtime.watch())
-    };
+    let guard = state.lock().await;
+    let runtime = launch_runtime(&guard)?;
+    let (inbox, watch) = (runtime.inbox(), runtime.watch());
+    if let Err(e) = update_if_needed_and_restart(&app, &guard, &status_channel).await {
+        error!("Cannot update the launcher: {}", e);
+    }
+    drop(guard);
 
     inbox
         .send(intention)
@@ -351,7 +350,7 @@ async fn update_if_needed_and_restart(
 
 /// A deeplink arriving while the launcher runs is stored for the launch and forwarded to the FSM.
 #[cfg_attr(windows, allow(unused_variables))]
-fn setup_deeplink(a: &App, protocol: &Protocol, inbox: Option<LaunchInbox>) {
+fn setup_deeplink(a: &App, protocol: &Protocol, inbox: Option<&LaunchInbox>) {
     // Support reading from cmd args on both macOS and Windows
     let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
     protocol.try_assign_value_from_vec(&args);
@@ -371,6 +370,7 @@ fn setup_deeplink(a: &App, protocol: &Protocol, inbox: Option<LaunchInbox>) {
         }
 
         let protocol = protocol.clone();
+        let inbox = inbox.cloned();
         a.deep_link().on_open_url(move |event| {
             let urls = event.urls();
             match urls.first() {
@@ -398,7 +398,7 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
         FlowContext::Launch(runtime) => Some(runtime.inbox()),
         FlowContext::Report(_) => None,
     };
-    setup_deeplink(a, &app_state.protocol, inbox);
+    setup_deeplink(a, &app_state.protocol, inbox.as_ref());
     Protocol::try_seed_from_startup_location();
 
     let mut_state: MutState = Arc::new(Mutex::new(app_state));
