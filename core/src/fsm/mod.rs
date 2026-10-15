@@ -1,20 +1,12 @@
 mod cmd;
-mod inline_str;
-mod installations;
 mod msg;
 mod state;
-mod strategy;
-mod version;
+mod values;
 
 pub use cmd::{FetchRequest, LaunchCmd};
-pub use inline_str::InlineStr;
-pub use installations::{Installation, Installations};
 pub use msg::LaunchMsg;
-pub use state::{
-    Config, DeepLinkValue, LaunchState, Manifest, NetworkResource, Outcome, UserIntention,
-    UserMessage,
+pub use state::{Config, LaunchState, NetworkResource, Outcome, UserIntention};
+pub use values::{
+    Attempt, ErrorCode, ExpectedReason, Failure, FailureReason, Installation, Installations,
+    Manifest, Percent, ReadyInstallation, UpdateStrategy, Version,
 };
-pub use strategy::{
-    Attempt, ErrorCode, ExpectedReason, Failure, FailureReason, Percent, UpdateStrategy,
-};
-pub use version::{ReadyInstallation, Version};
