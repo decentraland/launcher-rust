@@ -62,19 +62,23 @@ async fn fetch_explorer_latest_release() -> DCLErrorTyped<LatestRelease> {
     Ok(data)
 }
 
+pub fn release_zip_url(version: &str) -> String {
+    format!(
+        "{}/{}/{}/Decentraland_{}.zip",
+        AppEnvironment::bucket_url(),
+        RELEASE_PREFIX,
+        version,
+        get_os_name()
+    )
+}
+
 pub async fn get_latest_explorer_release() -> DCLErrorTyped<ReleaseResponse> {
-    let url = AppEnvironment::bucket_url();
     let latest_release = fetch_explorer_latest_release().await?;
-    let os = get_os_name();
-    let release_name = format!("Decentraland_{}.zip", os);
-    let release_url = format!(
-        "{}/{}/{}/{}",
-        url, RELEASE_PREFIX, latest_release.version, release_name
-    );
+    let release_url = release_zip_url(&latest_release.version);
 
     log::info!(
         "[get_latest_explorer_release] Release URL generated: {{ os: {}, version: {}, url: {} }}",
-        os,
+        get_os_name(),
         latest_release.version,
         release_url
     );

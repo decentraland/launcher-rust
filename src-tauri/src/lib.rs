@@ -10,15 +10,15 @@
 )]
 #![allow(clippy::uninlined_format_args, clippy::used_underscore_binding)]
 
-use dcl_launcher_core::analytics::event::Event;
-use dcl_launcher_core::app::{FlowContext, LaunchContext, ReportContext};
+use dcl_launcher_core::app::{
+    follow_launch_and_wait_for_outcome, FlowContext, LaunchInbox, LaunchRuntime, ReportContext,
+};
 use dcl_launcher_core::environment::{strip_crash_report_args, AppEnvironment, Args};
-use dcl_launcher_core::errors::FlowError;
+use dcl_launcher_core::fsm::Msg;
 use dcl_launcher_core::log::{error, info};
 use dcl_launcher_core::protocols::Protocol;
 use dcl_launcher_core::report_flow::{CrashReportField, ReportFlow, ReportFlowState, Screen};
 use dcl_launcher_core::types::LauncherUpdate;
-use dcl_launcher_core::utils;
 use dcl_launcher_core::{app::AppState, channel::EventChannel, types};
 use std::env;
 use std::sync::Arc;
@@ -46,10 +46,6 @@ trait EventChannelExt: EventChannel {
             error!("Error during the message sending: {}", e);
         }
     }
-
-    fn notify_error(&self, flow_error: &FlowError) {
-        self.send_silent(flow_error.into());
-    }
 }
 
 impl<T: EventChannel + ?Sized> EventChannelExt for T {}
@@ -57,9 +53,9 @@ impl<T: EventChannel + ?Sized> EventChannelExt for T {}
 const CONTEXT_MISMATCH: &str =
     "Context mismatch, the command must not be invoked and will be ignored";
 
-fn launch_context(state: &AppState) -> Result<&LaunchContext, String> {
+fn launch_runtime(state: &AppState) -> Result<&LaunchRuntime, String> {
     match &state.context {
-        FlowContext::Launch(ctx) => Ok(ctx),
+        FlowContext::Launch(runtime) => Ok(runtime),
         FlowContext::Report(_) => {
             error!("{CONTEXT_MISMATCH}");
             Err(CONTEXT_MISMATCH.to_owned())
@@ -95,18 +91,7 @@ async fn retry(
     channel: Channel<types::Status>,
 ) -> Result<(), String> {
     info!("tauri command: retry");
-    let event = Event::RETRY_FLOW_BUTTON_CLICK {
-        version: utils::app_version().to_owned(),
-    };
-    state
-        .lock()
-        .await
-        .analytics
-        .lock()
-        .await
-        .track_and_flush_silent(event)
-        .await;
-    launch_internal(app, state, channel).await
+    launch_internal(app, state, channel, Msg::RetryIntentionReceived).await
 }
 
 /// Single entry point invoked by the UI on mount; dispatches on the flow context selected at
@@ -122,34 +107,35 @@ async fn launch(
     if is_report {
         return crash_report_open(state, channel).await;
     }
-    launch_internal(app, state, channel).await
+    let intention = Msg::LaunchIntentionReceived(Protocol::value());
+    launch_internal(app, state, channel, intention).await
 }
 
 async fn launch_internal(
     app: AppHandle,
     state: State<'_, MutState>,
     channel: Channel<types::Status>,
+    intention: Msg,
 ) -> Result<(), String> {
     let status_channel = StatusChannel(channel);
-    let guard = state.lock().await;
-    let flow_context = launch_context(&guard)?;
-    let flow_state = flow_context.state.clone();
 
+    // The lock covers only the updater check; the wait below runs without it.
+    let guard = state.lock().await;
+    let runtime = launch_runtime(&guard)?;
+    let (inbox, watch) = (runtime.inbox(), runtime.watch());
     if let Err(e) = update_if_needed_and_restart(&app, &guard, &status_channel).await {
         error!("Cannot update the launcher: {}", e);
     }
-
-    flow_context
-        .flow
-        .launch(&status_channel, flow_state)
-        .await
-        .map_err(|e| {
-            status_channel.notify_error(&e);
-            e.user_message
-        })?;
-
-    guard.cleanup().await;
     drop(guard);
+
+    inbox
+        .send(intention)
+        .map_err(|_| "Launch runtime stopped".to_owned())?;
+    follow_launch_and_wait_for_outcome(watch, &status_channel)
+        .await
+        .map_err(|e| e.user_message().to_owned())?;
+
+    state.lock().await.cleanup().await;
     app.cleanup_before_exit();
     app.exit(0);
 
@@ -362,8 +348,9 @@ async fn update_if_needed_and_restart(
     Ok(())
 }
 
+/// A deeplink arriving while the launcher runs is stored for the launch and forwarded to the FSM.
 #[cfg_attr(windows, allow(unused_variables))]
-fn setup_deeplink(a: &App, protocol: &Protocol) {
+fn setup_deeplink(a: &App, protocol: &Protocol, inbox: Option<&LaunchInbox>) {
     // Support reading from cmd args on both macOS and Windows
     let args: Vec<String> = AppEnvironment::raw_cmd_args().collect();
     protocol.try_assign_value_from_vec(&args);
@@ -383,11 +370,17 @@ fn setup_deeplink(a: &App, protocol: &Protocol) {
         }
 
         let protocol = protocol.clone();
+        let inbox = inbox.cloned();
         a.deep_link().on_open_url(move |event| {
             let urls = event.urls();
             match urls.first() {
                 Some(url) => {
                     protocol.try_assign_value(url.to_string());
+                    if let (Some(inbox), Some(deeplink)) = (&inbox, Protocol::value()) {
+                        if inbox.send(Msg::DeeplinkReceived(deeplink)).is_err() {
+                            error!("Launch runtime stopped; deeplink not forwarded");
+                        }
+                    }
                 }
                 None => {
                     error!("No values are provided in deep link");
@@ -401,7 +394,11 @@ fn setup(a: &mut App) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let app_state = tauri::async_runtime::block_on(AppState::setup())
         .inspect_err(|e| error!("Error during setup: {:#}", e))?;
 
-    setup_deeplink(a, &app_state.protocol);
+    let inbox = match &app_state.context {
+        FlowContext::Launch(runtime) => Some(runtime.inbox()),
+        FlowContext::Report(_) => None,
+    };
+    setup_deeplink(a, &app_state.protocol, inbox.as_ref());
     Protocol::try_seed_from_startup_location();
 
     let mut_state: MutState = Arc::new(Mutex::new(app_state));

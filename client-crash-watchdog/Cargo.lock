@@ -339,7 +339,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.23.0"
+version = "1.23.5"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -370,6 +370,7 @@ dependencies = [
  "sentry-types",
  "serde",
  "serde_json",
+ "sha2",
  "sha3",
  "strum",
  "sys-locale",
@@ -388,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "dcl_watchdog"
-version = "1.23.0"
+version = "1.23.5"
 dependencies = [
  "dcl-launcher-core",
  "nix 0.29.0",

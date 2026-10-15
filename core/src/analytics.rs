@@ -7,11 +7,11 @@ mod session;
 
 use anyhow::{Context, Result};
 use client::AnalyticsClient;
-use std::time::Duration;
 use event::Event;
 use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
+use std::time::Duration;
 
 use crate::{
     config,
@@ -70,12 +70,8 @@ impl Analytics {
     pub fn new(args: Option<CreateArgs>) -> Self {
         match args {
             Some(a) => {
-                let client = AnalyticsClient::new(
-                    a.write_key,
-                    a.anonymous_id,
-                    a.os,
-                    a.launcher_version,
-                );
+                let client =
+                    AnalyticsClient::new(a.write_key, a.anonymous_id, a.os, a.launcher_version);
                 Self::Client(client)
             }
             None => Self::Null(NullClient::new()),

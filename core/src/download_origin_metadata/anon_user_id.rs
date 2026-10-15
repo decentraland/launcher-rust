@@ -213,7 +213,9 @@ mod tests {
         let url = "https://example.com/file.dmg?anon_user_id=62792c33-59e3-4e7f-be42-289c053ecb37";
         assert_eq!(
             AnonUserId::from_url(url),
-            Some(AnonUserId("62792c33-59e3-4e7f-be42-289c053ecb37".to_string()))
+            Some(AnonUserId(
+                "62792c33-59e3-4e7f-be42-289c053ecb37".to_string()
+            ))
         );
     }
 
