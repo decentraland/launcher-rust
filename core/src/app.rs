@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::analytics::Analytics;
 use crate::analytics::event::Event;
+use crate::channel::EventChannel;
 use crate::crash_attachment::CrashAttachment;
 #[cfg(target_os = "macos")]
 use crate::download_origin_metadata::DownloadOrigin;
@@ -10,22 +11,50 @@ use crate::download_origin_metadata::campaign_attribution_marker::CampaignAttrib
 use crate::download_origin_metadata::dcl_env_storage::DclEnvStorage;
 use crate::download_origin_metadata::referrer_storage::ReferrerStorage;
 use crate::environment::{AppEnvironment, Args};
+use crate::errors::DCLError;
 use crate::explorer_session_info::ExplorerSessionInfo;
+use crate::fsm::{self, Cmd, Config, Executor, LaunchIntentionOutcome, Msg, State};
+use crate::infra::fsm::FsmRuntime;
 use crate::installs;
 use crate::instances::RunningInstances;
-use crate::launch_flow::{LaunchFlow, LaunchFlowState};
 use crate::monitoring::Monitoring;
 use crate::protocols::Protocol;
 use crate::report_flow::{ReportFlow, ReportFlowState, ReportSink};
 use crate::{analytics, logs, utils};
 use log::{error, info};
 use std::sync::Arc;
+use tokio::runtime::Handle;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::watch;
 use utils::{BUILD_COMMIT, BUILD_PR, app_version};
 
-pub struct LaunchContext {
-    pub flow: LaunchFlow,
-    pub state: Arc<Mutex<LaunchFlowState>>,
+pub type LaunchRuntime = FsmRuntime<State, Msg, Cmd, Executor>;
+pub type LaunchInbox = UnboundedSender<Msg>;
+
+/// Mirrors the state to the channel until the FSM reports an outcome.
+pub async fn follow_launch_and_wait_for_outcome<T: EventChannel>(
+    mut watch: watch::Receiver<State>,
+    channel: &T,
+) -> std::result::Result<(), Arc<DCLError>> {
+    loop {
+        let state = watch.borrow_and_update().clone();
+        if let Some(status) = fsm::status(&state) {
+            if let Err(e) = channel.send(status) {
+                error!("Cannot send status to the channel: {e:#}");
+            }
+        }
+        match fsm::launch_intention_outcome(&state) {
+            Some(LaunchIntentionOutcome::ExplorerRunning) => return Ok(()),
+            Some(LaunchIntentionOutcome::Failed(error)) => return Err(error),
+            None => {}
+        }
+        if watch.changed().await.is_err() {
+            return Err(Arc::new(DCLError::from(anyhow::anyhow!(
+                "The launch runtime stopped"
+            ))));
+        }
+    }
 }
 
 pub struct ReportContext {
@@ -35,7 +64,7 @@ pub struct ReportContext {
 
 /// Which flow this process runs, selected once at startup from the command line.
 pub enum FlowContext {
-    Launch(LaunchContext),
+    Launch(LaunchRuntime),
     Report(ReportContext),
 }
 
@@ -105,7 +134,7 @@ impl AppState {
         let args = AppEnvironment::cmd_args();
         let context = match report_context_from_args(&args, analytics.clone()) {
             Some(report) => FlowContext::Report(report),
-            None => FlowContext::Launch(new_launch_context(analytics.clone())),
+            None => FlowContext::Launch(new_launch_runtime(args, analytics.clone())),
         };
 
         let app_state = Self {
@@ -130,18 +159,27 @@ impl AppState {
     }
 }
 
-fn new_launch_context(analytics: Arc<Mutex<Analytics>>) -> LaunchContext {
+fn new_launch_runtime(args: Args, analytics: Arc<Mutex<Analytics>>) -> LaunchRuntime {
     let running_instances = Arc::new(Mutex::new(RunningInstances::default()));
     let installs_hub = Arc::new(Mutex::new(installs::InstallsHub::new(
         analytics.clone(),
         running_instances.clone(),
     )));
 
-    let flow = LaunchFlow::new(installs_hub, analytics, running_instances);
-    LaunchContext {
-        flow,
-        state: Arc::new(Mutex::new(LaunchFlowState::default())),
-    }
+    let config = Config {
+        use_delta_mode: args.delta_updates,
+        args,
+    };
+    let executor = Executor::new(analytics, running_instances, installs_hub);
+    let mut runtime = FsmRuntime::new(
+        "launch",
+        State::new(config),
+        fsm::update,
+        executor,
+        Handle::current(),
+    );
+    runtime.start();
+    runtime
 }
 
 /// `Some` only when the watchdog handed over a readable attachment. An unreadable file is logged

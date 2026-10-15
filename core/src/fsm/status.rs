@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::errors::DCLError;
 use crate::types::{BuildType, LaunchStatus, Status, Step};
 
@@ -5,6 +7,22 @@ use super::state::{
     DeeplinkHandoff, ExplorerLaunch, NetworkResource, RunningInstances, State, UserIntention,
 };
 use super::values::Installation;
+
+/// The launcher is done when the Explorer runs, by launch or by taking the deeplink, or when a
+/// final error waits for the retry button.
+pub enum LaunchIntentionOutcome {
+    ExplorerRunning,
+    Failed(Arc<DCLError>),
+}
+
+pub fn launch_intention_outcome(state: &State) -> Option<LaunchIntentionOutcome> {
+    if let Some(error) = final_error(state) {
+        return Some(LaunchIntentionOutcome::Failed(error.clone()));
+    }
+    let running = matches!(state.launch, ExplorerLaunch::Launched(_))
+        || matches!(state.deeplink_handoff, DeeplinkHandoff::HandedOff);
+    running.then_some(LaunchIntentionOutcome::ExplorerRunning)
+}
 
 /// What the UI renders for this state; nothing before a launch intention exists.
 pub fn status(state: &State) -> Option<Status> {
@@ -21,7 +39,7 @@ pub fn status(state: &State) -> Option<Status> {
 }
 
 /// The first final error along the funnel; the retry button clears it.
-fn final_error(state: &State) -> Option<&DCLError> {
+fn final_error(state: &State) -> Option<&Arc<DCLError>> {
     if let DeeplinkHandoff::Failed { error, .. } = &state.deeplink_handoff {
         return Some(error);
     }
@@ -239,6 +257,35 @@ mod tests {
         assert!(matches!(
             status(&state),
             Some(Status::Launch(LaunchStatus::Error { .. }))
+        ));
+    }
+
+    #[test]
+    fn outcome_is_running_after_launch_or_handoff_and_failed_on_a_final_error() {
+        let mut state = launching_state();
+        assert!(launch_intention_outcome(&state).is_none());
+
+        state.launch = ExplorerLaunch::Launched(version("v1.0.0"));
+        assert!(matches!(
+            launch_intention_outcome(&state),
+            Some(LaunchIntentionOutcome::ExplorerRunning)
+        ));
+
+        let mut state = launching_state();
+        state.deeplink_handoff = DeeplinkHandoff::HandedOff;
+        assert!(matches!(
+            launch_intention_outcome(&state),
+            Some(LaunchIntentionOutcome::ExplorerRunning)
+        ));
+
+        let mut state = launching_state();
+        state.latest_version = NetworkResource::Error {
+            error: Arc::new(DCLError::E3003_CANT_GET_VERSION),
+            attempt: 3,
+        };
+        assert!(matches!(
+            launch_intention_outcome(&state),
+            Some(LaunchIntentionOutcome::Failed(_))
         ));
     }
 

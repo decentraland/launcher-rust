@@ -13,6 +13,6 @@ pub use state::{
     Config, DeeplinkHandoff, ExplorerLaunch, LocalInstallations, NetworkResource, RunningInstances,
     State, UserIntention,
 };
-pub use status::status;
+pub use status::{LaunchIntentionOutcome, launch_intention_outcome, status};
 pub use update::update;
 pub use values::{Attempt, Installation, Percent, ReadyInstallation, UpdateStrategy};

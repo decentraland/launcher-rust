@@ -1,6 +1,6 @@
 use anyhow::{Context, Ok, Result};
 use dcl_launcher_core::{
-    app::{AppState, FlowContext, LaunchContext},
+    app::{AppState, FlowContext, follow_launch_and_wait_for_outcome},
     channel::EventChannel,
     fsm::Msg,
     protocols::Protocol,
@@ -22,13 +22,14 @@ async fn main() -> Result<()> {
     let app_state = AppState::setup().await.context("Cannot setup state")?;
     let channel = ConsoleChannel();
     match &app_state.context {
-        FlowContext::Launch(ctx) => {
-            ctx.inbox()
+        FlowContext::Launch(runtime) => {
+            runtime
+                .inbox()
                 .send(Msg::LaunchIntentionReceived(Protocol::value()))
                 .context("Launch runtime stopped")?;
-            LaunchContext::follow(ctx.watch(), &channel)
+            follow_launch_and_wait_for_outcome(runtime.watch(), &channel)
                 .await
-                .map_err(|e| anyhow::anyhow!(e.user_message))
+                .map_err(|e| anyhow::anyhow!(e.user_message().to_owned()))
         }
         // The CLI has no window: print the first screen and stop.
         FlowContext::Report(ctx) => ctx.flow.open(&channel, ctx.state.clone()).await,
