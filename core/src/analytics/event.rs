@@ -5,7 +5,7 @@ use std::fmt::Display;
 use crate::errors::AttemptError;
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Event {
     LAUNCHER_OPEN {
