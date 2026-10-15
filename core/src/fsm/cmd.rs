@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::analytics::event::Event;
 use crate::errors::DCLError;
 use crate::protocols::DeepLink;
@@ -27,7 +29,7 @@ pub enum LaunchCmd {
     CheckRunningInstances,
 
     FireAnalyticsEvent(Event),
-    ReportError(DCLError),
+    ReportError(Arc<DCLError>),
 
     Multi(Vec<LaunchCmd>),
 }

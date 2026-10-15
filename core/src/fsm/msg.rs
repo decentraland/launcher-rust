@@ -1,8 +1,9 @@
+use crate::delta_manifest::DeltaManifest;
 use crate::errors::DCLError;
 use crate::protocols::DeepLink;
 use crate::version::Version;
 
-use super::values::{FailureReason, Manifest, Percent, ReadyInstallation, UpdateStrategy};
+use super::values::{Percent, ReadyInstallation, UpdateStrategy};
 
 #[derive(Debug)]
 pub enum LaunchMsg {
@@ -11,13 +12,13 @@ pub enum LaunchMsg {
     RetryIntentionReceived,
 
     LatestVersionFetched(Result<Version, DCLError>),
-    DeltaManifestFetched(Result<Option<Manifest>, DCLError>),
+    DeltaManifestFetched(Result<Option<DeltaManifest>, DCLError>),
 
     LocalInstallationPresenceConfirmed(Vec<ReadyInstallation>),
 
     VersionDownloadCompleted(UpdateStrategy),
     DownloadProgressed(UpdateStrategy, Percent),
-    VersionDownloadFailed(UpdateStrategy, FailureReason),
+    VersionDownloadFailed(UpdateStrategy, DCLError),
 
     RunningInstancesChecked { any: bool },
 
@@ -25,7 +26,7 @@ pub enum LaunchMsg {
     DeeplinkHandoffFailed(DCLError),
 
     VersionInstallationCompleted(Version, ReadyInstallation),
-    VersionInstallationFailed(UpdateStrategy, FailureReason),
+    VersionInstallationFailed(UpdateStrategy, DCLError),
 
     VersionLaunched(Version),
     VersionLaunchFailed(Version, DCLError),

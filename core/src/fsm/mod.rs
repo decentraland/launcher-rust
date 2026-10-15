@@ -7,6 +7,5 @@ pub use cmd::{FetchRequest, LaunchCmd};
 pub use msg::LaunchMsg;
 pub use state::{Config, LaunchState, NetworkResource, UserIntention};
 pub use values::{
-    Attempt, ErrorCode, ExpectedReason, Failure, FailureReason, Installation, Installations,
-    Manifest, Percent, ReadyInstallation, UpdateStrategy,
+    Attempt, Installation, Installations, Percent, ReadyInstallation, UpdateStrategy,
 };
