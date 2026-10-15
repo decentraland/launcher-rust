@@ -445,6 +445,28 @@ pub fn is_explorer_installed(version: Option<&str>) -> bool {
     }
 }
 
+/// Versions whose executable is present on disk: the version folders plus the one behind `latest`.
+pub fn ready_installations() -> Vec<Version> {
+    let mut versions: Vec<Version> = fs::read_dir(explorer_path())
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter_map(|entry| entry.file_name().to_str().and_then(Version::parse))
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(latest) = get_version_data()
+        .ok()
+        .and_then(|data| get_latest_version(&data).ok().and_then(Version::parse))
+    {
+        versions.push(latest);
+    }
+    versions.sort();
+    versions.dedup();
+    versions.retain(|version| is_explorer_installed(Some(&version.to_string())));
+    versions
+}
+
 pub fn is_explorer_updated(version: &str) -> bool {
     is_explorer_installed(Some(version)) && is_app_updated(version)
 }

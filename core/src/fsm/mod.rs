@@ -1,4 +1,5 @@
 mod cmd;
+mod executor;
 mod msg;
 mod state;
 mod status;
@@ -6,6 +7,7 @@ mod update;
 mod values;
 
 pub use cmd::{Cmd, FetchRequest};
+pub use executor::Executor;
 pub use msg::Msg;
 pub use state::{
     Config, DeeplinkHandoff, ExplorerLaunch, LocalInstallations, NetworkResource, RunningInstances,
