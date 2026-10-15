@@ -16,7 +16,7 @@ pub enum DeepLinkCreateError {
     WrongPrefix { original_content: String },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeepLink {
     original: String,
     args: HashMap<String, String>,
