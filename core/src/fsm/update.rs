@@ -1,4 +1,6 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use crate::analytics::event::Event;
 use crate::deeplink_bridge::should_use_deeplink_bridge;
@@ -10,7 +12,10 @@ use crate::version::Version;
 
 use super::cmd::{Cmd, FetchRequest};
 use super::msg::Msg;
-use super::state::{LaunchStep, NetworkResource, State, UserIntention};
+use super::state::{
+    DeeplinkHandoff, ExplorerLaunch, LocalInstallations, NetworkResource, RunningInstances, State,
+    UserIntention,
+};
 use super::values::{Attempt, Installation, Percent, ReadyInstallation, UpdateStrategy};
 
 pub const SILENT_ATTEMPTS: Attempt = 3;
@@ -36,9 +41,11 @@ pub fn update(mut state: State, msg: Msg) -> (State, Cmd) {
         Msg::VersionDownloadFailed(strategy, error) => {
             on_version_download_failed(&mut state, strategy, error)
         }
-        Msg::RunningInstancesChecked { any } => on_running_instances_checked(&mut state, any),
+        Msg::RunningInstancesChecked { any, checked_at } => {
+            on_running_instances_checked(&mut state, any, checked_at)
+        }
         Msg::DeeplinkHandedOff => {
-            apply_step(&mut state, LaunchStep::DeepLinkPass);
+            state.deeplink_handoff = DeeplinkHandoff::HandedOff;
             Cmd::None
         }
         Msg::DeeplinkHandoffFailed(error) => on_deeplink_handoff_failed(&mut state, error),
@@ -48,8 +55,8 @@ pub fn update(mut state: State, msg: Msg) -> (State, Cmd) {
         Msg::VersionInstallationFailed(strategy, error) => {
             on_version_installation_failed(&mut state, strategy, error)
         }
-        Msg::VersionLaunched(_) => {
-            apply_step(&mut state, LaunchStep::Launched);
+        Msg::VersionLaunched(version) => {
+            state.launch = ExplorerLaunch::Launched(version);
             Cmd::None
         }
         Msg::VersionLaunchFailed(_, error) => on_version_launch_failed(&mut state, error),
@@ -57,50 +64,12 @@ pub fn update(mut state: State, msg: Msg) -> (State, Cmd) {
     (state, cmd)
 }
 
-// Intention and steps
-
-const fn launch_step(state: &State) -> Option<&LaunchStep> {
-    match &state.user_intention {
-        UserIntention::Launch { step, .. } => Some(step),
-        UserIntention::Idle => None,
-    }
-}
-
-fn apply_step(state: &mut State, next: LaunchStep) {
-    if let UserIntention::Launch { step, .. } = &mut state.user_intention {
-        *step = next;
-    }
-}
+// Intention
 
 fn intended_deeplink(state: &State) -> Option<DeepLink> {
     match &state.user_intention {
-        UserIntention::Launch { deeplink, .. } => deeplink.clone(),
+        UserIntention::Launch(deeplink) => deeplink.clone(),
         UserIntention::Idle => None,
-    }
-}
-
-const fn is_launch_step_terminal(step: &LaunchStep) -> bool {
-    matches!(
-        step,
-        LaunchStep::DeepLinkPass | LaunchStep::Launched | LaunchStep::Failed { .. }
-    )
-}
-
-/// The step waits for the user: its own failure or a final error in the resource it depends on.
-fn is_waiting_for_user_retry(state: &State) -> bool {
-    match launch_step(state) {
-        Some(LaunchStep::Failed { .. }) => true,
-        Some(LaunchStep::Fetching { .. }) => {
-            matches!(state.latest_version, NetworkResource::Error { .. })
-        }
-        Some(LaunchStep::Downloading | LaunchStep::Installing) => latest_fetched_version(state)
-            .is_some_and(|target| {
-                matches!(
-                    state.installations.get(&target),
-                    Some(Installation::Failed { .. })
-                )
-            }),
-        _ => false,
     }
 }
 
@@ -111,25 +80,62 @@ fn latest_fetched_version(state: &State) -> Option<Version> {
     }
 }
 
+fn is_launch_in_progress(state: &State) -> bool {
+    matches!(state.running_instances, RunningInstances::Checking)
+        || matches!(state.deeplink_handoff, DeeplinkHandoff::HandingOff { .. })
+        || matches!(state.local_installations, LocalInstallations::Scanning)
+        || matches!(state.latest_version, NetworkResource::Fetching { .. })
+        || matches!(state.delta_manifest, NetworkResource::Fetching { .. })
+        || matches!(state.launch, ExplorerLaunch::Launching(_))
+        || state
+            .local_installations
+            .scanned()
+            .is_some_and(|installations| {
+                installations.values().any(|installation| {
+                    matches!(
+                        installation,
+                        Installation::Downloading { .. } | Installation::Installing { .. }
+                    )
+                })
+            })
+}
+
+/// A final error sits in a resource the launch depends on; only the retry button moves on.
+fn is_waiting_for_user_retry(state: &State) -> bool {
+    matches!(state.deeplink_handoff, DeeplinkHandoff::Failed { .. })
+        || matches!(state.latest_version, NetworkResource::Error { .. })
+        || matches!(state.launch, ExplorerLaunch::Failed { .. })
+        || latest_fetched_version(state).is_some_and(|target| {
+            matches!(
+                target_installation(state, &target),
+                Some(Installation::Failed { .. })
+            )
+        })
+}
+
+fn target_installation<'a>(state: &'a State, target: &Version) -> Option<&'a Installation> {
+    state
+        .local_installations
+        .scanned()
+        .and_then(|installations| installations.get(target))
+}
+
 fn on_launch_intention_received(state: &mut State, deeplink: Option<DeepLink>) -> Cmd {
-    if launch_step(state).is_some_and(|step| !is_launch_step_terminal(step)) {
+    if is_launch_in_progress(state) {
         return Cmd::Ignore("launch already in progress");
+    }
+    if is_waiting_for_user_retry(state) {
+        return Cmd::Ignore("launch failed; only the retry button restarts it");
     }
     begin_launch_intention(state, deeplink)
 }
 
 fn on_deeplink_received(state: &mut State, deeplink: DeepLink) -> Cmd {
-    if let UserIntention::Launch {
-        deeplink: current,
-        step,
-    } = &mut state.user_intention
-    {
-        if !is_launch_step_terminal(step) {
-            *current = Some(deeplink);
-            return Cmd::Ignore(
-                "launch in progress continues; LaunchVersion will carry the new deeplink",
-            );
-        }
+    if is_launch_in_progress(state) {
+        state.user_intention = UserIntention::Launch(Some(deeplink));
+        return Cmd::Ignore(
+            "launch in progress continues; LaunchVersion will carry the new deeplink",
+        );
     }
     begin_launch_intention(state, Some(deeplink))
 }
@@ -140,7 +146,7 @@ fn on_retry_intention_received(state: &mut State) -> Cmd {
     }
     state.latest_version = NetworkResource::Unknown;
     state.delta_manifest = NetworkResource::Unknown;
-    state.installations.clear();
+    state.local_installations = LocalInstallations::Unknown;
     let deeplink = intended_deeplink(state);
     Cmd::Multi(vec![
         fire_analytics_event(Event::RETRY_FLOW_BUTTON_CLICK {
@@ -152,58 +158,58 @@ fn on_retry_intention_received(state: &mut State) -> Cmd {
 
 fn begin_launch_intention(state: &mut State, deeplink: Option<DeepLink>) -> Cmd {
     let has_deeplink = deeplink.is_some();
-    state.user_intention = UserIntention::Launch {
-        deeplink,
-        step: LaunchStep::DeeplinkOpening { attempt: 1 },
-    };
+    state.user_intention = UserIntention::Launch(deeplink);
+    state.deeplink_handoff = DeeplinkHandoff::Idle;
+    state.launch = ExplorerLaunch::Idle;
     if has_deeplink {
+        state.running_instances = RunningInstances::Checking;
         return Cmd::CheckRunningInstances;
     }
-    enter_fetching_step(state)
+    scan_installations_and_fetch_latest_version(state)
 }
 
-// Passthrough
+// Deeplink handoff
 
-fn on_running_instances_checked(state: &mut State, any: bool) -> Cmd {
-    if !matches!(launch_step(state), Some(LaunchStep::DeeplinkOpening { .. })) {
-        return Cmd::Ignore("stale instances check: launch is past DeeplinkOpening");
+/// The result is recorded whenever it arrives; it drives the handoff only when the launch asked for it.
+fn on_running_instances_checked(state: &mut State, any: bool, checked_at: SystemTime) -> Cmd {
+    let was_awaited = matches!(state.running_instances, RunningInstances::Checking);
+    state.running_instances = RunningInstances::Checked { any, checked_at };
+    if !was_awaited {
+        return Cmd::Ignore("instances check recorded: no handoff decision is pending");
     }
     match intended_deeplink(state) {
         Some(deeplink) if should_use_deeplink_bridge(&deeplink, &state.config.args, any) => {
+            state.deeplink_handoff = DeeplinkHandoff::HandingOff { attempt: 1 };
             Cmd::HandoffDeeplink(deeplink)
         }
-        _ => enter_fetching_step(state),
+        _ => scan_installations_and_fetch_latest_version(state),
     }
 }
 
 fn on_deeplink_handoff_failed(state: &mut State, error: DCLError) -> Cmd {
-    let Some(LaunchStep::DeeplinkOpening { attempt }) = launch_step(state) else {
-        return Cmd::Ignore("stale handoff failure: launch is past DeeplinkOpening");
+    let DeeplinkHandoff::HandingOff { attempt } = state.deeplink_handoff else {
+        return Cmd::Ignore("stale handoff failure: no handoff is in progress");
     };
-    let attempt = *attempt;
     let error = Arc::new(error);
     let report = report_attempt_error(&error, attempt);
     if is_final_attempt(attempt, &error) {
-        apply_step(state, LaunchStep::Failed { error, attempt });
+        state.deeplink_handoff = DeeplinkHandoff::Failed { error, attempt };
         return report;
     }
     let Some(deeplink) = intended_deeplink(state) else {
         return report;
     };
-    apply_step(
-        state,
-        LaunchStep::DeeplinkOpening {
-            attempt: attempt.saturating_add(1),
-        },
-    );
+    state.deeplink_handoff = DeeplinkHandoff::HandingOff {
+        attempt: attempt.saturating_add(1),
+    };
     Cmd::Multi(vec![report, Cmd::HandoffDeeplink(deeplink)])
 }
 
-// Fetch: local presence, latest version and the delta manifest
+// Local presence, latest version and the delta manifest
 
-fn enter_fetching_step(state: &mut State) -> Cmd {
-    apply_step(state, LaunchStep::Fetching { scanned: false });
-    if !matches!(state.latest_version, NetworkResource::Unknown) {
+fn scan_installations_and_fetch_latest_version(state: &mut State) -> Cmd {
+    state.local_installations = LocalInstallations::Scanning;
+    if matches!(state.latest_version, NetworkResource::Fetched(_)) {
         return Cmd::EnsureLocalInstallations;
     }
     Cmd::Multi(vec![
@@ -216,24 +222,23 @@ fn on_local_installation_presence_confirmed(
     state: &mut State,
     ready: Vec<ReadyInstallation>,
 ) -> Cmd {
-    state
-        .installations
-        .retain(|_, installation| !matches!(installation, Installation::Ready(_)));
+    let mut installations = match std::mem::take(&mut state.local_installations) {
+        LocalInstallations::Scanned(installations) => installations,
+        LocalInstallations::Unknown | LocalInstallations::Scanning => BTreeMap::new(),
+    };
+    installations.retain(|_, installation| !matches!(installation, Installation::Ready(_)));
     for installation in ready {
-        state
-            .installations
-            .insert(installation.0.clone(), Installation::Ready(installation));
+        installations.insert(installation.0.clone(), Installation::Ready(installation));
     }
-    if matches!(launch_step(state), Some(LaunchStep::Fetching { .. })) {
-        apply_step(state, LaunchStep::Fetching { scanned: true });
-    }
-    leave_fetching_step_if_ready(state)
+    state.local_installations = LocalInstallations::Scanned(installations);
+    launch_or_update_once_scanned_and_fetched(state)
 }
 
 /// Highest ready release; dev builds are never a delta base.
 fn highest_ready_release(state: &State) -> Option<Version> {
     state
-        .installations
+        .local_installations
+        .scanned()?
         .iter()
         .rev()
         .find(|(version, installation)| {
@@ -249,7 +254,10 @@ fn on_latest_version_fetched(state: &mut State, result: Result<Version, DCLError
                 version: version.to_string(),
             });
             state.latest_version = NetworkResource::Fetched(version);
-            Cmd::Multi(vec![success, leave_fetching_step_if_ready(state)])
+            Cmd::Multi(vec![
+                success,
+                launch_or_update_once_scanned_and_fetched(state),
+            ])
         }
         Err(error) => {
             let attempt = resource_fetch_attempt(&state.latest_version);
@@ -290,7 +298,7 @@ fn on_delta_manifest_fetched(
     match result {
         Ok(manifest) => {
             state.delta_manifest = NetworkResource::Fetched(manifest.map(Arc::new));
-            leave_fetching_step_if_ready(state)
+            launch_or_update_once_scanned_and_fetched(state)
         }
         Err(error) => {
             let attempt = resource_fetch_attempt(&state.delta_manifest);
@@ -311,7 +319,7 @@ fn on_delta_manifest_fetched(
                     };
                     Cmd::Multi(vec![
                         report_final_error_to_sentry(error),
-                        leave_fetching_step_if_ready(state),
+                        launch_or_update_once_scanned_and_fetched(state),
                     ])
                 }
             }
@@ -328,42 +336,45 @@ fn request_delta_manifest_fetch(
     Cmd::Fetch(FetchRequest::DeltaManifest { current_version })
 }
 
-/// Leaves the fetch step once the presence scan and the latest version are both in.
-fn leave_fetching_step_if_ready(state: &mut State) -> Cmd {
-    match launch_step(state) {
-        Some(LaunchStep::Fetching { scanned: true }) => {}
-        Some(LaunchStep::Fetching { scanned: false }) => {
-            return Cmd::Ignore("fetching step waits for the local presence scan");
-        }
-        _ => return Cmd::Ignore("stale fetch result: launch is past Fetching"),
+fn launch_or_update_once_scanned_and_fetched(state: &mut State) -> Cmd {
+    if state.local_installations.scanned().is_none() {
+        return Cmd::Ignore("waiting for the local presence scan");
     }
     let Some(target) = latest_fetched_version(state) else {
-        return Cmd::Ignore("fetching step waits for the latest version");
+        return Cmd::Ignore("waiting for the latest version");
     };
-    if matches!(
-        state.installations.get(&target),
-        Some(Installation::Ready(_))
-    ) {
-        let version = target.to_string();
-        return Cmd::Multi(vec![
-            fire_analytics_event(Event::DOWNLOAD_VERSION_SKIPPED {
-                version: version.clone(),
-            }),
-            fire_analytics_event(Event::INSTALL_VERSION_SKIPPED { version }),
-            enter_launching_step(state, target),
-        ]);
-    }
-    match decide_update_strategy(state, &target) {
-        UpdateDecision::Wait => Cmd::Ignore("fetching step waits for the delta manifest"),
-        UpdateDecision::FetchManifest(from) => request_delta_manifest_fetch(state, from, 1),
-        UpdateDecision::Download(strategy, leaf) => Cmd::Multi(vec![
-            fire_analytics_event(Event::UPDATE_STRATEGY_DECIDED {
-                version: target.to_string(),
-                strategy: strategy.name().to_owned(),
-                leaf: leaf.to_owned(),
-            }),
-            enter_downloading_step(state, strategy, 1),
-        ]),
+    match target_installation(state, &target) {
+        Some(Installation::Ready(_)) => {
+            if !matches!(state.launch, ExplorerLaunch::Idle) {
+                return Cmd::Ignore("latest version is already launching or launched");
+            }
+            let version = target.to_string();
+            Cmd::Multi(vec![
+                fire_analytics_event(Event::DOWNLOAD_VERSION_SKIPPED {
+                    version: version.clone(),
+                }),
+                fire_analytics_event(Event::INSTALL_VERSION_SKIPPED { version }),
+                start_version_launch(state, target),
+            ])
+        }
+        Some(Installation::Downloading { .. } | Installation::Installing { .. }) => {
+            Cmd::Ignore("update of the latest version is already in progress")
+        }
+        Some(Installation::Failed { .. }) => {
+            Cmd::Ignore("update of the latest version failed; waiting for the user retry")
+        }
+        None => match decide_update_strategy(state, &target) {
+            UpdateDecision::Wait => Cmd::Ignore("waiting for the delta manifest"),
+            UpdateDecision::FetchManifest(from) => request_delta_manifest_fetch(state, from, 1),
+            UpdateDecision::Download(strategy, leaf) => Cmd::Multi(vec![
+                fire_analytics_event(Event::UPDATE_STRATEGY_DECIDED {
+                    version: target.to_string(),
+                    strategy: strategy.name().to_owned(),
+                    leaf: leaf.to_owned(),
+                }),
+                start_version_download(state, strategy, 1),
+            ]),
+        },
     }
 }
 
@@ -404,10 +415,12 @@ fn decide_update_strategy(state: &State, target: &Version) -> UpdateDecision {
 
 // Download and install
 
-fn enter_downloading_step(state: &mut State, strategy: UpdateStrategy, attempt: Attempt) -> Cmd {
-    apply_step(state, LaunchStep::Downloading);
+fn start_version_download(state: &mut State, strategy: UpdateStrategy, attempt: Attempt) -> Cmd {
+    let Some(installations) = state.local_installations.scanned_mut() else {
+        return Cmd::Ignore("download requested before the local presence scan");
+    };
     let target = strategy.target().clone();
-    state.installations.insert(
+    installations.insert(
         target.clone(),
         Installation::Downloading {
             strategy: strategy.clone(),
@@ -428,7 +441,10 @@ fn on_download_progressed(state: &mut State, strategy: &UpdateStrategy, percent:
         strategy: current,
         percent: progress,
         ..
-    }) = state.installations.get_mut(strategy.target())
+    }) = state
+        .local_installations
+        .scanned_mut()
+        .and_then(|installations| installations.get_mut(strategy.target()))
     {
         if current == strategy {
             *progress = percent;
@@ -438,10 +454,12 @@ fn on_download_progressed(state: &mut State, strategy: &UpdateStrategy, percent:
 }
 
 fn on_version_download_completed(state: &mut State, strategy: UpdateStrategy) -> Cmd {
-    apply_step(state, LaunchStep::Installing);
     let target = strategy.target().clone();
     let attempt = installation_update_attempt(state, &target);
-    state.installations.insert(
+    let Some(installations) = state.local_installations.scanned_mut() else {
+        return Cmd::Ignore("download completed before the local presence scan");
+    };
+    installations.insert(
         target.clone(),
         Installation::Installing {
             strategy: strategy.clone(),
@@ -500,25 +518,25 @@ fn fall_back_to_zip_or_retry_download(
                 error: error.to_string(),
             }),
             report_final_error_to_sentry(error),
-            enter_downloading_step(state, UpdateStrategy::ByZip { target }, 1),
+            start_version_download(state, UpdateStrategy::ByZip { target }, 1),
         ]),
         UpdateStrategy::ByZip { .. } => {
             let attempt = installation_update_attempt(state, &target);
             let report = report_attempt_error(&error, attempt);
-            if is_final_attempt(attempt, &error) {
-                state
-                    .installations
-                    .insert(target, Installation::Failed { error, attempt });
-                return report;
+            if !is_final_attempt(attempt, &error) {
+                let retry = start_version_download(state, strategy, attempt.saturating_add(1));
+                return Cmd::Multi(vec![report, retry]);
             }
-            let retry = enter_downloading_step(state, strategy, attempt.saturating_add(1));
-            Cmd::Multi(vec![report, retry])
+            if let Some(installations) = state.local_installations.scanned_mut() {
+                installations.insert(target, Installation::Failed { error, attempt });
+            }
+            report
         }
     }
 }
 
 fn installation_update_attempt(state: &State, version: &Version) -> Attempt {
-    match state.installations.get(version) {
+    match target_installation(state, version) {
         Some(
             Installation::Downloading { attempt, .. } | Installation::Installing { attempt, .. },
         ) => *attempt,
@@ -531,36 +549,33 @@ fn on_version_installation_completed(
     version: Version,
     ready: ReadyInstallation,
 ) -> Cmd {
-    state
-        .installations
-        .insert(version.clone(), Installation::Ready(ready));
+    let Some(installations) = state.local_installations.scanned_mut() else {
+        return Cmd::Ignore("installation completed before the local presence scan");
+    };
+    installations.insert(version.clone(), Installation::Ready(ready));
     let success = fire_analytics_event(Event::INSTALL_VERSION_SUCCESS {
         version: version.to_string(),
     });
     let is_target = latest_fetched_version(state).is_some_and(|target| target == version);
-    if is_target && matches!(launch_step(state), Some(LaunchStep::Installing)) {
-        return Cmd::Multi(vec![success, enter_launching_step(state, version)]);
+    if is_target && matches!(state.launch, ExplorerLaunch::Idle) {
+        return Cmd::Multi(vec![success, start_version_launch(state, version)]);
     }
     success
 }
 
 // Launch
 
-fn enter_launching_step(state: &mut State, version: Version) -> Cmd {
+fn start_version_launch(state: &mut State, version: Version) -> Cmd {
     let deeplink = intended_deeplink(state);
-    apply_step(state, LaunchStep::Launching);
+    state.launch = ExplorerLaunch::Launching(version.clone());
     Cmd::LaunchVersion(version, deeplink)
 }
 
 fn on_version_launch_failed(state: &mut State, error: DCLError) -> Cmd {
     let error = Arc::new(error);
-    apply_step(
-        state,
-        LaunchStep::Failed {
-            error: error.clone(),
-            attempt: 1,
-        },
-    );
+    state.launch = ExplorerLaunch::Failed {
+        error: error.clone(),
+    };
     report_final_error_to_sentry(error)
 }
 
@@ -631,8 +646,8 @@ mod tests {
         cmds.iter().any(predicate)
     }
 
-    fn at(state: &State, predicate: impl Fn(&LaunchStep) -> bool) -> bool {
-        launch_step(state).is_some_and(predicate)
+    fn installation<'a>(state: &'a State, target: &str) -> Option<&'a Installation> {
+        target_installation(state, &version(target))
     }
 
     fn is_final_report(cmd: &Cmd) -> bool {
@@ -665,10 +680,7 @@ mod tests {
             Cmd::Fetch(FetchRequest::LatestVersion)
         )));
         let (state, _) = step_msg(state, Msg::LocalInstallationPresenceConfirmed(ready));
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::Fetching { scanned: true }
-        )));
+        assert!(state.local_installations.scanned().is_some());
         assert!(matches!(
             state.latest_version,
             NetworkResource::Fetching { attempt: 1 }
@@ -707,10 +719,11 @@ mod tests {
     #[test]
     fn intention_without_deeplink_scans_and_fetches_at_once() {
         let (state, cmds) = step_msg(State::default(), Msg::LaunchIntentionReceived(None));
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::Fetching { scanned: false }
-        )));
+        assert!(matches!(
+            state.local_installations,
+            LocalInstallations::Scanning
+        ));
+        assert!(matches!(state.deeplink_handoff, DeeplinkHandoff::Idle));
         assert!(has(&cmds, |c| matches!(c, Cmd::EnsureLocalInstallations)));
         assert!(has(&cmds, |c| matches!(
             c,
@@ -725,10 +738,15 @@ mod tests {
             State::default(),
             Msg::LaunchIntentionReceived(Some(deeplink())),
         );
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::DeeplinkOpening { attempt: 1 }
-        )));
+        assert!(matches!(
+            state.running_instances,
+            RunningInstances::Checking
+        ));
+        assert!(matches!(state.deeplink_handoff, DeeplinkHandoff::Idle));
+        assert!(matches!(
+            state.local_installations,
+            LocalInstallations::Unknown
+        ));
         assert!(has(&cmds, |c| matches!(c, Cmd::CheckRunningInstances)));
         assert!(!has(&cmds, |c| matches!(c, Cmd::Fetch(_))));
     }
@@ -739,15 +757,21 @@ mod tests {
             State::default(),
             Msg::LaunchIntentionReceived(Some(deeplink())),
         );
-        let (state, cmds) = step_msg(state, Msg::RunningInstancesChecked { any: true });
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::DeeplinkOpening { .. }
-        )));
+        let (state, cmds) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: true,
+                checked_at: SystemTime::now(),
+            },
+        );
+        assert!(matches!(
+            state.deeplink_handoff,
+            DeeplinkHandoff::HandingOff { attempt: 1 }
+        ));
         assert!(has(&cmds, |c| matches!(c, Cmd::HandoffDeeplink(_))));
 
         let (state, cmds) = step_msg(state, Msg::DeeplinkHandedOff);
-        assert!(at(&state, |s| matches!(s, LaunchStep::DeepLinkPass)));
+        assert!(matches!(state.deeplink_handoff, DeeplinkHandoff::HandedOff));
         assert!(cmds.is_empty());
     }
 
@@ -757,11 +781,18 @@ mod tests {
             State::default(),
             Msg::LaunchIntentionReceived(Some(deeplink())),
         );
-        let (state, cmds) = step_msg(state, Msg::RunningInstancesChecked { any: false });
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::Fetching { scanned: false }
-        )));
+        let (state, cmds) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: false,
+                checked_at: SystemTime::now(),
+            },
+        );
+        assert!(matches!(state.deeplink_handoff, DeeplinkHandoff::Idle));
+        assert!(matches!(
+            state.local_installations,
+            LocalInstallations::Scanning
+        ));
         assert!(has(&cmds, |c| matches!(c, Cmd::EnsureLocalInstallations)));
         assert!(has(&cmds, |c| matches!(
             c,
@@ -775,17 +806,24 @@ mod tests {
             State::default(),
             Msg::LaunchIntentionReceived(Some(deeplink())),
         );
-        let (state, _) = step_msg(state, Msg::RunningInstancesChecked { any: true });
+        let (state, _) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: true,
+                checked_at: SystemTime::now(),
+            },
+        );
         let (state, cmds) = step_msg(
             state,
             Msg::DeeplinkHandoffFailed(DCLError::E3001_OPEN_DEEPLINK_TIMEOUT),
         );
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::Failed { attempt: 1, .. }
-        )));
+        assert!(matches!(
+            state.deeplink_handoff,
+            DeeplinkHandoff::Failed { attempt: 1, .. }
+        ));
         assert!(has(&cmds, is_final_report));
         assert!(!has(&cmds, |c| matches!(c, Cmd::HandoffDeeplink(_))));
+        assert!(is_waiting_for_user_retry(&state));
     }
 
     #[test]
@@ -794,15 +832,21 @@ mod tests {
             State::default(),
             Msg::LaunchIntentionReceived(Some(deeplink())),
         );
-        let (state, _) = step_msg(state, Msg::RunningInstancesChecked { any: true });
+        let (state, _) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: true,
+                checked_at: SystemTime::now(),
+            },
+        );
         let (state, cmds) = step_msg(
             state,
             Msg::DeeplinkHandoffFailed(DCLError::E3003_CANT_GET_VERSION),
         );
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::DeeplinkOpening { attempt: 2 }
-        )));
+        assert!(matches!(
+            state.deeplink_handoff,
+            DeeplinkHandoff::HandingOff { attempt: 2 }
+        ));
         assert!(has(&cmds, is_breadcrumb));
         assert!(has(&cmds, |c| matches!(c, Cmd::HandoffDeeplink(_))));
     }
@@ -813,11 +857,17 @@ mod tests {
             State::default(),
             Msg::LaunchIntentionReceived(Some(deeplink())),
         );
-        let (state, _) = step_msg(state, Msg::RunningInstancesChecked { any: false });
+        let (state, _) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: false,
+                checked_at: SystemTime::now(),
+            },
+        );
         let ready = vec![ReadyInstallation(version("v1.2.3"))];
         let (state, _) = step_msg(state, Msg::LocalInstallationPresenceConfirmed(ready));
         let (state, cmds) = fetched(state, "v1.2.3");
-        assert!(at(&state, |s| matches!(s, LaunchStep::Launching)));
+        assert!(matches!(state.launch, ExplorerLaunch::Launching(_)));
         assert!(has(&cmds, |c| matches!(c, Cmd::LaunchVersion(_, Some(_)))));
         assert!(has(&cmds, |c| matches!(
             c,
@@ -825,7 +875,7 @@ mod tests {
         )));
 
         let (state, _) = step_msg(state, Msg::VersionLaunched(version("v1.2.3")));
-        assert!(at(&state, |s| matches!(s, LaunchStep::Launched)));
+        assert!(matches!(state.launch, ExplorerLaunch::Launched(_)));
     }
 
     #[test]
@@ -833,13 +883,17 @@ mod tests {
         let (state, _) = step_msg(State::default(), Msg::LaunchIntentionReceived(None));
         let (state, cmds) = fetched(state, "v2.0.0");
         assert!(!has(&cmds, |c| matches!(c, Cmd::DownloadVersion(_))));
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::Fetching { scanned: false }
-        )));
+        assert!(has(&cmds, |c| matches!(c, Cmd::Ignore(_))));
+        assert!(matches!(
+            state.local_installations,
+            LocalInstallations::Scanning
+        ));
 
         let (state, cmds) = step_msg(state, Msg::LocalInstallationPresenceConfirmed(vec![]));
-        assert!(at(&state, |s| matches!(s, LaunchStep::Downloading)));
+        assert!(matches!(
+            installation(&state, "v2.0.0"),
+            Some(Installation::Downloading { .. })
+        ));
         assert!(has(&cmds, |c| matches!(c, Cmd::DownloadVersion(_))));
     }
 
@@ -847,9 +901,8 @@ mod tests {
     fn fresh_install_downloads_the_zip_without_a_manifest() {
         let state = fetching(delta_state(), vec![]);
         let (state, cmds) = fetched(state, "v2.0.0");
-        assert!(at(&state, |s| matches!(s, LaunchStep::Downloading)));
         assert!(matches!(
-            state.installations.get(&version("v2.0.0")),
+            installation(&state, "v2.0.0"),
             Some(Installation::Downloading {
                 strategy: UpdateStrategy::ByZip { .. },
                 percent: 0,
@@ -886,21 +939,24 @@ mod tests {
             c,
             Cmd::Fetch(FetchRequest::DeltaManifest { current_version }) if *current_version == version("v1.0.0")
         )));
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::Fetching { scanned: true }
-        )));
         assert!(matches!(
             state.delta_manifest,
             NetworkResource::Fetching { attempt: 1 }
         ));
+        assert!(installation(&state, "v2.0.0").is_none());
 
         let (state, cmds) = step_msg(state, Msg::DeltaManifestFetched(Ok(Some(DeltaManifest))));
-        assert!(at(&state, |s| matches!(s, LaunchStep::Downloading)));
         assert!(has(&cmds, |c| matches!(
             c,
             Cmd::DownloadVersion(UpdateStrategy::ByDelta { from, .. }) if *from == version("v1.0.0")
         )));
+        assert!(matches!(
+            installation(&state, "v2.0.0"),
+            Some(Installation::Downloading {
+                strategy: UpdateStrategy::ByDelta { .. },
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -947,6 +1003,7 @@ mod tests {
             c,
             Cmd::FireAnalyticsEvent(Event::UPDATE_STRATEGY_DECIDED { leaf, .. }) if leaf == "manifest_unavailable"
         )));
+        assert!(!is_waiting_for_user_retry(&state));
     }
 
     #[test]
@@ -989,14 +1046,13 @@ mod tests {
         let (state, cmds) = step_msg(state, Msg::DownloadProgressed(strategy.clone(), 40));
         assert!(cmds.is_empty());
         assert!(matches!(
-            state.installations.get(&version("v2.0.0")),
+            installation(&state, "v2.0.0"),
             Some(Installation::Downloading { percent: 40, .. })
         ));
 
         let (state, cmds) = step_msg(state, Msg::VersionDownloadCompleted(strategy));
-        assert!(at(&state, |s| matches!(s, LaunchStep::Installing)));
         assert!(matches!(
-            state.installations.get(&version("v2.0.0")),
+            installation(&state, "v2.0.0"),
             Some(Installation::Installing { attempt: 1, .. })
         ));
         assert!(has(&cmds, |c| matches!(c, Cmd::InstallVersion(_))));
@@ -1008,7 +1064,7 @@ mod tests {
                 ReadyInstallation(version("v2.0.0")),
             ),
         );
-        assert!(at(&state, |s| matches!(s, LaunchStep::Launching)));
+        assert!(matches!(state.launch, ExplorerLaunch::Launching(_)));
         assert!(has(&cmds, |c| matches!(c, Cmd::LaunchVersion(_, None))));
         assert!(!has(&cmds, |c| matches!(
             c,
@@ -1022,16 +1078,15 @@ mod tests {
         let (state, _) = fetched(state, "v2.0.0");
         let (state, cmds) = zip_download_failed(state, "v2.0.0");
         assert!(matches!(
-            state.installations.get(&version("v2.0.0")),
+            installation(&state, "v2.0.0"),
             Some(Installation::Downloading { attempt: 2, .. })
         ));
         assert!(has(&cmds, |c| matches!(c, Cmd::DownloadVersion(_))));
 
         let (state, _) = zip_download_failed(state, "v2.0.0");
         let (state, cmds) = zip_download_failed(state, "v2.0.0");
-        assert!(at(&state, |s| matches!(s, LaunchStep::Downloading)));
         assert!(matches!(
-            state.installations.get(&version("v2.0.0")),
+            installation(&state, "v2.0.0"),
             Some(Installation::Failed {
                 attempt: SILENT_ATTEMPTS,
                 ..
@@ -1054,9 +1109,8 @@ mod tests {
             state,
             Msg::VersionInstallationFailed(strategy, DCLError::E3004_CANT_RENAME_LATEST),
         );
-        assert!(at(&state, |s| matches!(s, LaunchStep::Downloading)));
         assert!(matches!(
-            state.installations.get(&version("v2.0.0")),
+            installation(&state, "v2.0.0"),
             Some(Installation::Downloading { attempt: 2, .. })
         ));
         assert!(has(&cmds, |c| matches!(c, Cmd::DownloadVersion(_))));
@@ -1078,9 +1132,8 @@ mod tests {
             state,
             Msg::VersionInstallationFailed(strategy, DCLError::E3004_CANT_RENAME_LATEST),
         );
-        assert!(at(&state, |s| matches!(s, LaunchStep::Downloading)));
         assert!(matches!(
-            state.installations.get(&version("v2.0.0")),
+            installation(&state, "v2.0.0"),
             Some(Installation::Downloading {
                 strategy: UpdateStrategy::ByZip { .. },
                 attempt: 1,
@@ -1107,11 +1160,9 @@ mod tests {
             state,
             Msg::VersionLaunchFailed(version("v1.0.0"), DCLError::E3003_CANT_GET_VERSION),
         );
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::Failed { attempt: 1, .. }
-        )));
+        assert!(matches!(state.launch, ExplorerLaunch::Failed { .. }));
         assert!(has(&cmds, is_final_report));
+        assert!(is_waiting_for_user_retry(&state));
     }
 
     #[test]
@@ -1120,7 +1171,13 @@ mod tests {
             State::default(),
             Msg::LaunchIntentionReceived(Some(deeplink())),
         );
-        let (state, _) = step_msg(state, Msg::RunningInstancesChecked { any: false });
+        let (state, _) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: false,
+                checked_at: SystemTime::now(),
+            },
+        );
         let (mut state, _) = step_msg(state, Msg::LocalInstallationPresenceConfirmed(vec![]));
         for _ in 0..SILENT_ATTEMPTS {
             let (next, _) = fetch_failed(state);
@@ -1128,11 +1185,16 @@ mod tests {
         }
         let (state, cmds) = step_msg(state, Msg::RetryIntentionReceived);
         assert!(matches!(state.latest_version, NetworkResource::Unknown));
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::DeeplinkOpening { attempt: 1 }
-        )));
-        assert!(super::intended_deeplink(&state).is_some());
+        assert!(matches!(
+            state.local_installations,
+            LocalInstallations::Unknown
+        ));
+        assert!(matches!(
+            state.running_instances,
+            RunningInstances::Checking
+        ));
+        assert!(matches!(state.deeplink_handoff, DeeplinkHandoff::Idle));
+        assert!(intended_deeplink(&state).is_some());
         assert!(has(&cmds, |c| matches!(
             c,
             Cmd::FireAnalyticsEvent(Event::RETRY_FLOW_BUTTON_CLICK { .. })
@@ -1141,9 +1203,20 @@ mod tests {
     }
 
     #[test]
-    fn retry_is_ignored_unless_stuck() {
+    fn retry_is_ignored_unless_awaited() {
         let state = fetching(State::default(), vec![]);
         let (state, cmds) = step_msg(state, Msg::RetryIntentionReceived);
+        assert!(matches!(cmds.as_slice(), [Cmd::Ignore(_)]));
+        assert!(matches!(
+            state.latest_version,
+            NetworkResource::Fetching { attempt: 1 }
+        ));
+    }
+
+    #[test]
+    fn second_intention_during_a_launch_is_ignored() {
+        let state = fetching(State::default(), vec![]);
+        let (state, cmds) = step_msg(state, Msg::LaunchIntentionReceived(None));
         assert!(matches!(cmds.as_slice(), [Cmd::Ignore(_)]));
         assert!(matches!(
             state.latest_version,
@@ -1158,10 +1231,12 @@ mod tests {
         let (state, _) = fetched(state, "v1.0.0");
         let (state, _) = step_msg(state, Msg::VersionLaunched(version("v1.0.0")));
         let (state, cmds) = step_msg(state, Msg::DeeplinkReceived(deeplink()));
-        assert!(at(&state, |s| matches!(
-            s,
-            LaunchStep::DeeplinkOpening { .. }
-        )));
+        assert!(matches!(
+            state.running_instances,
+            RunningInstances::Checking
+        ));
+        assert!(matches!(state.deeplink_handoff, DeeplinkHandoff::Idle));
+        assert!(matches!(state.launch, ExplorerLaunch::Idle));
         assert!(has(&cmds, |c| matches!(c, Cmd::CheckRunningInstances)));
     }
 
@@ -1171,7 +1246,28 @@ mod tests {
         let (state, _) = fetched(state, "v2.0.0");
         let (state, cmds) = step_msg(state, Msg::DeeplinkReceived(deeplink()));
         assert!(matches!(cmds.as_slice(), [Cmd::Ignore(_)]));
-        assert!(at(&state, |s| matches!(s, LaunchStep::Downloading)));
-        assert!(super::intended_deeplink(&state).is_some());
+        assert!(matches!(
+            installation(&state, "v2.0.0"),
+            Some(Installation::Downloading { .. })
+        ));
+        assert!(intended_deeplink(&state).is_some());
+    }
+
+    #[test]
+    fn unrequested_instances_check_is_recorded_but_decides_nothing() {
+        let state = fetching(State::default(), vec![]);
+        let (state, cmds) = step_msg(
+            state,
+            Msg::RunningInstancesChecked {
+                any: true,
+                checked_at: SystemTime::now(),
+            },
+        );
+        assert!(matches!(cmds.as_slice(), [Cmd::Ignore(_)]));
+        assert!(matches!(
+            state.running_instances,
+            RunningInstances::Checked { any: true, .. }
+        ));
+        assert!(matches!(state.deeplink_handoff, DeeplinkHandoff::Idle));
     }
 }

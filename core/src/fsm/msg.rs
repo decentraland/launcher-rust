@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use crate::delta_manifest::DeltaManifest;
 use crate::errors::DCLError;
 use crate::protocols::DeepLink;
@@ -20,7 +22,7 @@ pub enum Msg {
     DownloadProgressed(UpdateStrategy, Percent),
     VersionDownloadFailed(UpdateStrategy, DCLError),
 
-    RunningInstancesChecked { any: bool },
+    RunningInstancesChecked { any: bool, checked_at: SystemTime },
 
     DeeplinkHandedOff,
     DeeplinkHandoffFailed(DCLError),

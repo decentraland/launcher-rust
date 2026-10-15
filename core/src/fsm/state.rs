@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use crate::delta_manifest::DeltaManifest;
 use crate::environment::Args;
@@ -19,30 +20,7 @@ pub struct Config {
 pub enum UserIntention {
     #[default]
     Idle,
-    Launch {
-        deeplink: Option<DeepLink>,
-        step: LaunchStep,
-    },
-}
-
-// UI mirror, basically can be united with the protocal bridge in the future supposedly
-#[derive(Clone, Debug)]
-pub enum LaunchStep {
-    DeeplinkOpening {
-        attempt: Attempt,
-    },
-    Fetching {
-        scanned: bool,
-    },
-    Downloading,
-    Installing,
-    Launching,
-    DeepLinkPass,
-    Launched,
-    Failed {
-        error: Arc<DCLError>,
-        attempt: Attempt,
-    },
+    Launch(Option<DeepLink>),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -60,12 +38,75 @@ pub enum NetworkResource<T> {
 }
 
 #[derive(Clone, Debug, Default)]
+pub enum DeeplinkHandoff {
+    #[default]
+    Idle,
+    HandingOff {
+        attempt: Attempt,
+    },
+    HandedOff,
+    Failed {
+        error: Arc<DCLError>,
+        attempt: Attempt,
+    },
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum RunningInstances {
+    #[default]
+    Unknown,
+    Checking,
+    Checked {
+        any: bool,
+        checked_at: SystemTime,
+    },
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum LocalInstallations {
+    #[default]
+    Unknown,
+    Scanning,
+    Scanned(BTreeMap<Version, Installation>),
+}
+
+impl LocalInstallations {
+    pub const fn scanned(&self) -> Option<&BTreeMap<Version, Installation>> {
+        match self {
+            Self::Scanned(installations) => Some(installations),
+            Self::Unknown | Self::Scanning => None,
+        }
+    }
+
+    pub const fn scanned_mut(&mut self) -> Option<&mut BTreeMap<Version, Installation>> {
+        match self {
+            Self::Scanned(installations) => Some(installations),
+            Self::Unknown | Self::Scanning => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum ExplorerLaunch {
+    #[default]
+    Idle,
+    Launching(Version),
+    Launched(Version),
+    Failed {
+        error: Arc<DCLError>,
+    },
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct State {
     pub config: Config,
     pub user_intention: UserIntention,
+    pub deeplink_handoff: DeeplinkHandoff,
+    pub local_installations: LocalInstallations,
     pub latest_version: NetworkResource<Version>,
     pub delta_manifest: NetworkResource<Option<Arc<DeltaManifest>>>,
-    pub installations: BTreeMap<Version, Installation>,
+    pub launch: ExplorerLaunch,
+    pub running_instances: RunningInstances,
 }
 
 impl State {
