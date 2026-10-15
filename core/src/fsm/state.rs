@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::delta_manifest::DeltaManifest;
@@ -5,7 +6,7 @@ use crate::errors::DCLError;
 use crate::protocols::DeepLink;
 use crate::version::Version;
 
-use super::values::{Attempt, Installations};
+use super::values::{Attempt, Installation};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Config {
@@ -37,7 +38,7 @@ pub struct State {
     pub user_intention: UserIntention,
     pub latest_version: NetworkResource<Version>,
     pub delta_manifest: NetworkResource<Option<Arc<DeltaManifest>>>,
-    pub installations: Installations,
+    pub installations: BTreeMap<Version, Installation>,
 }
 
 impl State {
