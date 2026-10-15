@@ -21,23 +21,6 @@ impl From<&FlowError> for Status {
     }
 }
 
-#[derive(Error, Debug)]
-pub struct AttemptError {
-    #[source]
-    pub(crate) error: DCLError,
-    pub(crate) attempt: u8,
-}
-
-impl Display for AttemptError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Error on attempt: {}, cause: {}",
-            self.attempt, self.error
-        )
-    }
-}
-
 pub type DCLErrorResult = std::result::Result<(), DCLError>;
 
 pub type DCLErrorTyped<T> = std::result::Result<T, DCLError>;

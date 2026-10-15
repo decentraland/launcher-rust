@@ -108,11 +108,6 @@ pub fn should_use_deeplink_bridge(deeplink: &DeepLink, args: &Args, any_is_runni
     !open_new_instance && (any_is_running || bridge_only) && !is_local_scene
 }
 
-pub fn should_use_deeplink_bridge_for(deeplink: &DeepLink, any_is_running: bool) -> bool {
-    let args = AppEnvironment::cmd_args();
-    should_use_deeplink_bridge(deeplink, &args, any_is_running)
-}
-
 pub async fn execute_passthrough<T: EventChannel>(
     channel: &T,
     deeplink: &DeepLink,

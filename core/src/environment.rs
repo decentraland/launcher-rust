@@ -32,6 +32,8 @@ pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
 pub const ARG_SIGNIN: &str = "signin";
 /// Path to a `CrashAttachment` JSON.
 pub const ARG_CRASH_REPORT_WITH_ATTACHMENT: &str = "crash-report-with-attachment";
+/// `--delta-updates off` disables delta updates; anything else keeps them on.
+pub const ARG_DELTA_UPDATES: &str = "delta-updates";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
@@ -60,6 +62,8 @@ pub struct Args {
     pub bridge_only: bool,
 
     pub crash_report_attachment: Option<PathBuf>,
+
+    pub delta_updates: bool,
 }
 
 impl Args {
@@ -87,6 +91,7 @@ impl Args {
                 .crash_report_attachment
                 .clone()
                 .or_else(|| other.crash_report_attachment.clone()),
+            delta_updates: self.delta_updates && other.delta_updates,
         }
     }
 
@@ -109,6 +114,8 @@ impl Args {
             bridge_only: Self::has_flag(ARG_BRIDGE_ONLY, &vector),
             crash_report_attachment: Self::value_by_flag(ARG_CRASH_REPORT_WITH_ATTACHMENT, &vector)
                 .map(PathBuf::from),
+            delta_updates: Self::value_by_flag(ARG_DELTA_UPDATES, &vector)
+                .is_none_or(|value| value != "off"),
         }
     }
 
@@ -354,6 +361,7 @@ mod tests {
             local_scene: false,
             bridge_only: false,
             crash_report_attachment: None,
+            delta_updates: true,
         };
 
         let b = Args {
@@ -367,6 +375,7 @@ mod tests {
             local_scene: false,
             bridge_only: false,
             crash_report_attachment: Some(PathBuf::from("b.json")),
+            delta_updates: true,
         };
 
         let merged = a.merge_with(&b);

@@ -2,8 +2,6 @@ use serde::Serialize;
 use std::fmt;
 use std::fmt::Display;
 
-use crate::errors::AttemptError;
-
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
@@ -190,14 +188,5 @@ impl Display for Event {
                 Event::CRASH_REPORT_DISMISSED { .. } => "Crash Report Dismissed",
             }
         )
-    }
-}
-
-impl From<&AttemptError> for Event {
-    fn from(value: &AttemptError) -> Self {
-        Self::FLOW_ATTEMPT_ERROR {
-            message: value.error.to_string(),
-            attempt: value.attempt,
-        }
     }
 }
