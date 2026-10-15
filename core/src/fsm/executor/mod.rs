@@ -58,8 +58,10 @@ impl Executor {
                     this.fetch_latest_version(&inbox).await;
                 });
             }
-            Cmd::Fetch(FetchRequest::DeltaManifest { current_version }) => {
-                Self::fetch_delta_manifest(&current_version, inbox);
+            Cmd::Fetch(FetchRequest::DeltaManifest { target, .. }) => {
+                self.spawn(inbox, |this, inbox| async move {
+                    this.fetch_delta_manifest(&target, &inbox).await;
+                });
             }
             Cmd::DownloadVersion(strategy) => {
                 self.spawn(inbox, |this, inbox| async move {

@@ -1,7 +1,7 @@
 use anyhow::anyhow;
-use log::info;
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::delta;
 use crate::errors::DCLError;
 use crate::fsm::msg::Msg;
 use crate::s3;
@@ -22,9 +22,12 @@ impl Executor {
         deliver(inbox, Msg::LatestVersionFetched(result));
     }
 
-    /// No manifest is published until the producer contract is specified: every launch takes the zip.
-    pub(super) fn fetch_delta_manifest(current_version: &Version, inbox: &UnboundedSender<Msg>) {
-        info!("[fsm] no delta manifest producer yet; base {current_version} falls back to the zip");
-        deliver(inbox, Msg::DeltaManifestFetched(Ok(None)));
+    pub(super) async fn fetch_delta_manifest(
+        &self,
+        target: &Version,
+        inbox: &UnboundedSender<Msg>,
+    ) {
+        let result = delta::fetch::fetch_manifest(target).await;
+        deliver(inbox, Msg::DeltaManifestFetched(result));
     }
 }

@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use crate::delta_manifest::DeltaManifest;
+use crate::delta::manifest::Manifest as DeltaManifest;
 use crate::errors::DCLError;
 use crate::protocols::DeepLink;
 use crate::version::Version;

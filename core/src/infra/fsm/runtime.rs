@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::fmt::Debug;
 use std::future::Future;
 use tokio::runtime::Handle;
@@ -98,7 +98,8 @@ where
                 info!("[{}] msg: {:?}", tag, msg);
 
                 let (next, cmd) = update(model.borrow().clone(), msg);
-                info!("[{}] model: {:?} cmd: {:?}", tag, next, cmd);
+                info!("[{}] cmd: {:?}", tag, cmd);
+                debug!("[{}] model: {:?}", tag, next);
                 model.send_replace(next);
 
                 if let Err(e) = executor.execute(cmd, &inbox).await {

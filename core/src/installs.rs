@@ -174,6 +174,16 @@ pub fn safe_file_stem(id: &str) -> String {
     }
 }
 
+/// Replaces the app directory (`<local data>/DecentralandLauncherLight`). Set by the integration
+/// tests and the lab runs so a whole install lives in another folder; unset in production.
+pub const DATA_DIR_ENV: &str = "DCL_LAUNCHER_DATA_DIR";
+
+fn app_dir_override() -> Option<PathBuf> {
+    std::env::var_os(DATA_DIR_ENV)
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+}
+
 // There is no point to recovery if the app failed to create working directory
 #[allow(clippy::expect_used)]
 fn get_app_base_path() -> PathBuf {
@@ -182,7 +192,7 @@ fn get_app_base_path() -> PathBuf {
 
 #[allow(clippy::expect_used)]
 fn explorer_path() -> PathBuf {
-    let path = get_app_base_path().join(APP_NAME);
+    let path = app_dir_override().unwrap_or_else(|| get_app_base_path().join(APP_NAME));
     create_dir_all(&path).expect("Cannot create app directory");
     path
 }
@@ -191,6 +201,14 @@ fn explorer_path() -> PathBuf {
 fn explorer_downloads_path() -> PathBuf {
     let dir = explorer_path().join("downloads");
     create_dir_all(&dir).expect("Cannot create downloads directory");
+    dir
+}
+
+/// `<app>/downloads/delta`: patch sets in flight.
+#[allow(clippy::expect_used, clippy::missing_panics_doc)]
+pub fn delta_downloads_path() -> PathBuf {
+    let dir = explorer_downloads_path().join("delta");
+    create_dir_all(&dir).expect("Cannot create delta downloads directory");
     dir
 }
 
@@ -481,31 +499,50 @@ fn rename_latest_back_to_version(
     fs::rename(latest_path, target).map_err(|e| DCLError::from_rename_back(latest_path, e))
 }
 
-pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLErrorResult {
-    let current_version = Version::parse(version)
-        .filter(|v| !v.is_dev())
-        .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}"))?;
-
-    let explorer_path = explorer_path();
-    let branch_path = explorer_path.join(version);
-    let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
-
-    if !file_path.exists() {
-        return DCLError::E1001_FILE_NOT_FOUND {
-            expected_path: Some(file_path.to_string_lossy().into_owned()),
-        }
-        .into();
+/// Version strings become folder names under the app directory, so a separator would let a
+/// crafted `latest.json` write outside it.
+fn validate_version_for_path(version: &str) -> DCLErrorTyped<Version> {
+    if version.contains(['/', '\\']) {
+        return Err(anyhow!("Version value contains a path separator: {version}").into());
     }
+    Version::parse(version)
+        .filter(|v| !v.is_dev())
+        .ok_or_else(|| anyhow!("Version value cannot be parsed: {version}").into())
+}
 
+/// Folder a build of `version` is installed into before it becomes `latest`.
+pub fn explorer_version_dir(version: &str) -> PathBuf {
+    explorer_path().join(version)
+}
+
+/// Removes a half-installed `<version>/` left by an earlier attempt.
+fn remove_stale_version_dir(branch_path: &Path) -> DCLErrorResult {
     if branch_path.exists() {
-        fs::remove_dir_all(&branch_path).map_err(|source| {
+        fs::remove_dir_all(branch_path).map_err(|source| {
             DCLError::E3005_STALE_BUILD_CLEANUP_FAILED {
                 path: branch_path.to_string_lossy().into_owned(),
                 source,
             }
         })?;
     }
-    compression::decompress_file(&file_path, &branch_path)?;
+    Ok(())
+}
+
+/// Extracts the downloaded zip into `<app>/<version>/`. Touches nothing outside that folder:
+/// `latest/` and `version.json` change only in [`commit_install`].
+pub fn materialize_from_zip(version: &str, downloaded_file_path: &Path) -> DCLErrorResult {
+    validate_version_for_path(version)?;
+    let branch_path = explorer_version_dir(version);
+
+    if !downloaded_file_path.exists() {
+        return DCLError::E1001_FILE_NOT_FOUND {
+            expected_path: Some(downloaded_file_path.to_string_lossy().into_owned()),
+        }
+        .into();
+    }
+
+    remove_stale_version_dir(&branch_path)?;
+    compression::decompress_file(&downloaded_file_path.to_path_buf(), &branch_path)?;
 
     #[cfg(target_os = "macos")]
     {
@@ -522,6 +559,26 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         }
     }
 
+    Ok(())
+}
+
+/// The zip path: extract, then commit. The delta path builds the folder itself and commits.
+pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) -> DCLErrorResult {
+    let file_path = downloaded_file_path.unwrap_or_else(target_download_path);
+    materialize_from_zip(version, &file_path)?;
+    commit_install(version, Some(&file_path))
+}
+
+/// Makes `<app>/<version>/` the current build.
+///
+/// Records it in `version.json`, renames the previous `latest/` back to its version folder,
+/// removes the consumed download and prunes old versions. [`rename_explorer_to_latest`] then
+/// renames the new folder to `latest/`.
+pub fn commit_install(version: &str, downloaded_file_path: Option<&Path>) -> DCLErrorResult {
+    let current_version = validate_version_for_path(version)?;
+    let explorer_path = explorer_path();
+    let branch_path = explorer_version_dir(version);
+
     let mut version_data = get_version_data_or_empty();
 
     let install_time = Value::from(
@@ -537,7 +594,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     let latest_path = explorer_latest_version_path();
 
     // Rename latest back to its version so that cleanup_versions can do its
-    // job. InstallStep will rename the new newest build to "latest".
+    // job. The caller then renames the new build to "latest".
     if let Ok(v) = latest_version
         && latest_path.exists()
     {
@@ -545,9 +602,7 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
         rename_latest_back_to_version(&latest_path, &target, &branch_path)?;
     }
 
-    if version != "dev" {
-        version_data.insert("version".to_owned(), Value::String(version.to_owned()));
-    }
+    version_data.insert("version".to_owned(), Value::String(version.to_owned()));
 
     // The path to the latest explorer build will be just "latest" from now on.
     // Remove the path value from version data to not confuse people. You can
@@ -561,11 +616,12 @@ pub fn install_explorer(version: &str, downloaded_file_path: Option<PathBuf>) ->
     fs::write(version_path, version_data_str)
         .map_err(|source| DCLError::E3007_VERSION_DATA_WRITE_FAILED { source })?;
 
-    // Remove the downloaded file
-    fs::remove_file(&file_path).map_err(|source| DCLError::E1006_FILE_DELETE_FAILED {
-        file_path: file_path.to_string_lossy().into_owned(),
-        source,
-    })?;
+    if let Some(file_path) = downloaded_file_path {
+        fs::remove_file(file_path).map_err(|source| DCLError::E1006_FILE_DELETE_FAILED {
+            file_path: file_path.to_string_lossy().into_owned(),
+            source,
+        })?;
+    }
 
     cleanup_versions(&current_version)
 }

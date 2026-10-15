@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use crate::delta_manifest::DeltaManifest;
+use crate::delta::manifest::Manifest as DeltaManifest;
 use crate::environment::Args;
 use crate::errors::DCLError;
 use crate::protocols::DeepLink;

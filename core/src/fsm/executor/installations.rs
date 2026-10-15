@@ -1,8 +1,14 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use anyhow::{Context, anyhow};
 use log::{error, warn};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::channel::EventChannel;
+use crate::delta;
+use crate::delta::manifest::Manifest;
+use crate::delta::patcher::Patcher;
 use crate::errors::{DCLError, DCLErrorResult};
 use crate::fsm::msg::Msg;
 use crate::fsm::values::{ReadyInstallation, UpdateStrategy};
@@ -32,9 +38,11 @@ impl Executor {
     ) {
         let result = match &strategy {
             UpdateStrategy::ByZip { target } => self.download_zip(target, &strategy, inbox).await,
-            UpdateStrategy::ByDelta { .. } => {
-                Err(anyhow!("delta download is not implemented yet").into())
-            }
+            UpdateStrategy::ByDelta {
+                target,
+                from,
+                manifest,
+            } => Self::download_delta(target, from, manifest, &strategy, inbox).await,
         };
         let msg = match result {
             Ok(()) => Msg::VersionDownloadCompleted(strategy),
@@ -57,6 +65,7 @@ impl Executor {
         let progress = DownloadProgress {
             strategy: strategy.clone(),
             inbox: inbox.clone(),
+            last_percent: AtomicU8::new(u8::MAX),
         };
         downloads::download_file(
             &url,
@@ -69,6 +78,24 @@ impl Executor {
         Ok(())
     }
 
+    async fn download_delta(
+        target: &Version,
+        from: &Version,
+        manifest: &Manifest,
+        strategy: &UpdateStrategy,
+        inbox: &UnboundedSender<Msg>,
+    ) -> DCLErrorResult {
+        let Some(delta) = manifest.base(&from.to_string()) else {
+            return Err(anyhow!("the manifest lists no base {from}").into());
+        };
+        let progress = {
+            let strategy = strategy.clone();
+            let inbox = inbox.clone();
+            move |percent| deliver(&inbox, Msg::DownloadProgressed(strategy.clone(), percent))
+        };
+        delta::download::download_patches(target, manifest, delta, progress).await
+    }
+
     pub(super) async fn install_version(
         &self,
         strategy: UpdateStrategy,
@@ -77,8 +104,8 @@ impl Executor {
         let target = strategy.target().clone();
         let result = match &strategy {
             UpdateStrategy::ByZip { .. } => self.install_zip(&target).await,
-            UpdateStrategy::ByDelta { .. } => {
-                Err(anyhow!("delta install is not implemented yet").into())
+            UpdateStrategy::ByDelta { from, manifest, .. } => {
+                self.install_delta(&target, from, manifest.clone()).await
             }
         };
         let msg = match result {
@@ -88,17 +115,22 @@ impl Executor {
         deliver(inbox, msg);
     }
 
-    /// Refuses while an Explorer holds files under `latest`, then installs on a blocking thread.
-    async fn install_zip(&self, target: &Version) -> DCLErrorResult {
+    /// Installing swaps `latest/`, which an Explorer holding files there would break.
+    async fn refuse_while_explorer_runs(&self) -> DCLErrorResult {
         let running = self
             .running_instances
             .lock()
             .await
             .explorer_processes_by_path();
-        if !running.is_empty() {
-            warn!("[fsm] Explorer is still running; refusing to install: {running:?}");
-            return Err(DCLError::E3008_EXPLORER_ALREADY_RUNNING { processes: running });
+        if running.is_empty() {
+            return Ok(());
         }
+        warn!("[fsm] Explorer is still running; refusing to install: {running:?}");
+        Err(DCLError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
+    }
+
+    async fn install_zip(&self, target: &Version) -> DCLErrorResult {
+        self.refuse_while_explorer_runs().await?;
         let version = target.to_string();
         tokio::task::spawn_blocking(move || {
             installs::install_explorer(&version, None)
@@ -107,12 +139,36 @@ impl Executor {
         .await
         .map_err(|e| DCLError::from(anyhow::Error::from(e)))?
     }
+
+    /// Builds `<app>/<target>/` from `latest/` plus the patches, then commits it like a zip.
+    async fn install_delta(
+        &self,
+        target: &Version,
+        from: &Version,
+        manifest: Arc<Manifest>,
+    ) -> DCLErrorResult {
+        self.refuse_while_explorer_runs().await?;
+        let patcher = Patcher::locate()?;
+        let (target, from) = (target.clone(), from.clone());
+        tokio::task::spawn_blocking(move || {
+            let delta = manifest
+                .base(&from.to_string())
+                .ok_or_else(|| DCLError::from(anyhow!("the manifest lists no base {from}")))?;
+            delta::apply::build_version_from_delta(&target, &manifest, delta, &patcher)?;
+            installs::commit_install(&target.to_string(), None)?;
+            installs::rename_explorer_to_latest()
+        })
+        .await
+        .map_err(|e| DCLError::from(anyhow::Error::from(e)))?
+    }
 }
 
-/// Turns the download's status stream into progress messages; the UI reads progress from State.
+/// Turns the download's status stream into one progress message per percent; the UI reads
+/// progress from State.
 struct DownloadProgress {
     strategy: UpdateStrategy,
     inbox: UnboundedSender<Msg>,
+    last_percent: AtomicU8,
 }
 
 impl EventChannel for DownloadProgress {
@@ -120,6 +176,7 @@ impl EventChannel for DownloadProgress {
         if let Status::Launch(LaunchStatus::State {
             step: Step::Downloading { progress, .. },
         }) = status
+            && self.last_percent.swap(progress, Ordering::Relaxed) != progress
         {
             deliver(
                 &self.inbox,

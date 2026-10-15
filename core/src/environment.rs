@@ -19,6 +19,9 @@ const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
 const ARG_USE_UPDATER_URL: &str = "use-updater-url";
 
 const ARG_USE_LATEST_JSON_URL: &str = "use-latest-json-url";
+/// Replaces the compiled-in bucket URL for every release artifact: `latest.json`, zips, delta
+/// manifests and patches. Lets the integration tests serve a whole bucket from localhost.
+const ARG_USE_BUCKET_URL: &str = "use-bucket-url";
 
 pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
 // Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
@@ -56,6 +59,7 @@ pub struct Args {
     pub use_updater_url: Option<String>,
 
     pub use_latest_json_url: Option<String>,
+    pub use_bucket_url: Option<String>,
 
     // used by the client
     pub local_scene: bool,
@@ -85,6 +89,10 @@ impl Args {
                 .use_latest_json_url
                 .clone()
                 .or_else(|| other.use_latest_json_url.clone()),
+            use_bucket_url: self
+                .use_bucket_url
+                .clone()
+                .or_else(|| other.use_bucket_url.clone()),
             local_scene: self.local_scene || other.local_scene,
             bridge_only: self.bridge_only || other.bridge_only,
             crash_report_attachment: self
@@ -110,6 +118,7 @@ impl Args {
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
             use_latest_json_url: Self::value_by_flag(ARG_USE_LATEST_JSON_URL, &vector),
+            use_bucket_url: Self::value_by_flag(ARG_USE_BUCKET_URL, &vector),
             local_scene: Self::has_flag(ARG_LOCAL_SCENE, &vector),
             bridge_only: Self::has_flag(ARG_BRIDGE_ONLY, &vector),
             crash_report_attachment: Self::value_by_flag(ARG_CRASH_REPORT_WITH_ATTACHMENT, &vector)
@@ -154,8 +163,13 @@ impl AppEnvironment {
         String::from(provider)
     }
 
+    /// The bucket every release artifact is fetched from, without a trailing slash.
+    /// `--use-bucket-url` overrides the compiled-in value.
     pub fn bucket_url() -> String {
-        String::from(BUCKET_URL)
+        Self::cmd_args().use_bucket_url.map_or_else(
+            || String::from(BUCKET_URL),
+            |url| url.trim_end_matches('/').to_owned(),
+        )
     }
 
     pub fn launcher_environment() -> LauncherEnvironment {
@@ -358,6 +372,7 @@ mod tests {
             never_trigger_updater: false,
             use_updater_url: Some("https://one.com".into()),
             use_latest_json_url: None,
+            use_bucket_url: Some("http://127.0.0.1:1/".into()),
             local_scene: false,
             bridge_only: false,
             crash_report_attachment: None,
@@ -372,6 +387,7 @@ mod tests {
             never_trigger_updater: true,
             use_updater_url: Some("https://two.com".into()),
             use_latest_json_url: Some("https://one.com".into()),
+            use_bucket_url: None,
             local_scene: false,
             bridge_only: false,
             crash_report_attachment: Some(PathBuf::from("b.json")),

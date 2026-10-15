@@ -10,7 +10,10 @@ use super::values::{Attempt, UpdateStrategy};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FetchRequest {
     LatestVersion,
-    DeltaManifest { current_version: Version },
+    DeltaManifest {
+        target: Version,
+        current_version: Version,
+    },
 }
 
 #[derive(Debug)]

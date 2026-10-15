@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::delta_manifest::DeltaManifest;
+use crate::delta::manifest::Manifest as DeltaManifest;
 use crate::errors::DCLError;
 use crate::version::Version;
 

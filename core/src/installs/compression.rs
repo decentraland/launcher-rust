@@ -55,6 +55,10 @@ pub fn decompress_file(source_path: &PathBuf, destination_path: &PathBuf) -> DCL
             if file.is_dir() {
                 fs::create_dir_all(&output_path)?;
             } else {
+                // Not every zip carries an entry per directory.
+                if let Some(parent) = output_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
                 let mut content = Vec::new();
                 file.read_to_end(&mut content)?;
 

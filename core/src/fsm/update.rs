@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use crate::analytics::event::Event;
 use crate::deeplink_bridge::should_use_deeplink_bridge;
-use crate::delta_manifest::DeltaManifest;
+use crate::delta::manifest::Manifest as DeltaManifest;
 use crate::errors::DCLError;
 use crate::protocols::DeepLink;
 use crate::utils;
@@ -341,8 +341,14 @@ fn request_delta_manifest_fetch(
     current_version: Version,
     attempt: Attempt,
 ) -> Cmd {
+    let Some(target) = latest_fetched_version(state) else {
+        return Cmd::Ignore("manifest fetch needs the latest version");
+    };
     state.delta_manifest = NetworkResource::Fetching { attempt };
-    Cmd::Fetch(FetchRequest::DeltaManifest { current_version })
+    Cmd::Fetch(FetchRequest::DeltaManifest {
+        target,
+        current_version,
+    })
 }
 
 fn launch_or_update_once_scanned_and_fetched(state: &mut State) -> Cmd {
@@ -407,7 +413,7 @@ fn decide_update_strategy(state: &State, target: &Version) -> UpdateDecision {
         NetworkResource::Unknown => UpdateDecision::FetchManifest(from),
         NetworkResource::Fetching { .. } => UpdateDecision::Wait,
         NetworkResource::Fetched(None) => UpdateDecision::Download(zip(), "manifest_missing"),
-        NetworkResource::Fetched(Some(manifest)) if manifest.lists_base(&from) => {
+        NetworkResource::Fetched(Some(manifest)) if manifest.base(&from.to_string()).is_some() => {
             UpdateDecision::Download(
                 UpdateStrategy::ByDelta {
                     target: target.clone(),
@@ -526,7 +532,7 @@ fn fall_back_to_zip_or_retry_download(
             fire_analytics_event(Event::UPDATE_STRATEGY_FALLBACK {
                 version: target.to_string(),
                 phase: phase.to_owned(),
-                error: error.to_string(),
+                error: error.code().to_owned(),
             }),
             report_final_error_to_sentry(error),
             start_version_download(state, UpdateStrategy::ByZip { target }, 1),
@@ -679,6 +685,26 @@ mod tests {
                 ..
             }
         )
+    }
+
+    /// A manifest for v2.0.0 with v1.0.0 as its only base, for this platform.
+    #[allow(clippy::expect_used)]
+    fn delta_manifest() -> DeltaManifest {
+        let sha = "a".repeat(64);
+        let json = serde_json::json!({
+            "version": "v2.0.0",
+            "platform": crate::utils::get_os_name(),
+            "zip": { "path": "Decentraland.zip", "size": 1, "sha256": sha },
+            "files": [{ "path": "a.dll", "size": 1, "sha256": sha, "mode": "644" }],
+            "bases": { "v1.0.0": {
+                "deleted": [],
+                "patches": [{ "path": "a.dll", "from_path": "a.dll", "from_sha256": sha,
+                              "patch": "from/v1.0.0/deadbeef/a.dll.hdiff", "patch_size": 1, "patch_sha256": sha }],
+                "whole": []
+            } }
+        })
+        .to_string();
+        DeltaManifest::parse(&json, "v2.0.0").expect("a valid manifest fixture")
     }
 
     fn delta_state() -> State {
@@ -954,7 +980,7 @@ mod tests {
         let (state, cmds) = fetched(state, "v2.0.0");
         assert!(has(&cmds, |c| matches!(
             c,
-            Cmd::Fetch(FetchRequest::DeltaManifest { current_version }) if *current_version == version("v1.0.0")
+            Cmd::Fetch(FetchRequest::DeltaManifest { target, current_version }) if *current_version == version("v1.0.0") && *target == version("v2.0.0")
         )));
         assert!(matches!(
             state.delta_manifest,
@@ -962,7 +988,7 @@ mod tests {
         ));
         assert!(installation(&state, "v2.0.0").is_none());
 
-        let (state, cmds) = step_msg(state, Msg::DeltaManifestFetched(Ok(Some(DeltaManifest))));
+        let (state, cmds) = step_msg(state, Msg::DeltaManifestFetched(Ok(Some(delta_manifest()))));
         assert!(has(&cmds, |c| matches!(
             c,
             Cmd::DownloadVersion(UpdateStrategy::ByDelta { from, .. }) if *from == version("v1.0.0")
@@ -1210,11 +1236,11 @@ mod tests {
         let ready = vec![ReadyInstallation(version("v1.0.0"))];
         let state = fetching(delta_state(), ready);
         let (state, _) = fetched(state, "v2.0.0");
-        let (state, _) = step_msg(state, Msg::DeltaManifestFetched(Ok(Some(DeltaManifest))));
+        let (state, _) = step_msg(state, Msg::DeltaManifestFetched(Ok(Some(delta_manifest()))));
         let strategy = UpdateStrategy::ByDelta {
             target: version("v2.0.0"),
             from: version("v1.0.0"),
-            manifest: Arc::new(DeltaManifest),
+            manifest: Arc::new(delta_manifest()),
         };
         let (state, _) = step_msg(state, Msg::VersionDownloadCompleted(strategy.clone()));
         let (state, cmds) = step_msg(
