@@ -16,6 +16,8 @@ pub enum FetchRequest {
 #[derive(Debug)]
 pub enum Cmd {
     None,
+    /// A message that changes nothing right now; the reason is logged.
+    Ignore(&'static str),
 
     EnsureLocalInstallations,
 
