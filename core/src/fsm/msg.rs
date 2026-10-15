@@ -6,7 +6,7 @@ use crate::version::Version;
 use super::values::{Percent, ReadyInstallation, UpdateStrategy};
 
 #[derive(Debug)]
-pub enum LaunchMsg {
+pub enum Msg {
     LaunchIntentionReceived(Option<DeepLink>),
     DeeplinkReceived(DeepLink),
     RetryIntentionReceived,

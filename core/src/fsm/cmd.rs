@@ -14,7 +14,7 @@ pub enum FetchRequest {
 }
 
 #[derive(Debug)]
-pub enum LaunchCmd {
+pub enum Cmd {
     None,
 
     EnsureLocalInstallations,
@@ -36,5 +36,5 @@ pub enum LaunchCmd {
         is_final: bool,
     },
 
-    Multi(Vec<LaunchCmd>),
+    Multi(Vec<Cmd>),
 }
