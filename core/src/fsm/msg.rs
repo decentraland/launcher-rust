@@ -1,14 +1,13 @@
 use crate::errors::DCLError;
+use crate::protocols::DeepLink;
 
-use super::state::{DeepLinkValue, Manifest};
-use super::strategy::{FailureReason, Percent, UpdateStrategy};
-use super::version::{ReadyInstallation, Version};
+use super::values::{FailureReason, Manifest, Percent, ReadyInstallation, UpdateStrategy, Version};
 
 #[derive(Debug)]
 pub enum LaunchMsg {
-    LaunchIntentionReceived(Option<DeepLinkValue>),
-    DeeplinkReceived(DeepLinkValue),
-    RetryRequested,
+    LaunchIntentionReceived(Option<DeepLink>),
+    DeeplinkReceived(DeepLink),
+    RetryIntentionReceived,
 
     LatestVersionFetched(Result<Version, DCLError>),
     DeltaManifestFetched(Result<Option<Manifest>, DCLError>),

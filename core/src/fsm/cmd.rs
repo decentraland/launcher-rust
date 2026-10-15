@@ -1,11 +1,10 @@
 use crate::analytics::event::Event;
 use crate::errors::DCLError;
+use crate::protocols::DeepLink;
 
-use super::state::DeepLinkValue;
-use super::strategy::UpdateStrategy;
-use super::version::Version;
+use super::values::{UpdateStrategy, Version};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FetchRequest {
     LatestVersion,
     DeltaManifest { current_version: Version },
@@ -21,8 +20,8 @@ pub enum LaunchCmd {
 
     DownloadVersion(UpdateStrategy),
     InstallVersion(UpdateStrategy),
-    LaunchVersion(Version, Option<DeepLinkValue>),
-    HandoffDeeplink(DeepLinkValue),
+    LaunchVersion(Version, Option<DeepLink>),
+    HandoffDeeplink(DeepLink),
 
     CheckRunningInstances,
 
