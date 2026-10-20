@@ -21,23 +21,6 @@ impl From<&FlowError> for Status {
     }
 }
 
-#[derive(Error, Debug)]
-pub struct AttemptError {
-    #[source]
-    pub(crate) error: DCLError,
-    pub(crate) attempt: u8,
-}
-
-impl Display for AttemptError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Error on attempt: {}, cause: {}",
-            self.attempt, self.error
-        )
-    }
-}
-
 pub type DCLErrorResult = std::result::Result<(), DCLError>;
 
 pub type DCLErrorTyped<T> = std::result::Result<T, DCLError>;
@@ -146,6 +129,38 @@ pub enum DCLError {
         path: String,
         #[source]
         source: std::io::Error,
+    },
+
+    // Delta updates fall back to the zip; these only reach Sentry.
+    E4001_DELTA_PATCHER_UNAVAILABLE {
+        path: String,
+    },
+    E4003_DELTA_MANIFEST_UNAVAILABLE {
+        url: String,
+        reason: String,
+    },
+    E4004_DELTA_MANIFEST_INVALID {
+        url: String,
+        reason: String,
+    },
+    E4005_DELTA_INSTALLED_BUILD_DIFFERS {
+        path: String,
+        reason: String,
+    },
+    E4006_DELTA_PATCH_DOWNLOAD_FAILED {
+        patch: String,
+        reason: String,
+    },
+    E4007_DELTA_PATCH_APPLY_FAILED {
+        path: String,
+        reason: String,
+    },
+    E4008_DELTA_BUILD_FAILED_VERIFICATION {
+        path: String,
+    },
+    E4009_DELTA_INSUFFICIENT_SPACE {
+        needed: u64,
+        available: u64,
     },
 }
 
@@ -298,6 +313,16 @@ impl DCLError {
             Self::E3013_EXPLORER_BINARY_ACCESS_FAILED { .. } => {
                 "We couldn't access the Decentraland files. If Decentraland is open, please close it and try again."
             }
+            Self::E4001_DELTA_PATCHER_UNAVAILABLE { .. }
+            | Self::E4003_DELTA_MANIFEST_UNAVAILABLE { .. }
+            | Self::E4004_DELTA_MANIFEST_INVALID { .. }
+            | Self::E4005_DELTA_INSTALLED_BUILD_DIFFERS { .. }
+            | Self::E4006_DELTA_PATCH_DOWNLOAD_FAILED { .. }
+            | Self::E4007_DELTA_PATCH_APPLY_FAILED { .. }
+            | Self::E4008_DELTA_BUILD_FAILED_VERIFICATION { .. }
+            | Self::E4009_DELTA_INSUFFICIENT_SPACE { .. } => {
+                "A quick update wasn't possible, so the full version is downloaded instead."
+            }
         }
     }
 }
@@ -380,6 +405,7 @@ impl From<DownloadFileError> for DCLError {
                 Self::E1007_FILE_CREATE_FAILED { file_path, source }
             }
             NetworkTimeout => Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
+            HttpStatus { url, code } => Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { url, code },
         }
     }
 }

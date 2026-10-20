@@ -246,7 +246,10 @@ mod tests {
     #[test]
     fn merge_static_defaults_preserves_per_event_properties() {
         let mut properties = Map::new();
-        properties.insert("fp_platform".to_owned(), Value::String("override".to_owned()));
+        properties.insert(
+            "fp_platform".to_owned(),
+            Value::String("override".to_owned()),
+        );
 
         let mut defaults = Map::new();
         defaults.insert(

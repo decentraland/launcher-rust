@@ -2,10 +2,8 @@ use serde::Serialize;
 use std::fmt;
 use std::fmt::Display;
 
-use crate::errors::AttemptError;
-
 #[allow(non_camel_case_types)]
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum Event {
     LAUNCHER_OPEN {
@@ -54,6 +52,16 @@ pub enum Event {
     },
     INSTALL_VERSION_SKIPPED {
         version: String,
+    },
+    UPDATE_STRATEGY_DECIDED {
+        version: String,
+        strategy: String,
+        leaf: String,
+    },
+    UPDATE_STRATEGY_FALLBACK {
+        version: String,
+        phase: String,
+        error: String,
     },
     LAUNCH_CLIENT_START {
         version: String,
@@ -155,6 +163,8 @@ impl Display for Event {
                 Event::INSTALL_VERSION_SUCCESS { .. } => "Install Version Success",
                 Event::INSTALL_VERSION_ERROR { .. } => "Install Version Error",
                 Event::INSTALL_VERSION_SKIPPED { .. } => "Install Version Skipped",
+                Event::UPDATE_STRATEGY_DECIDED { .. } => "Update Strategy Decided",
+                Event::UPDATE_STRATEGY_FALLBACK { .. } => "Update Strategy Fallback",
                 Event::LAUNCH_CLIENT_START { .. } => "Launch Client Start",
                 Event::LAUNCH_CLIENT_SUCCESS { .. } => "Launch Client Success",
                 Event::LAUNCH_CLIENT_ERROR { .. } => "Launch Client Error",
@@ -178,14 +188,5 @@ impl Display for Event {
                 Event::CRASH_REPORT_DISMISSED { .. } => "Crash Report Dismissed",
             }
         )
-    }
-}
-
-impl From<&AttemptError> for Event {
-    fn from(value: &AttemptError) -> Self {
-        Self::FLOW_ATTEMPT_ERROR {
-            message: value.error.to_string(),
-            attempt: value.attempt,
-        }
     }
 }

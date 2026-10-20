@@ -112,6 +112,77 @@ it, and deletes the file once the report is submitted or dismissed. Without a va
 the report reaches Sentry only. The proxy environment follows the install's `dclenv` (`org`
 by default in production builds, `zone` otherwise).
 
+## Delta updates
+
+When an Explorer release carries a delta set, the launcher updates an installed build by
+downloading per-file [HDiffPatch](https://github.com/sisong/HDiffPatch) patches instead of the
+full zip. The producer and the contract live in unity-explorer (`scripts/delta`,
+`docs/delta-updates.md`); the launcher side is `core/src/delta/` and the decision is made by the
+launch FSM in `core/src/fsm/`.
+
+For the fetched latest version the launcher reads
+`<bucket>/@dcl/unity-explorer/releases/<tag>/delta/<platform>/manifest.json`. The manifest is
+validated like the producer validates its builds (`core/src/delta/manifest.rs`): every path,
+link target, digest and mode must obey the rules before it touches the disk. When the installed
+version is one of its `bases`, the patches are downloaded under `downloads/delta/<tag>/`, each
+checked by sha256, and `<app>/<tag>/` is built from the untouched `latest/` build plus the
+patches, verifying every file against the manifest. The usual install commit then renames it to
+`latest/` and keeps the previous build for rollback. Anything else takes the zip:
+
+| Decision leaf | Meaning | Reported |
+|---|---|---|
+| `delta_disabled` | `--delta-updates off` | analytics only |
+| `fresh_install` | nothing installed | analytics only |
+| `manifest_missing` | the release has no delta set (404) | analytics only |
+| `base_not_listed` | the installed version is not a base of the release | analytics only |
+| `manifest_unavailable` | the manifest could not be fetched or is invalid | Sentry |
+
+The strategy and its leaf go out as `UPDATE_STRATEGY_DECIDED`; a delta that fails mid-way falls
+back to the zip within the same launch and sends `UPDATE_STRATEGY_FALLBACK` with the phase.
+
+### Error codes
+
+| Code | Meaning |
+|---|---|
+| `E4001_DELTA_PATCHER_UNAVAILABLE` | `hpatchz` is not beside the launcher executable |
+| `E4003_DELTA_MANIFEST_UNAVAILABLE` | the manifest request failed with something other than 404 |
+| `E4004_DELTA_MANIFEST_INVALID` | the manifest breaks the contract |
+| `E4005_DELTA_INSTALLED_BUILD_DIFFERS` | a file of `latest/` is not the file the manifest expects |
+| `E4006_DELTA_PATCH_DOWNLOAD_FAILED` | a patch could not be downloaded or its sha256 differs |
+| `E4007_DELTA_PATCH_APPLY_FAILED` | `hpatchz` failed on a patch |
+| `E4008_DELTA_BUILD_FAILED_VERIFICATION` | a rebuilt file does not match the manifest |
+| `E4009_DELTA_INSUFFICIENT_SPACE` | the patches plus the new build do not fit on the disk |
+
+Each is one Sentry issue; none is shown to the user, since the zip takes over.
+
+### hpatchz sidecar
+
+`scripts/pre-build-hpatchz.rs` downloads the HDiffPatch release pinned by sha256 (the same build
+the producer encodes with) and stages `hpatchz` in `src-tauri/binaries/` as a second
+`externalBin`. `npm run prebuild-sidecars` runs it with the watchdog script. Outside the bundle,
+`DCL_HPATCHZ=<path>` points the launcher at an `hpatchz` binary.
+
+### Running the integration tests locally
+
+`core/tests/` runs the whole funnel against a bucket served from localhost, inside a temporary
+app directory. The delta cases need the HDiffPatch tools and are skipped without them:
+
+```bash
+rust-script scripts/pre-build-hpatchz.rs      # stages src-tauri/target/hdiffpatch/<platform>/
+export HDIFFZ=$PWD/src-tauri/target/hdiffpatch/windows64/hdiffz.exe
+export DCL_HPATCHZ=$PWD/src-tauri/target/hdiffpatch/windows64/hpatchz.exe
+cd core && cargo test
+```
+
+To try real releases, serve a folder laid out like the bucket (`@dcl/unity-explorer/releases/
+<tag>/Decentraland_<platform>.zip`, a `latest.json`, and the `delta/` folder the unity-explorer
+`delta` tool writes with `--local`) and run the windowless core binary against it:
+
+```bash
+DCL_LAUNCHER_DATA_DIR=/tmp/launcher-lab DCL_HPATCHZ=... \
+  core/target/release/dcl_launcher_core --use-bucket-url http://127.0.0.1:8765 --skip-analytics
+```
+
 ## Development Guidelines
 
 - Use `npm run format` for formatting and linting in both Rust and JavaScript.
@@ -224,6 +295,9 @@ Windows
 C:\Users\<YourUsername>\AppData\Local\DecentralandLauncherLight\
 ```
 
+`DCL_LAUNCHER_DATA_DIR=<path>` replaces it, which the integration tests and local experiments
+use to keep a real install untouched.
+
 ### Command Line Arguments (CLI)
 
 The application supports command-line arguments.
@@ -232,6 +306,9 @@ https://github.com/decentraland/launcher-rust/blob/main/core/src/environment.rs
 
 `--crash-report-with-attachment <path>` is reserved for `dcl_watchdog`: it selects the
 crash-report dialog flow and points at the crash attachment JSON to report.
+
+`--delta-updates off` makes every update download the full zip (see "Delta updates").
+`--use-bucket-url <url>` replaces the compiled-in bucket for every release artifact.
 
 ### Configuration File
 
