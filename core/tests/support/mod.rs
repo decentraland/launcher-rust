@@ -618,11 +618,17 @@ fn sha256_bytes(bytes: &[u8]) -> String {
     hex::encode(sha2::Sha256::digest(bytes))
 }
 
+/// Encodes from short copies beside `patch`: `hdiffz` has the same `MAX_PATH` limit as
+/// `hpatchz`, and the producer never sees the launcher's deep paths.
 fn encode(hdiffz: &Path, old: &Path, new: &Path, patch: &Path) -> Vec<u8> {
+    let short_old = patch.with_file_name("old");
+    let short_new = patch.with_file_name("new");
+    fs::copy(old, &short_old).expect("copy old");
+    fs::copy(new, &short_new).expect("copy new");
     let status = Command::new(hdiffz)
         .args(["-f", "-m-6", "-c-lzma2-9-16m"])
-        .arg(old)
-        .arg(new)
+        .arg(&short_old)
+        .arg(&short_new)
         .arg(patch)
         .status()
         .expect("run hdiffz");
