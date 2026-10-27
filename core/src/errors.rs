@@ -202,6 +202,12 @@ impl DCLError {
         self.into()
     }
 
+    /// Raw OS error code of the first `io::Error` in the cause chain.
+    pub fn os_error_code(&self) -> Option<i32> {
+        std::iter::successors(std::error::Error::source(self), |e| e.source())
+            .find_map(|e| e.downcast_ref::<std::io::Error>()?.raw_os_error())
+    }
+
     #[must_use]
     pub fn apply_user_message_if_needed(self, new_user_message: &str) -> Self {
         match self {
@@ -296,7 +302,7 @@ impl DCLError {
                 "We couldn't save the update details. If Decentraland is open, please close it and try again."
             }
             Self::E3008_EXPLORER_ALREADY_RUNNING { .. } => {
-                "Decentraland is already running and is blocking the update. Please close it and try again."
+                "Decentraland or another window is using its files and is blocking the update. Please close Decentraland and any folder or terminal windows open in its folder, then try again."
             }
             Self::E3009_EXPLORER_NOT_INSTALLED { .. } => {
                 "Decentraland isn't installed correctly. Please close the launcher and open it again to reinstall it."

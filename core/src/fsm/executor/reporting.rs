@@ -30,6 +30,9 @@ pub(super) fn report_to_sentry(error: &DCLError, attempt: Attempt, is_final: boo
             |scope| {
                 scope.set_tag("error_code", code);
                 scope.set_tag("attempt", attempt);
+                if let Some(os_error) = error.os_error_code() {
+                    scope.set_tag("os_error", os_error);
+                }
                 scope.set_fingerprint(Some(&[code]));
             },
             || {

@@ -96,17 +96,22 @@ impl RunningInstances {
         found
     }
 
-    /// Scans the OS process list for any process whose executable lives under
-    /// the `latest/` Explorer directory. Returns "name (pid)" strings for each
-    /// match. Used to detect installs blocked by a still-running Explorer
-    /// before we attempt the rename that would fail with a sharing violation.
+    /// Scans the OS process list for any process whose executable or working
+    /// directory is under the `latest/` Explorer directory. Returns
+    /// "name (pid, reason)" strings for each match.
     /// Authoritative — does not depend on the `running-instances.json` tracker,
     /// which can hold stale PIDs across sessions.
     pub fn explorer_processes_by_path(&self) -> Vec<String> {
         let latest_path = installs::explorer_latest_version_path();
-        Self::processes_under_path(&latest_path)
-            .into_iter()
-            .map(|(pid, name, _)| format!("{name} (pid {pid})"))
+        let system = sysinfo::System::new_all();
+        system
+            .processes()
+            .iter()
+            .filter_map(|(pid, process)| {
+                let reason = why_process_holds_dir(process, &latest_path)?;
+                let name = process.name().to_str().unwrap_or("cannot parse os string");
+                Some(format!("{name} (pid {pid}, {reason})"))
+            })
             .collect()
     }
 
@@ -193,4 +198,21 @@ impl Default for RunningInstances {
             path: installs::running_instances_path(),
         }
     }
+}
+
+/// Why `process` keeps `dir` from being renamed or deleted, if it does.
+fn why_process_holds_dir(process: &sysinfo::Process, dir: &Path) -> Option<&'static str> {
+    if process
+        .exe()
+        .is_some_and(|exe| installs::is_inside_dir(exe, dir))
+    {
+        return Some("runs from it");
+    }
+    if process
+        .cwd()
+        .is_some_and(|cwd| installs::is_inside_dir(cwd, dir))
+    {
+        return Some("working directory");
+    }
+    None
 }
