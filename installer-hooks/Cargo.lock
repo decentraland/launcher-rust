@@ -339,7 +339,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.23.5"
+version = "1.24.0"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -357,6 +357,7 @@ dependencies = [
  "libc",
  "log",
  "nix 0.29.0",
+ "omnipath",
  "plist",
  "pretty_env_logger",
  "regex",
@@ -1198,7 +1199,7 @@ dependencies = [
 
 [[package]]
 name = "installer-hooks"
-version = "1.23.5"
+version = "1.24.0"
 dependencies = [
  "dcl-launcher-core",
  "rstest",
@@ -1688,6 +1689,12 @@ checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "omnipath"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80adb31078122c880307e9cdfd4e3361e6545c319f9b9dcafcb03acd3b51a575"
 
 [[package]]
 name = "once_cell"

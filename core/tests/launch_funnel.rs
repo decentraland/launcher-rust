@@ -231,6 +231,66 @@ async fn delta_update_rebuilds_the_new_build_without_the_zip() {
     ));
 }
 
+/// A bundle whose patch path, `<data>/downloads/delta/<target>/from/<base>/<build id>/<path>.hdiff`,
+/// is past Windows' 260-character `MAX_PATH`, like the Explorer's `monoscripts` bundles.
+fn deep_bundle_path() -> String {
+    format!(
+        "Decentraland_Data/StreamingAssets/aa/StandaloneWindows64/{}_monoscripts_{}.bundle",
+        "9b420c6596f625d0c10053fb6e48e84e".repeat(2),
+        "72c4a5f3c31db1d176a6ef850b07bd28".repeat(2)
+    )
+}
+
+#[tokio::test]
+async fn delta_update_patches_files_past_max_path() {
+    let Some(hdiffz) = support::hdiffz() else {
+        return;
+    };
+    let mut base = base_build();
+    base.push(BuildFile::new(
+        &deep_bundle_path(),
+        "deep bundle v0.1.0",
+        0o644,
+    ));
+    let mut target = target_build();
+    target.push(BuildFile::new(
+        &deep_bundle_path(),
+        "deep bundle v0.2.0",
+        0o644,
+    ));
+
+    let env = TestEnv::new();
+    env.bucket.publish_zip("v0.1.0", &support::build_zip(&base));
+    env.bucket.publish_latest("v0.1.0");
+    assert!(env.run_launch().await.reached_the_launch());
+
+    let delta = support::make_delta_set(&hdiffz, "v0.1.0", &base, "v0.2.0", &target);
+    delta.publish(&env.bucket, "v0.2.0");
+    env.bucket.publish_latest("v0.2.0");
+    let patch_path = env
+        .data_dir
+        .join("downloads/delta/v0.2.0/from/v0.1.0/deadbeef-e1")
+        .join(format!("{}.hdiff", deep_bundle_path()));
+    assert!(
+        patch_path.as_os_str().len() > 260,
+        "the patch path must exceed MAX_PATH to cover the bug: {}",
+        patch_path.display()
+    );
+
+    // No zip is published, so the launch only succeeds if `hpatchz` opens the deep paths.
+    let run = env.run_launch().await;
+    assert!(
+        run.reached_the_launch(),
+        "unexpected end: {:?}",
+        run.error()
+    );
+    assert_latest_is_the_target_build(&env);
+    assert_eq!(
+        read(&env.latest_dir().join(deep_bundle_path())),
+        "deep bundle v0.2.0"
+    );
+}
+
 #[tokio::test]
 async fn missing_manifest_takes_the_zip() {
     let env = TestEnv::new();
