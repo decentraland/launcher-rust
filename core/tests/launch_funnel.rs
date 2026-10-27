@@ -247,13 +247,20 @@ async fn delta_update_patches_files_past_max_path() {
         return;
     };
     let mut base = base_build();
-    base.push(BuildFile::new(&deep_bundle_path(), "deep bundle v0.1.0", 0o644));
+    base.push(BuildFile::new(
+        &deep_bundle_path(),
+        "deep bundle v0.1.0",
+        0o644,
+    ));
     let mut target = target_build();
-    target.push(BuildFile::new(&deep_bundle_path(), "deep bundle v0.2.0", 0o644));
+    target.push(BuildFile::new(
+        &deep_bundle_path(),
+        "deep bundle v0.2.0",
+        0o644,
+    ));
 
     let env = TestEnv::new();
-    env.bucket
-        .publish_zip("v0.1.0", &support::build_zip(&base));
+    env.bucket.publish_zip("v0.1.0", &support::build_zip(&base));
     env.bucket.publish_latest("v0.1.0");
     assert!(env.run_launch().await.reached_the_launch());
 
