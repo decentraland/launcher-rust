@@ -73,10 +73,9 @@ impl Patcher {
 }
 
 /// `hpatchz` hands its paths to `CreateFileW` as given, and Windows refuses a plain path past
-/// `MAX_PATH` (260) unless `LongPathsEnabled` is set machine-wide, which it rarely is. A verbatim
-/// `\\?\` path skips that check; it is what `std::fs` does internally for its own calls. The
-/// prefix also skips normalization, so `to_verbatim` makes the path absolute with `\`
-/// separators first.
+/// `MAX_PATH` (260) unless `LongPathsEnabled` is set machine-wide, which cannot be guarannteed on
+/// the user machine. A verbatim `\\?\` path skips that check; it is what `std::fs` does internally for its own calls.
+/// The prefix also skips normalization, so `to_verbatim` makes the path absolute with `\` separators first.
 #[cfg(windows)]
 fn long_path(path: &Path) -> std::io::Result<PathBuf> {
     omnipath::windows::WinPathExt::to_verbatim(path)
