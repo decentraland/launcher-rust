@@ -73,9 +73,8 @@ impl RunningInstances {
     }
 
     /// Scans the OS process list for every process whose executable lives under
-    /// `path`, yielding `(raw_pid, name, exe_path)` for each match. Shared OS
-    /// scan backing both the macOS instance tracker and the pre-install
-    /// running-Explorer check.
+    /// `path`, yielding `(raw_pid, name, exe_path)` for each match.
+    #[cfg(target_os = "macos")]
     fn processes_under_path(path: &Path) -> Vec<(u32, String, PathBuf)> {
         let system = sysinfo::System::new_all();
         let mut found = Vec::new();
