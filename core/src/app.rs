@@ -87,6 +87,8 @@ impl AppState {
 
         std::panic::set_hook(Box::new(|info| error!("Panic occurred: {:?}", info)));
 
+        installs::leave_explorer_build_dirs();
+
         Monitoring::try_setup_sentry().context("Cannot setup monitoring")?;
 
         #[cfg(target_os = "macos")]

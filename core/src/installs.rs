@@ -220,6 +220,39 @@ pub fn explorer_latest_version_path() -> PathBuf {
     explorer_path().join("latest")
 }
 
+/// Whether `path` is `dir` or lies under it; case-insensitive on Windows.
+pub(crate) fn is_inside_dir(path: &Path, dir: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let lower = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
+        lower(path).starts_with(lower(dir))
+    }
+    #[cfg(not(windows))]
+    {
+        path.starts_with(dir)
+    }
+}
+
+/// Moves the working directory to the app directory when it is inside it, so this process
+/// keeps no build folder from being renamed or deleted.
+pub fn leave_explorer_build_dirs() {
+    let Ok(cwd) = std::env::current_dir() else {
+        return;
+    };
+    let app = explorer_path();
+    if !is_inside_dir(&cwd, &app) {
+        return;
+    }
+    match std::env::set_current_dir(&app) {
+        Ok(()) => log::info!(
+            "Working directory moved from {} to {}",
+            cwd.display(),
+            app.display()
+        ),
+        Err(e) => log::warn!("Cannot leave working directory {}: {e}", cwd.display()),
+    }
+}
+
 fn explorer_dev_version_path() -> PathBuf {
     explorer_path().join("dev")
 }
@@ -966,6 +999,37 @@ impl InstallsHub {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[rstest::rstest]
+    #[case("/data/DecentralandLauncherLight/latest", true)]
+    #[case("/data/DecentralandLauncherLight/latest/Explorer_Data", true)]
+    #[case("/data/DecentralandLauncherLight/latest-old", false)]
+    #[case("/data/DecentralandLauncherLight", false)]
+    fn is_inside_dir_matches_dir_and_descendants(#[case] path: &str, #[case] expected: bool) {
+        let dir = Path::new("/data/DecentralandLauncherLight/latest");
+        assert_eq!(is_inside_dir(Path::new(path), dir), expected);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn is_inside_dir_ignores_case_on_windows() {
+        assert!(is_inside_dir(
+            Path::new(r"c:\users\a\appdata\local\decentralandlauncherlight\LATEST\x"),
+            Path::new(r"C:\Users\a\AppData\Local\DecentralandLauncherLight\latest"),
+        ));
+    }
+
+    #[test]
+    fn os_error_code_reads_the_io_source() {
+        let error =
+            DCLError::from_rename_back(Path::new("latest"), std::io::Error::from_raw_os_error(32));
+        assert_eq!(error.os_error_code(), Some(32));
+    }
+
+    #[test]
+    fn os_error_code_is_none_without_an_io_source() {
+        assert_eq!(DCLError::E3004_CANT_RENAME_LATEST.os_error_code(), None);
+    }
 
     fn app() -> PathBuf {
         PathBuf::from("/apps/Decentraland.app")
