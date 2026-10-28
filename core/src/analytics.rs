@@ -8,7 +8,7 @@ mod session;
 use anyhow::{Context, Result};
 use client::AnalyticsClient;
 use event::Event;
-use log::{error, info};
+use log::{error, info, warn};
 use null_client::NullClient;
 use session::SessionId;
 use std::time::Duration;
