@@ -101,7 +101,7 @@ impl Analytics {
 
     pub async fn track_and_flush_silent(&mut self, event: Event) {
         if let Err(e) = self.track_and_flush(event).await {
-            warn!("Cannot send event: {:#?}", e);
+            error!("Cannot send event: {:#?}", e);
         }
     }
 
