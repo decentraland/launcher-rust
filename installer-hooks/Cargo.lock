@@ -2348,7 +2348,7 @@ dependencies = [
 [[package]]
 name = "segment"
 version = "0.2.6"
-source = "git+https://github.com/decentraland/segment?branch=main#c9d3a81bf377dc921f59bf45c0603dcfdd814e6e"
+source = "git+https://github.com/decentraland/segment?branch=chore%2Floop-error-data#dda669392f4b9af202b680dc228b864bef31fb69"
 dependencies = [
  "async-trait",
  "reqwest",

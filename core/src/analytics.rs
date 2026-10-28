@@ -8,7 +8,7 @@ mod session;
 use anyhow::{Context, Result};
 use client::AnalyticsClient;
 use event::Event;
-use log::{error, info};
+use log::{error, info, warn};
 use null_client::NullClient;
 use session::SessionId;
 use std::time::Duration;
@@ -101,7 +101,7 @@ impl Analytics {
 
     pub async fn track_and_flush_silent(&mut self, event: Event) {
         if let Err(e) = self.track_and_flush(event).await {
-            error!("Cannot send event: {:#?}", e);
+            warn!("Cannot send event: {:#?}", e);
         }
     }
 

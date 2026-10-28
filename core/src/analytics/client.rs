@@ -2,13 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use log::{error, info};
+use log::{error, info, warn};
 use segment::HttpClient;
 use segment::message::{Track, User};
 use segment::queue::event_queue::{
     CombinedAnalyticsEventQueue, InMemoryAnalyticsEventQueue, PersistentAnalyticsEventQueue,
 };
-use segment::queue::event_send_daemon::AnalyticsEventSendDaemon;
+use segment::queue::event_send_daemon::{AnalyticsEventSendDaemon, SendFailure};
 use segment::queue::queued_batcher::QueuedBatcher;
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -53,7 +53,7 @@ impl AnalyticsClient {
         let client = HttpClient::new_with_host(SEGMENT_HOST.to_owned());
         let mut send_daemon = AnalyticsEventSendDaemon::new(queue, None, write_key, client);
 
-        send_daemon.start(|e| error!("{}", e));
+        send_daemon.start(|failure| log_send_loop_error(&failure));
 
         Self {
             anonymous_id,
@@ -189,6 +189,13 @@ fn event_data(value: Value) -> Result<Map<String, Value>, String> {
             None => Ok(Map::new()),
         },
         other => Err(format!("serialized event is not an object: {other:#?}")),
+    }
+}
+
+fn log_send_loop_error(failure: &SendFailure<'_>) {
+    match failure {
+        SendFailure::WillDrop(e) => error!("Analytics event dropped: {e:#?}"),
+        SendFailure::WillRetry(e) => warn!("Analytics send failed, will retry: {e:#?}"),
     }
 }
 
