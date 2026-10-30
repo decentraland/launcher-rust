@@ -375,6 +375,90 @@ to the Explorer client:
 - On the next launch, the Unity Explorer client (with the changes from PR #5636) looks for this file on startup. If found, it reads the token and uses it to automatically authenticate the user. Internally, the client sends the token to the authentication backend to validate it and fetch the user’s identity, then logs the user in to their account, skipping the usual login UI.
 - After a successful login, the client signals that the token was consumed by deleting the `auth-token-bridge.txt` . The token is only used once on first launch.
 
+### Deeplinks
+
+The launcher registers the `decentraland://` scheme. Every link opened by the OS (from a website, a
+Discord message, etc.) goes to the launcher. If the launcher is already
+open, the link is forwarded to it and starts the same flow again.
+
+The launcher does not modify or alter the deeplink before passing it to the Explorer.
+
+#### Startup vs runtime deeplinks
+
+The launcher picks one of two paths (`should_use_deeplink_bridge` in `core/src/deeplink_bridge.rs`):
+
+- **Startup deeplink.** No Explorer started by the launcher is running. The launcher updates the build
+  if needed and starts the Explorer with the deeplink as the first command-line argument. The Explorer
+  parses it like any other launch argument
+  ([`ApplicationParametersParser`](https://github.com/decentraland/unity-explorer/blob/dev/Explorer/Assets/DCL/Infrastructure/Global/AppArgs/ApplicationParametersParser.cs)).
+- **Runtime deeplink.** An Explorer is already running, for example the user is in-world and clicks
+  "Jump in" on a website. Opening a second client would be wrong, so the launcher hands the link to the
+  running one through a file (see below). The client applies it in place, e.g. teleports to the
+  `position`.
+
+So the runtime path only covers links that arrive **after** the Explorer has started; the first launch
+always uses command-line arguments.
+
+These keys skip the bridge and always start a new Explorer: `open-deeplink-in-new-instance=true`,
+`multi-instance=true` and `local-scene=true` in the deeplink, or `--open-deeplink-in-new-instance`,
+`--multi-instance` and `--local-scene` as launcher arguments. The launcher treats deeplink parameters
+like its own command-line arguments and adjusts its behavior accordingly.
+
+#### File-based bridge
+
+1. The launcher writes `{APP_DIR}/deeplink-bridge.json`:
+   ```json
+   { "deeplink": "decentraland://?position=10,20" }
+   ```
+2. The running Explorer polls for the file
+   ([`DeepLinkSentinel`](https://github.com/decentraland/unity-explorer/blob/dev/Explorer/Assets/DCL/RuntimeDeepLink/DeepLinkSentinel.cs)),
+   deletes it and applies the link
+   ([`DeepLinkHandleImplementation`](https://github.com/decentraland/unity-explorer/blob/dev/Explorer/Assets/DCL/RuntimeDeepLink/DeepLinkHandleImplementation.cs)).
+3. The launcher waits for the file to disappear. Once it does, on macOS it brings the Explorer window to
+   the front.
+4. If the file is still there after 15 seconds (`OPEN_DEEPLINK_TIMEOUT` in
+   `core/src/deeplink_bridge.rs`), the launcher removes it and reports `E3001_OPEN_DEEPLINK_TIMEOUT`.
+   This happens whenever the Explorer does not consume the file in time, for example because its main
+   thread is blocked or it cannot reach the file. The timeout is not
+   retried. A `signin` deeplink is the exception: the client keeps it until the login screen claims it,
+   so the launcher leaves the file in place and finishes without an error.
+
+"Already running" means a process the launcher started itself, tracked in
+`{APP_DIR}/running-instances.json`. An Explorer started by hand or from the Unity editor is not in that
+list, so a deeplink would start a second client. Add `bridgeOnly=true` to the deeplink (or
+`--bridgeOnly` to the launcher arguments) to always write the bridge file instead, whatever is
+running. In that mode the launcher does not bring any window to the front.
+
+#### Which build runs
+
+The launcher always starts the build in `{APP_DIR}/latest/`. `{APP_DIR}/version.json` records which
+version that is, next to the install time of each version:
+
+```json
+{ "version": "v0.111.0", "v0.111.0": "1760000000", "v0.110.0": "1759000000" }
+```
+
+Other version folders next to it (e.g. `v0.110.0/`) are kept for rollback only and are never launched.
+The launcher keeps the two most recent of them and deletes older ones.
+
+On every launch it compares `version.json` with the latest release. If the Explorer executable in
+`latest/` is missing, or the latest release is a different version, it downloads that release and
+replaces `latest/`.
+Deleting `latest/` is therefore safe: the next launch restores it.
+
+#### Testing a deeplink with your own build
+
+- **Build running outside the launcher (Unity editor or a local build).** Start your build, then open
+  `decentraland://?position=10,20&bridgeOnly=true`. The launcher writes the bridge file and your
+  running build consumes it. The installed build stays untouched. The Explorer always looks for the
+  bridge file in the default App Directory, so this does not work with `DCL_LAUNCHER_DATA_DIR`.
+- **Startup deeplinks through the launcher.** Replace the contents of `{APP_DIR}/latest/` with your
+  build and keep `version.json` as it is. The launcher starts whatever is in `latest/`. Your build is
+  replaced as soon as a newer release is published; delete `latest/` when you are done to get the
+  official build back on the next launch.
+
+`{APP_DIR}` is the [App Directory](#app-directory).
+
 
 ## License
 
