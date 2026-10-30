@@ -22,22 +22,31 @@
 
 pub mod analytics;
 pub mod app;
-pub mod auto_auth;
 pub mod channel;
-mod config;
+pub mod config;
+pub mod crash_attachment;
+pub mod crash_watchdog;
 mod deeplink_bridge;
+pub mod delta;
+pub mod diagnostic_logs;
+pub mod download_origin_metadata;
 pub mod environment;
 pub mod errors;
-pub mod flow;
+pub mod explorer_session_info;
+pub mod fsm;
+
+pub mod infra;
 pub mod installs;
 pub mod instances;
 pub mod logs;
 mod monitoring;
 mod processes;
 pub mod protocols;
+pub mod report_flow;
 pub mod s3;
 pub mod types;
 pub mod utils;
+pub mod version;
 
 pub use anyhow;
 pub use log;

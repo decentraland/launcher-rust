@@ -1,6 +1,8 @@
 pub mod macos;
 
 use log::info;
+use std::ffi::OsString;
+use std::path::PathBuf;
 
 use crate::config;
 
@@ -17,9 +19,24 @@ const ARG_NEVER_TRIGGER_UPDATER: &str = "never-trigger-updater";
 const ARG_USE_UPDATER_URL: &str = "use-updater-url";
 
 const ARG_USE_LATEST_JSON_URL: &str = "use-latest-json-url";
+/// Replaces the compiled-in bucket URL for every release artifact: `latest.json`, zips, delta
+/// manifests and patches. Lets the integration tests serve a whole bucket from localhost.
+const ARG_USE_BUCKET_URL: &str = "use-bucket-url";
 
 pub const ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: &str = "open-deeplink-in-new-instance";
+// Alias of ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE: either flag enables the same behavior.
+pub const ARG_MULTI_INSTANCE: &str = "multi-instance";
 pub const ARG_LOCAL_SCENE: &str = "local-scene";
+/// When present, run in bridge-only mode (no client UI).
+/// Used for deeplink/file-bridge integrations and headless operations.
+pub const ARG_BRIDGE_ONLY: &str = "bridgeOnly";
+/// Deeplink query key carrying a signin identity id (`AppArgsFlags.SIGNIN` in the client).
+/// The client defers unclaimed signin deeplinks instead of consuming them immediately.
+pub const ARG_SIGNIN: &str = "signin";
+/// Path to a `CrashAttachment` JSON.
+pub const ARG_CRASH_REPORT_WITH_ATTACHMENT: &str = "crash-report-with-attachment";
+/// `--delta-updates off` disables delta updates; anything else keeps them on.
+pub const ARG_DELTA_UPDATES: &str = "delta-updates";
 
 #[derive(Debug)]
 pub enum LauncherEnvironment {
@@ -31,20 +48,26 @@ pub enum LauncherEnvironment {
 pub struct AppEnvironment {}
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Args {
     pub skip_analytics: bool,
     pub force_in_memory_analytics_queue: bool,
-    pub open_deeplink_in_new_instance: bool,
+    pub open_new_client_instance: bool,
 
     pub always_trigger_updater: bool,
     pub never_trigger_updater: bool,
     pub use_updater_url: Option<String>,
 
     pub use_latest_json_url: Option<String>,
+    pub use_bucket_url: Option<String>,
 
     // used by the client
     pub local_scene: bool,
+    pub bridge_only: bool,
+
+    pub crash_report_attachment: Option<PathBuf>,
+
+    pub delta_updates: bool,
 }
 
 impl Args {
@@ -54,8 +77,8 @@ impl Args {
             skip_analytics: self.skip_analytics || other.skip_analytics,
             force_in_memory_analytics_queue: self.force_in_memory_analytics_queue
                 || other.force_in_memory_analytics_queue,
-            open_deeplink_in_new_instance: self.open_deeplink_in_new_instance
-                || other.open_deeplink_in_new_instance,
+            open_new_client_instance: self.open_new_client_instance
+                || other.open_new_client_instance,
             always_trigger_updater: self.always_trigger_updater || other.always_trigger_updater,
             never_trigger_updater: self.never_trigger_updater || other.never_trigger_updater,
             use_updater_url: self
@@ -66,7 +89,17 @@ impl Args {
                 .use_latest_json_url
                 .clone()
                 .or_else(|| other.use_latest_json_url.clone()),
+            use_bucket_url: self
+                .use_bucket_url
+                .clone()
+                .or_else(|| other.use_bucket_url.clone()),
             local_scene: self.local_scene || other.local_scene,
+            bridge_only: self.bridge_only || other.bridge_only,
+            crash_report_attachment: self
+                .crash_report_attachment
+                .clone()
+                .or_else(|| other.crash_report_attachment.clone()),
+            delta_updates: self.delta_updates && other.delta_updates,
         }
     }
 
@@ -79,15 +112,19 @@ impl Args {
                 ARG_FORCE_IN_MEMORY_ANALYTICS_QUEUE,
                 &vector,
             ),
-            open_deeplink_in_new_instance: Self::has_flag(
-                ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE,
-                &vector,
-            ),
+            open_new_client_instance: Self::has_flag(ARG_OPEN_DEEPLINK_IN_NEW_INSTANCE, &vector)
+                || Self::has_flag(ARG_MULTI_INSTANCE, &vector),
             always_trigger_updater: Self::has_flag(ARG_ALWAYS_TRIGGER_UPDATER, &vector),
             never_trigger_updater: Self::has_flag(ARG_NEVER_TRIGGER_UPDATER, &vector),
             use_updater_url: Self::value_by_flag(ARG_USE_UPDATER_URL, &vector),
             use_latest_json_url: Self::value_by_flag(ARG_USE_LATEST_JSON_URL, &vector),
+            use_bucket_url: Self::value_by_flag(ARG_USE_BUCKET_URL, &vector),
             local_scene: Self::has_flag(ARG_LOCAL_SCENE, &vector),
+            bridge_only: Self::has_flag(ARG_BRIDGE_ONLY, &vector),
+            crash_report_attachment: Self::value_by_flag(ARG_CRASH_REPORT_WITH_ATTACHMENT, &vector)
+                .map(PathBuf::from),
+            delta_updates: Self::value_by_flag(ARG_DELTA_UPDATES, &vector)
+                .is_none_or(|value| value != "off"),
         }
     }
 
@@ -126,8 +163,13 @@ impl AppEnvironment {
         String::from(provider)
     }
 
+    /// The bucket every release artifact is fetched from, without a trailing slash.
+    /// `--use-bucket-url` overrides the compiled-in value.
     pub fn bucket_url() -> String {
-        String::from(BUCKET_URL)
+        Self::cmd_args().use_bucket_url.map_or_else(
+            || String::from(BUCKET_URL),
+            |url| url.trim_end_matches('/').to_owned(),
+        )
     }
 
     pub fn launcher_environment() -> LauncherEnvironment {
@@ -165,9 +207,83 @@ impl AppEnvironment {
     }
 }
 
+/// Removes `--crash-report-with-attachment <path>`, keeping every other argument.
+pub fn strip_crash_report_args(args: Vec<OsString>) -> Vec<OsString> {
+    let flag = format!("--{ARG_CRASH_REPORT_WITH_ATTACHMENT}");
+    let mut result = Vec::with_capacity(args.len());
+    let mut iter = args.into_iter().peekable();
+
+    while let Some(arg) = iter.next() {
+        if arg != flag.as_str() {
+            result.push(arg);
+            continue;
+        }
+        if iter
+            .peek()
+            .is_some_and(|next| !next.to_string_lossy().starts_with("--"))
+        {
+            iter.next();
+        }
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    fn os_args(args: &[&str]) -> Vec<OsString> {
+        args.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn test_crash_report_attachment_parsed() {
+        let args = Args::parse(
+            ["app", "--crash-report-with-attachment", "/tmp/crash.json"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
+        assert_eq!(
+            args.crash_report_attachment.as_deref(),
+            Some(Path::new("/tmp/crash.json"))
+        );
+
+        let args = Args::parse(["app"].map(ToOwned::to_owned).into_iter());
+        assert!(args.crash_report_attachment.is_none());
+    }
+
+    #[test]
+    fn strip_crash_report_args_removes_flag_and_value_only() {
+        let stripped = strip_crash_report_args(os_args(&[
+            "app",
+            "--skip-analytics",
+            "--crash-report-with-attachment",
+            "/tmp/crash.json",
+            "--never-trigger-updater",
+        ]));
+        assert_eq!(
+            stripped,
+            os_args(&["app", "--skip-analytics", "--never-trigger-updater"])
+        );
+    }
+
+    #[test]
+    fn strip_crash_report_args_keeps_following_flag_when_value_missing() {
+        let stripped = strip_crash_report_args(os_args(&[
+            "app",
+            "--crash-report-with-attachment",
+            "--skip-analytics",
+        ]));
+        assert_eq!(stripped, os_args(&["app", "--skip-analytics"]));
+    }
+
+    #[test]
+    fn strip_crash_report_args_is_identity_without_the_flag() {
+        let args = os_args(&["app", "decentraland://open", "--skip-analytics"]);
+        assert_eq!(strip_crash_report_args(args.clone()), args);
+    }
 
     #[test]
     fn test_known_args_parsed() {
@@ -185,7 +301,7 @@ mod tests {
         );
 
         assert!(args.skip_analytics);
-        assert!(args.open_deeplink_in_new_instance);
+        assert!(args.open_new_client_instance);
         assert!(!args.always_trigger_updater);
         assert!(args.never_trigger_updater);
         assert_eq!(args.use_updater_url.as_deref(), Some("https://example.com"));
@@ -200,10 +316,32 @@ mod tests {
         );
 
         assert!(!args.skip_analytics);
-        assert!(!args.open_deeplink_in_new_instance);
+        assert!(!args.open_new_client_instance);
         assert!(!args.always_trigger_updater);
         assert!(args.never_trigger_updater);
         assert!(args.use_updater_url.is_none());
+    }
+
+    #[test]
+    fn test_multi_instance_is_alias_of_open_deeplink_in_new_instance() {
+        let args = Args::parse(
+            ["app", "--multi-instance"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
+        assert!(args.open_new_client_instance);
+
+        // The original flag still works on its own.
+        let args = Args::parse(
+            ["app", "--open-deeplink-in-new-instance"]
+                .map(ToOwned::to_owned)
+                .into_iter(),
+        );
+        assert!(args.open_new_client_instance);
+
+        // Neither flag => false.
+        let args = Args::parse(["app"].map(ToOwned::to_owned).into_iter());
+        assert!(!args.open_new_client_instance);
     }
 
     #[test]
@@ -229,29 +367,37 @@ mod tests {
         let a = Args {
             skip_analytics: true,
             force_in_memory_analytics_queue: false,
-            open_deeplink_in_new_instance: false,
+            open_new_client_instance: false,
             always_trigger_updater: true,
             never_trigger_updater: false,
             use_updater_url: Some("https://one.com".into()),
             use_latest_json_url: None,
+            use_bucket_url: Some("http://127.0.0.1:1/".into()),
             local_scene: false,
+            bridge_only: false,
+            crash_report_attachment: None,
+            delta_updates: true,
         };
 
         let b = Args {
             skip_analytics: false,
             force_in_memory_analytics_queue: false,
-            open_deeplink_in_new_instance: true,
+            open_new_client_instance: true,
             always_trigger_updater: false,
             never_trigger_updater: true,
             use_updater_url: Some("https://two.com".into()),
             use_latest_json_url: Some("https://one.com".into()),
+            use_bucket_url: None,
             local_scene: false,
+            bridge_only: false,
+            crash_report_attachment: Some(PathBuf::from("b.json")),
+            delta_updates: true,
         };
 
         let merged = a.merge_with(&b);
 
         assert!(merged.skip_analytics);
-        assert!(merged.open_deeplink_in_new_instance);
+        assert!(merged.open_new_client_instance);
         assert!(merged.always_trigger_updater);
         assert!(merged.never_trigger_updater);
         assert!(!merged.local_scene);
@@ -260,6 +406,10 @@ mod tests {
         assert_eq!(
             merged.use_latest_json_url.as_deref(),
             Some("https://one.com")
+        );
+        assert_eq!(
+            merged.crash_report_attachment.as_deref(),
+            Some(Path::new("b.json"))
         );
     }
 }

@@ -1,12 +1,13 @@
 use anyhow::anyhow;
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, path::Path};
+use strum::IntoStaticStr;
 use thiserror::Error;
 
 use crate::installs::downloads::{DownloadFileError, FileIncompleteError};
 
 use crate::deeplink_bridge::PlaceDeeplinkError;
 
-use super::types::Status;
+use super::types::{LaunchStatus, Status};
 
 pub struct FlowError {
     pub user_message: String,
@@ -14,42 +15,25 @@ pub struct FlowError {
 
 impl From<&FlowError> for Status {
     fn from(err: &FlowError) -> Self {
-        Self::Error {
+        Self::Launch(LaunchStatus::Error {
             message: err.user_message.clone(),
-        }
+        })
     }
 }
 
-#[derive(Error, Debug)]
-pub struct AttemptError {
-    #[source]
-    pub(crate) error: StepError,
-    pub(crate) attempt: u8,
-}
+pub type DCLErrorResult = std::result::Result<(), DCLError>;
 
-impl Display for AttemptError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Error on attempt: {}, cause: {}",
-            self.attempt, self.error
-        )
-    }
-}
+pub type DCLErrorTyped<T> = std::result::Result<T, DCLError>;
 
-pub type StepResult = std::result::Result<(), StepError>;
-
-pub type StepResultTyped<T> = std::result::Result<T, StepError>;
-
-impl<T> From<StepError> for StepResultTyped<T> {
-    fn from(value: StepError) -> Self {
+impl<T> From<DCLError> for DCLErrorTyped<T> {
+    fn from(value: DCLError) -> Self {
         Self::Err(value)
     }
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Error, Debug)]
-pub enum StepError {
+#[derive(Error, Debug, IntoStaticStr)]
+pub enum DCLError {
     E0000_GENERIC_ERROR {
         #[source]
         error: anyhow::Error,
@@ -76,7 +60,7 @@ pub enum StepError {
     E1006_FILE_DELETE_FAILED {
         file_path: String,
         #[source]
-        inner_error: anyhow::Error,
+        source: std::io::Error,
     },
     E1007_FILE_CREATE_FAILED {
         file_path: String,
@@ -109,9 +93,121 @@ pub enum StepError {
     E3002_PLACE_DEEPLINK_ERROR(#[from] PlaceDeeplinkError),
     E3003_CANT_GET_VERSION,
     E3004_CANT_RENAME_LATEST,
+    E3005_STALE_BUILD_CLEANUP_FAILED {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    E3006_RENAME_BACK_FAILED {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+    E3007_VERSION_DATA_WRITE_FAILED {
+        #[source]
+        source: std::io::Error,
+    },
+    E3008_EXPLORER_ALREADY_RUNNING {
+        processes: Vec<String>,
+    },
+    E3009_EXPLORER_NOT_INSTALLED {
+        expected_path: String,
+        version: Option<String>,
+    },
+    E3010_EXPLORER_LAUNCH_FAILED {
+        path: String,
+        #[source]
+        inner_error: anyhow::Error,
+    },
+    E3011_EXPLORER_PROCESS_NOT_STARTED {
+        path: String,
+    },
+    E3012_EXPLORER_EXITED_ON_LAUNCH {
+        exit_code: String,
+    },
+    E3013_EXPLORER_BINARY_ACCESS_FAILED {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    // Delta updates fall back to the zip; these only reach Sentry.
+    E4001_DELTA_PATCHER_UNAVAILABLE {
+        path: String,
+    },
+    E4003_DELTA_MANIFEST_UNAVAILABLE {
+        url: String,
+        reason: String,
+    },
+    E4004_DELTA_MANIFEST_INVALID {
+        url: String,
+        reason: String,
+    },
+    E4005_DELTA_INSTALLED_BUILD_DIFFERS {
+        path: String,
+        reason: String,
+    },
+    E4006_DELTA_PATCH_DOWNLOAD_FAILED {
+        patch: String,
+        reason: String,
+    },
+    E4007_DELTA_PATCH_APPLY_FAILED {
+        path: String,
+        reason: String,
+    },
+    E4008_DELTA_BUILD_FAILED_VERIFICATION {
+        path: String,
+    },
+    E4009_DELTA_INSUFFICIENT_SPACE {
+        needed: u64,
+        available: u64,
+    },
 }
 
-impl StepError {
+impl DCLError {
+    pub fn from_cleanup(path: &Path, source: std::io::Error) -> Self {
+        Self::E3005_STALE_BUILD_CLEANUP_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
+    pub fn from_rename_back(path: &Path, source: std::io::Error) -> Self {
+        Self::E3006_RENAME_BACK_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
+    pub fn from_launch_failure(path: &Path, inner_error: anyhow::Error) -> Self {
+        Self::E3010_EXPLORER_LAUNCH_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            inner_error,
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn from_binary_access(path: &Path, source: std::io::Error) -> Self {
+        Self::E3013_EXPLORER_BINARY_ACCESS_FAILED {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        }
+    }
+
+    /// Stable identifier for Sentry grouping. Must not include any variable
+    /// data (paths, OS messages) — only the variant name. Sentry fingerprints
+    /// off this so all occurrences of the same failure cluster into one issue.
+    /// Derived from the variant name via `strum::IntoStaticStr`.
+    pub fn code(&self) -> &'static str {
+        self.into()
+    }
+
+    /// Raw OS error code of the first `io::Error` in the cause chain.
+    pub fn os_error_code(&self) -> Option<i32> {
+        std::iter::successors(std::error::Error::source(self), |e| e.source())
+            .find_map(|e| e.downcast_ref::<std::io::Error>()?.raw_os_error())
+    }
+
     #[must_use]
     pub fn apply_user_message_if_needed(self, new_user_message: &str) -> Self {
         match self {
@@ -142,71 +238,108 @@ impl StepError {
             } => match &user_message {
                 Some(m) => m,
                 None => {
-                    "Internal communication error during download. Please restart the launcher and try again."
+                    "Something went wrong. Please close the launcher and open it again to try once more."
                 }
             },
             Self::E1001_FILE_NOT_FOUND { .. } => {
-                "The downloaded file could not be found. Please try downloading again or check your antivirus and disk permissions."
+                "We couldn't find the downloaded file. Your antivirus may have removed it. Please add Decentraland as an exception in your antivirus and try again."
             }
             Self::E1002_CORRUPTED_ARCHIVE { .. } => {
-                "The downloaded file appears to be corrupted. Please try downloading it again."
+                "The download didn't finish correctly. Please try again."
             }
             Self::E1003_DECOMPRESS_ACCESS_DENIED { .. } => {
-                "We couldn’t extract the files. Please run the launcher as administrator or check your folder permissions."
+                "We don't have permission to install Decentraland here. Please right-click the launcher and choose \"Run as administrator\", then try again."
             }
             Self::E1004_DISK_FULL { .. } => {
-                "There isn’t enough space on your disk to install Decentraland. Please free up some space and try again."
+                "There isn't enough free space on your computer to install Decentraland. Please free up some space and try again."
             }
             Self::E1005_DECOMPRESS_OUT_OF_MEMORY { .. } => {
-                "Your system ran out of memory while installing the game. Try closing other programs or restarting your computer."
+                "Your computer ran out of memory while installing Decentraland. Please close other programs (or restart your computer) and try again."
             }
             Self::E1006_FILE_DELETE_FAILED { .. } => {
-                "We couldn’t remove a previous download. Please check your permissions or try restarting the launcher."
+                "We couldn't remove files from a previous download. If Decentraland is open, please close it and try again."
             }
             Self::E1007_FILE_CREATE_FAILED { .. } => {
-                "We couldn’t create a file to download. Please check your permissions or try restarting the launcher."
+                "We couldn't save the download to your computer. Please close the launcher and open it again. If the problem continues, try running it as administrator."
             }
             Self::E2001_DOWNLOAD_FAILED { .. } => {
-                "There was an error while downloading Decentraland. Please check your internet connection and try again."
+                "The download couldn't finish. Please check your internet connection and try again."
             }
             Self::E2002_MISSING_CONTENT_LENGTH { .. } => {
-                "Failed to get the file size from the server. Please try again later or verify the download URL is reachable."
+                "We couldn't start the download. Please check your internet connection and try again in a few minutes."
             }
             Self::E2003_NETWORK_WRITE_ERROR { .. } => {
-                "There was an error while saving the downloaded file. Please make sure you have enough disk space and permission to write to the folder."
+                "We couldn't save the download to your computer. Please make sure you have enough free space and try again."
             }
             Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { .. } => {
-                "There was an error while downloading Decentraland. Please check your internet connection and try again."
+                "The download couldn't finish. Please check your internet connection and try again."
             }
             Self::E2005_DOWNLOAD_FAILED_FILE_INCOMPLETE { .. } => {
-                "Downloading file is incomplete due an error. Please check your internet connection and try again."
+                "The download was interrupted. Please check your internet connection and try again."
             }
             Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT => {
-                "Timeout while downloading Decentraland. Please check your internet connection and try again."
+                "The download is taking too long. Please check your internet connection and try again."
             }
             Self::E3001_OPEN_DEEPLINK_TIMEOUT => {
-                "There was an error while opening the deeplink. Please restart client and try again."
+                "We couldn't open the deeplink in Decentraland. Please close Decentraland and try again."
             }
             Self::E3002_PLACE_DEEPLINK_ERROR { .. } => {
-                "There was an error while passing the deeplink. Please restart client and try again."
+                "We couldn't send the deeplink to Decentraland. Please close Decentraland and try again."
             }
             Self::E3003_CANT_GET_VERSION => {
-                "Version data could not be read. Please delete launcher's data folder."
+                "We couldn't read your installation details. Please reinstall the launcher to fix this."
             }
             Self::E3004_CANT_RENAME_LATEST => {
-                "Could not rename \"latest\" folder. Delete everything and start over."
+                "We couldn't update your Decentraland installation. Please close Decentraland (and pause your antivirus if you have one) and try again. If the problem continues, please reinstall the launcher."
+            }
+            Self::E3005_STALE_BUILD_CLEANUP_FAILED { .. } => {
+                "We couldn't clean up files from a previous version. If Decentraland is open, please close it and try again."
+            }
+            Self::E3006_RENAME_BACK_FAILED { .. } => {
+                "We couldn't prepare the update because a file is in use. If Decentraland is open, please close it and try again."
+            }
+            Self::E3007_VERSION_DATA_WRITE_FAILED { .. } => {
+                "We couldn't save the update details. If Decentraland is open, please close it and try again."
+            }
+            Self::E3008_EXPLORER_ALREADY_RUNNING { .. } => {
+                "Decentraland or another window is using its files and is blocking the update. Please close Decentraland and any folder or terminal windows open in its folder, then try again."
+            }
+            Self::E3009_EXPLORER_NOT_INSTALLED { .. } => {
+                "Decentraland isn't installed correctly. Please close the launcher and open it again to reinstall it."
+            }
+            Self::E3010_EXPLORER_LAUNCH_FAILED { .. } => {
+                "We couldn't start Decentraland. Please close the launcher and open it again."
+            }
+            Self::E3011_EXPLORER_PROCESS_NOT_STARTED { .. } => {
+                "Decentraland didn't start. Please make sure your antivirus isn't blocking it and try again."
+            }
+            Self::E3012_EXPLORER_EXITED_ON_LAUNCH { .. } => {
+                "Decentraland closed unexpectedly right after starting. Please try again, and make sure your graphics drivers are up to date."
+            }
+            Self::E3013_EXPLORER_BINARY_ACCESS_FAILED { .. } => {
+                "We couldn't access the Decentraland files. If Decentraland is open, please close it and try again."
+            }
+            Self::E4001_DELTA_PATCHER_UNAVAILABLE { .. }
+            | Self::E4003_DELTA_MANIFEST_UNAVAILABLE { .. }
+            | Self::E4004_DELTA_MANIFEST_INVALID { .. }
+            | Self::E4005_DELTA_INSTALLED_BUILD_DIFFERS { .. }
+            | Self::E4006_DELTA_PATCH_DOWNLOAD_FAILED { .. }
+            | Self::E4007_DELTA_PATCH_APPLY_FAILED { .. }
+            | Self::E4008_DELTA_BUILD_FAILED_VERIFICATION { .. }
+            | Self::E4009_DELTA_INSUFFICIENT_SPACE { .. } => {
+                "A quick update wasn't possible, so the full version is downloaded instead."
             }
         }
     }
 }
 
-impl Display for StepError {
+impl Display for DCLError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.user_message())
     }
 }
 
-impl From<anyhow::Error> for StepError {
+impl From<anyhow::Error> for DCLError {
     fn from(value: anyhow::Error) -> Self {
         Self::E0000_GENERIC_ERROR {
             error: value,
@@ -215,7 +348,7 @@ impl From<anyhow::Error> for StepError {
     }
 }
 
-impl From<std::io::Error> for StepError {
+impl From<std::io::Error> for DCLError {
     fn from(value: std::io::Error) -> Self {
         use std::io::ErrorKind::*;
 
@@ -238,7 +371,7 @@ impl From<std::io::Error> for StepError {
     }
 }
 
-impl From<zip::result::ZipError> for StepError {
+impl From<zip::result::ZipError> for DCLError {
     fn from(value: zip::result::ZipError) -> Self {
         match value {
             zip::result::ZipError::Io(io_err) => Self::from(io_err),
@@ -262,7 +395,7 @@ impl From<zip::result::ZipError> for StepError {
     }
 }
 
-impl From<DownloadFileError> for StepError {
+impl From<DownloadFileError> for DCLError {
     fn from(value: DownloadFileError) -> Self {
         use DownloadFileError::*;
         match value {
@@ -278,11 +411,12 @@ impl From<DownloadFileError> for StepError {
                 Self::E1007_FILE_CREATE_FAILED { file_path, source }
             }
             NetworkTimeout => Self::E2006_DOWNLOAD_FAILED_NETWORK_TIMEOUT,
+            HttpStatus { url, code } => Self::E2004_DOWNLOAD_FAILED_HTTP_CODE { url, code },
         }
     }
 }
 
-impl From<reqwest::Error> for StepError {
+impl From<reqwest::Error> for DCLError {
     fn from(value: reqwest::Error) -> Self {
         let url: Option<String> = value.url().map(|e| e.as_str().to_owned());
         Self::E2001_DOWNLOAD_FAILED { url, error: value }

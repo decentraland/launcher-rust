@@ -45,6 +45,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Install Node.js
 brew install node # Or use your favorite package manager
 
+# Install rust-script (runs the sidecar build scripts in ./scripts)
+cargo install rust-script --locked
+
 # Clone and install
 git clone https://github.com/decentraland/launcher-rust.git
 cd launcher-rust
@@ -67,11 +70,201 @@ npm run tauri dev
 4. Execute in the root dir: npm i
 5. Execute tauri build: npm run tauri build
 
+## Crash watchdog sidecar
+
+`client-crash-watchdog/` builds `dcl_watchdog`, a Tauri sidecar (`bundle.externalBin`) the
+launcher starts next to every Explorer it launches. When the Explorer exits with a non-zero
+status the watchdog writes `{APP_DIR}/crash-reports/<session_id>.json` and reopens the
+launcher with `--crash-report-with-attachment <path>`, which shows the crash-report dialog
+instead of the launch flow. A clean exit ends the watchdog silently.
+
+The sidecar must be staged in `src-tauri/binaries/` before **any** `cargo` command in
+`src-tauri` (build, clippy, test): `tauri-build` copies it at compile time and fails when it is
+missing. `npm run tauri dev` / `tauri build` do this through `beforeDevCommand` /
+`beforeBuildCommand`; run it by hand with:
+
+```bash
+npm run prebuild-sidecars   # or: rust-script scripts/pre-build-sidecars.rs
+```
+
+`TAURI_ENV_TARGET_TRIPLE=universal-apple-darwin` builds both macOS arches and stages the fat
+binary under the universal and both per-arch names.
+
+### Crash report delivery
+
+The report is recorded as a Sentry event and, when the Explorer left a session file, filed as
+an Intercom ticket through `intercom-proxy` using Decentraland Signed Fetch
+(`core/src/infra/signed_fetch`, `core/src/infra/intercom_proxy`). The Explorer writes
+`{APP_DIR}/session-info-<session_id>.json` after login and deletes it on a clean quit:
+
+```json
+{
+  "version": 1,
+  "session_id": "<the --session_id the launcher passed>",
+  "wallet": "0x…",
+  "explorer_version": "…",
+  "identity": { "address": "0x…", "key": "…", "expiration": "…", "ephemeralAuthChain": [ … ] }
+}
+```
+
+The launcher reads the file only in the report flow, refuses an expired identity, never logs
+it, and deletes the file once the report is submitted or dismissed. Without a valid identity
+the report reaches Sentry only. The proxy environment follows the install's `dclenv` (`org`
+by default in production builds, `zone` otherwise).
+
+## Delta updates
+
+When an Explorer release carries a delta set, the launcher updates an installed build by
+downloading per-file [HDiffPatch](https://github.com/sisong/HDiffPatch) patches instead of the
+full zip. The producer and the contract live in unity-explorer (`scripts/delta`,
+`docs/delta-updates.md`); the launcher side is `core/src/delta/` and the decision is made by the
+launch FSM in `core/src/fsm/`.
+
+For the fetched latest version the launcher reads
+`<bucket>/@dcl/unity-explorer/releases/<tag>/delta/<platform>/manifest.json`. The manifest is
+validated like the producer validates its builds (`core/src/delta/manifest.rs`): every path,
+link target, digest and mode must obey the rules before it touches the disk. When the installed
+version is one of its `bases`, the patches are downloaded under `downloads/delta/<tag>/`, each
+checked by sha256, and `<app>/<tag>/` is built from the untouched `latest/` build plus the
+patches, verifying every file against the manifest. The usual install commit then renames it to
+`latest/` and keeps the previous build for rollback. Anything else takes the zip:
+
+| Decision leaf | Meaning | Reported |
+|---|---|---|
+| `delta_disabled` | `--delta-updates off` | analytics only |
+| `fresh_install` | nothing installed | analytics only |
+| `manifest_missing` | the release has no delta set (404) | analytics only |
+| `base_not_listed` | the installed version is not a base of the release | analytics only |
+| `manifest_unavailable` | the manifest could not be fetched or is invalid | Sentry |
+
+The strategy and its leaf go out as `UPDATE_STRATEGY_DECIDED`; a delta that fails mid-way falls
+back to the zip within the same launch and sends `UPDATE_STRATEGY_FALLBACK` with the phase.
+
+### Error codes
+
+| Code | Meaning |
+|---|---|
+| `E4001_DELTA_PATCHER_UNAVAILABLE` | `hpatchz` is not beside the launcher executable |
+| `E4003_DELTA_MANIFEST_UNAVAILABLE` | the manifest request failed with something other than 404 |
+| `E4004_DELTA_MANIFEST_INVALID` | the manifest breaks the contract |
+| `E4005_DELTA_INSTALLED_BUILD_DIFFERS` | a file of `latest/` is not the file the manifest expects |
+| `E4006_DELTA_PATCH_DOWNLOAD_FAILED` | a patch could not be downloaded or its sha256 differs |
+| `E4007_DELTA_PATCH_APPLY_FAILED` | `hpatchz` failed on a patch |
+| `E4008_DELTA_BUILD_FAILED_VERIFICATION` | a rebuilt file does not match the manifest |
+| `E4009_DELTA_INSUFFICIENT_SPACE` | the patches plus the new build do not fit on the disk |
+
+Each is one Sentry issue; none is shown to the user, since the zip takes over.
+
+### hpatchz sidecar
+
+`scripts/pre-build-hpatchz.rs` downloads the HDiffPatch release pinned by sha256 (the same build
+the producer encodes with) and stages `hpatchz` in `src-tauri/binaries/` as a second
+`externalBin`. `npm run prebuild-sidecars` runs it with the watchdog script. Outside the bundle,
+`DCL_HPATCHZ=<path>` points the launcher at an `hpatchz` binary.
+
+### Running the integration tests locally
+
+`core/tests/` runs the whole funnel against a bucket served from localhost, inside a temporary
+app directory. The delta cases need the HDiffPatch tools and are skipped without them:
+
+```bash
+rust-script scripts/pre-build-hpatchz.rs      # stages src-tauri/target/hdiffpatch/<platform>/
+export HDIFFZ=$PWD/src-tauri/target/hdiffpatch/windows64/hdiffz.exe
+export DCL_HPATCHZ=$PWD/src-tauri/target/hdiffpatch/windows64/hpatchz.exe
+cd core && cargo test
+```
+
+To try real releases, serve a folder laid out like the bucket (`@dcl/unity-explorer/releases/
+<tag>/Decentraland_<platform>.zip`, a `latest.json`, and the `delta/` folder the unity-explorer
+`delta` tool writes with `--local`) and run the windowless core binary against it:
+
+```bash
+DCL_LAUNCHER_DATA_DIR=/tmp/launcher-lab DCL_HPATCHZ=... \
+  core/target/release/dcl_launcher_core --use-bucket-url http://127.0.0.1:8765 --skip-analytics
+```
+
 ## Development Guidelines
 
 - Use `npm run format` for formatting and linting in both Rust and JavaScript.
 - Follow Conventional Commits: `feat:`, `fix:`, `chore:`
 - Keep frontend TypeScript enum in sync with Rust `enum` for proper communication.
+
+
+### Environment Variables
+
+Environment variables are typically defined in the shell configuration.
+
+Example:
+
+```
+~/.zshrc
+```
+
+This allows tools such as `cargo`, `vite`, and `tauri` to access configuration without project-specific IDE settings.
+
+
+### Debugging
+
+Debugging is performed directly on the compiled binary using `lldb`.
+
+`lldb` is independent from Neovim or any editor plugins.
+This approach keeps debugging reproducible outside the editor.
+
+
+### Workflow
+
+The project is intentionally structured so that **core logic is developed independently from the UI layer**.
+
+Typical workflow:
+
+1. Develop and test the **core Rust logic** separately.
+
+2. Build the Rust components
+
+3. Run the frontend development server
+
+4. Launch or debug the binary using `lldb`.
+
+
+### Frontend / Core Separation
+
+The architecture separates application logic from rendering.
+
+* **Core**
+  Portable Rust logic with no frontend dependency.
+
+* **Frontend**
+  UI layer using Vite and Tauri.
+
+Because of this separation:
+
+* Core logic can be reused with other frontends.
+* The UI can be mocked during development.
+
+
+### Mocking UI Interaction
+
+Frontend rendering commands can be mocked by overriding the application state.
+
+Example location:
+
+```
+Home.tsx:77
+```
+
+The UI exposes a **single entry point for state updates**.
+
+This approach is inspired by the Elm architecture.
+
+Key idea:
+
+* a **single update loop**
+* explicit state transitions
+* avoidance of fragmented state typical in MVC/MVVM architectures.
+
+Reference:
+
+[https://guide.elm-lang.org/architecture/](https://guide.elm-lang.org/architecture/)
 
 
 ### Logs
@@ -102,11 +295,20 @@ Windows
 C:\Users\<YourUsername>\AppData\Local\DecentralandLauncherLight\
 ```
 
+`DCL_LAUNCHER_DATA_DIR=<path>` replaces it, which the integration tests and local experiments
+use to keep a real install untouched.
+
 ### Command Line Arguments (CLI)
 
 The application supports command-line arguments.
 The complete and up-to-date list is defined here:
 https://github.com/decentraland/launcher-rust/blob/main/core/src/environment.rs
+
+`--crash-report-with-attachment <path>` is reserved for `dcl_watchdog`: it selects the
+crash-report dialog flow and points at the crash attachment JSON to report.
+
+`--delta-updates off` makes every update download the full zip (see "Delta updates").
+`--use-bucket-url <url>` replaces the compiled-in bucket for every release artifact.
 
 ### Configuration File
 
@@ -118,7 +320,8 @@ Example:
 {
   "analytics-user-id": "f31c8100-xxxx-xxxx-xxxx-46fc9b13ed0e",
   "client-additional-arguments": "--example-client-arg",
-  "cmd-arguments": "--example-launcher-arg"
+  "cmd-arguments": "--example-launcher-arg",
+  "crash-report-dialog-disabled": false
 }
 ```
 
@@ -135,6 +338,11 @@ Example:
   A string of arguments applied by the launcher in addition to the CLI arguments
   for the current execution.
   Parsed using the same rules as terminal argument strings.
+
+- **crash-report-dialog-disabled**
+  Boolean. Set by "Don't show this again" on the crash-report dialog. When `true`
+  the crash watchdog still records an unexpected Explorer exit but does not reopen
+  the launcher to ask for a report. Delete the key or set `false` to re-enable.
 
 #### Usage Examples
 

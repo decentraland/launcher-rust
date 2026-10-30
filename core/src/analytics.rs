@@ -1,5 +1,6 @@
 mod client;
 pub mod event;
+mod fingerprint;
 mod network_info;
 mod null_client;
 mod session;
@@ -10,6 +11,7 @@ use event::Event;
 use log::{error, info};
 use null_client::NullClient;
 use session::SessionId;
+use std::time::Duration;
 
 use crate::{
     config,
@@ -76,6 +78,14 @@ impl Analytics {
         }
     }
 
+    #[must_use]
+    pub fn with_campaign_anon_user_id(self, id: &str) -> Self {
+        match self {
+            Self::Client(client) => Self::Client(client.with_campaign_anon_user_id(id.to_owned())),
+            null @ Self::Null(_) => null,
+        }
+    }
+
     async fn track_and_flush(&mut self, event: Event) -> Result<()> {
         match self {
             Self::Client(client) => {
@@ -112,6 +122,12 @@ impl Analytics {
     pub async fn cleanup(&self) {
         if let Self::Client(client) = &self {
             client.cleanup().await;
+        }
+    }
+
+    pub async fn cleanup_within(&self, timeout: Duration) {
+        if let Self::Client(client) = &self {
+            client.cleanup_within(timeout).await;
         }
     }
 }

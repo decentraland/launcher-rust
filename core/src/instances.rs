@@ -36,40 +36,82 @@ impl RunningInstances {
         }
     }
 
+    /// Registers every not-yet-known process under `app_path` and returns the newly registered
+    /// `(pid, exe_path)` pairs; empty when nothing new appeared this poll.
     #[cfg(target_os = "macos")]
-    pub fn register_new_opened_instance_by_name(&self, process_name: &str) {
+    pub fn register_new_opened_instances_by_fuzzy_path(
+        &self,
+        app_path: &Path,
+    ) -> Vec<(u32, PathBuf)> {
         use std::collections::hash_map::Entry;
-        use std::ffi::OsStr;
 
-        let system = sysinfo::System::new_all();
-        let exact_name = OsStr::new(process_name);
         let mut content: Storage = Self::file_content(self.path.as_path());
-        let initial_count = content.processes.len();
+        let mut registered = Vec::new();
 
-        for candidate in system.processes_by_exact_name(exact_name) {
-            let raw_pid = candidate.pid().as_u32();
-
+        for (raw_pid, name, exe_path) in Self::processes_under_path(app_path) {
             if let Entry::Vacant(e) = content.processes.entry(raw_pid) {
-                let name = candidate
-                    .name()
-                    .to_str()
-                    .unwrap_or("cannot parse os string");
-                e.insert(name.to_owned());
                 log::info!(
-                    "Registered process run with id: {} and name {}",
+                    "Accepted and registered process pid {} name {} exe {}",
                     raw_pid,
-                    name
+                    name,
+                    exe_path.display()
                 );
+                e.insert(name);
+                registered.push((raw_pid, exe_path));
             }
         }
 
-        if initial_count == content.processes.len() {
-            log::error!(
-                "No new running instances were found. Likely instance is crashed or closed if it has been launched recently"
+        if registered.is_empty() {
+            log::info!(
+                "No new Explorer instances found this poll under {}",
+                app_path.display()
             );
         } else if let Err(e) = Self::write_content(&self.path, &content) {
-            log::error!("Cannot register running instance: {:#?}", e);
+            log::error!("Cannot persist running instance(s): {:#?}", e);
         }
+        registered
+    }
+
+    /// Scans the OS process list for every process whose executable lives under
+    /// `path`, yielding `(raw_pid, name, exe_path)` for each match.
+    #[cfg(target_os = "macos")]
+    fn processes_under_path(path: &Path) -> Vec<(u32, String, PathBuf)> {
+        let system = sysinfo::System::new_all();
+        let mut found = Vec::new();
+
+        for (pid, process) in system.processes() {
+            let Some(exe_path) = process.exe() else {
+                continue;
+            };
+            if exe_path.starts_with(path) {
+                let name = process
+                    .name()
+                    .to_str()
+                    .unwrap_or("cannot parse os string")
+                    .to_owned();
+                found.push((pid.as_u32(), name, exe_path.to_path_buf()));
+            }
+        }
+        found
+    }
+
+    /// Scans the OS process list for any process whose executable or working
+    /// directory is under the `latest/` Explorer directory. Returns
+    /// "name (pid, reason)" strings for each match.
+    /// Authoritative — does not depend on the `running-instances.json` tracker,
+    /// which can hold stale PIDs across sessions.
+    pub fn explorer_processes_by_path(&self) -> Vec<String> {
+        let latest_path = installs::explorer_latest_version_path();
+        let system = sysinfo::System::new_all();
+        system
+            .processes()
+            .iter()
+            .filter_map(|(pid, process)| {
+                let reason = why_process_holds_dir(process, &latest_path)?;
+                let name = process.name().to_str().unwrap_or("cannot parse os string");
+                Some(format!("{name} (pid {pid}, {reason})"))
+            })
+            .collect()
     }
 
     pub fn any_is_running(&self) -> Result<bool> {
@@ -155,4 +197,21 @@ impl Default for RunningInstances {
             path: installs::running_instances_path(),
         }
     }
+}
+
+/// Why `process` keeps `dir` from being renamed or deleted, if it does.
+fn why_process_holds_dir(process: &sysinfo::Process, dir: &Path) -> Option<&'static str> {
+    if process
+        .exe()
+        .is_some_and(|exe| installs::is_inside_dir(exe, dir))
+    {
+        return Some("runs from it");
+    }
+    if process
+        .cwd()
+        .is_some_and(|cwd| installs::is_inside_dir(cwd, dir))
+    {
+        return Some("working directory");
+    }
+    None
 }

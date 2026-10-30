@@ -25,7 +25,7 @@ jobs:
       version: ${{ steps.check_skip.outputs.should_skip == 'true' && steps.check_skip.outputs.version || steps.bump.outputs.version }}
       should_run_tests_and_release: ${{ steps.eval_trigger.outputs.should_run_tests_and_release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
@@ -107,7 +107,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml core/Cargo.toml
+          jq -r '.[]' version-files.json | xargs git add
           git diff --cached --quiet || git commit -m "chore(release): bump version to ${{ steps.bump.outputs.version }}"
 
       - name: Create Pull Request for version bump

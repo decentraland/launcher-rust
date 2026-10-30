@@ -1,0 +1,90 @@
+name: Publish DEV installer for client-download-gateway
+# Promotes a PR's dry-run build to the keys client-download-gateway serves on .zone.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "launcher-rust PR number (from the build comment)"
+        required: true
+      run:
+        description: "run-<num>-<id> folder; blank = latest for that PR"
+        required: false
+
+concurrency:
+  group: publish-dev-installer
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.DEV_EXPLORER_TEAM_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.DEV_EXPLORER_TEAM_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.DEV_EXPLORER_TEAM_AWS_DEFAULT_REGION }}
+      S3_BUCKET: ${{ secrets.DEV_EXPLORER_TEAM_S3_BUCKET }}
+    steps:
+      - name: Copy dry-run installer onto gateway serving keys
+        env:
+          PR: ${{ inputs.pr }}
+          RUN: ${{ inputs.run }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "invalid pr: $PR"; exit 1; }
+          FILES="Decentraland_installer.exe Decentraland_installer.dmg dcl_launcher.exe"
+          SRC="dry-run-${REPO}/pr-${PR}"
+          if [ -z "$RUN" ]; then
+            RUN=$(aws s3api list-objects-v2 --bucket "$S3_BUCKET" --prefix "$SRC/" \
+                    --query 'sort_by(Contents || `[]`, &LastModified)[-1].Key' --output text | awk -F/ '{print $3}') || RUN=""
+          fi
+          # Validate whether the run was provided or auto-discovered.
+          [[ "$RUN" =~ ^run-[0-9]+-[0-9]+$ ]] || { echo "invalid or undiscoverable run: '$RUN'"; exit 1; }
+          SRC_PREFIX="$SRC/$RUN"
+          DEST_PREFIX="zone-downloader-launcher-rust"
+          ARCHIVE_PREFIX="$DEST_PREFIX/_prev/$(date -u +%Y%m%dT%H%M%SZ)"
+
+          # Preflight sources so a mid-run failure can't leave a mixed old/new set on the live keys.
+          for f in $FILES; do
+            aws s3api head-object --bucket "$S3_BUCKET" --key "$SRC_PREFIX/$f" >/dev/null \
+              || { echo "missing source object: $SRC_PREFIX/$f"; exit 1; }
+          done
+
+          # Unversioned bucket: back up before overwrite; skip only on 404, fail on any other error.
+          BACKED_UP=""
+          for f in $FILES; do
+            if err=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$DEST_PREFIX/$f" 2>&1); then
+              aws s3 cp "s3://$S3_BUCKET/$DEST_PREFIX/$f" "s3://$S3_BUCKET/$ARCHIVE_PREFIX/$f" --only-show-errors
+              BACKED_UP="$BACKED_UP $f"
+            elif printf '%s' "$err" | grep -q '(404)'; then
+              echo "no existing $f to back up"
+            else
+              printf '%s\n' "$err"; exit 1
+            fi
+          done
+
+          # Overwriting the live keys is not atomic; restore this run's archive on any publish/verify failure.
+          rollback() {
+            echo "Publish failed — restoring previous live keys."
+            for f in $FILES; do
+              case " $BACKED_UP " in
+                *" $f "*) aws s3 cp "s3://$S3_BUCKET/$ARCHIVE_PREFIX/$f" "s3://$S3_BUCKET/$DEST_PREFIX/$f" --only-show-errors || echo "rollback failed for $f" ;;
+                *)        aws s3 rm "s3://$S3_BUCKET/$DEST_PREFIX/$f" --only-show-errors || true ;;
+              esac
+            done
+          }
+          trap rollback ERR
+
+          for f in $FILES; do
+            aws s3 cp "s3://$S3_BUCKET/$SRC_PREFIX/$f" "s3://$S3_BUCKET/$DEST_PREFIX/$f" --only-show-errors
+          done
+
+          for f in $FILES; do
+            src_size=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$SRC_PREFIX/$f" --query ContentLength --output text)
+            dest_size=$(aws s3api head-object --bucket "$S3_BUCKET" --key "$DEST_PREFIX/$f" --query ContentLength --output text)
+            [ "$src_size" = "$dest_size" ] || { echo "size mismatch for $f: src=$src_size dest=$dest_size"; false; }
+          done
+
+          trap - ERR
+          echo "Published run $RUN."

@@ -41,6 +41,16 @@ pub const fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+pub const BUILD_COMMIT: &str = match option_env!("GIT_COMMIT") {
+    Some(s) => s,
+    None => "local",
+};
+
+pub const BUILD_PR: &str = match option_env!("PR_NUMBER") {
+    Some(s) => s,
+    None => "na",
+};
+
 /**
  * Determines if should run the dev version of the Explorer when passing the arguments --dev or --version=dev.
  * @returns A boolean value indicating if the Explorer should run the explorer from the dev path.
