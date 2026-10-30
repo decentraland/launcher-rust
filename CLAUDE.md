@@ -27,7 +27,7 @@ The launcher manages the download-install-launch funnel for the Decentraland Exp
 
 ### File-based deeplink bridge
 
-When a `decentraland://` link arrives while the Explorer is already running, the launcher writes the deeplink to `deeplink-bridge.json` and polls for the Explorer to consume (delete) it within 3 seconds. If the Explorer's main thread is blocked (ANR), the file is never consumed and `E3001_OPEN_DEEPLINK_TIMEOUT` fires.
+When a `decentraland://` link arrives while the Explorer is already running, the launcher writes the deeplink to `deeplink-bridge.json` and polls for the Explorer to consume (delete) it within 15 seconds (`OPEN_DEEPLINK_TIMEOUT` in `execute_passthrough`, `core/src/deeplink_bridge.rs`). If the Explorer does not consume the file in time, for example because its main thread is blocked (ANR) or it cannot reach the file, `E3001_OPEN_DEEPLINK_TIMEOUT` fires.
 
 ## Conventions
 
