@@ -53,7 +53,9 @@ impl AnalyticsClient {
         let client = HttpClient::new_with_host(SEGMENT_HOST.to_owned());
         let mut send_daemon = AnalyticsEventSendDaemon::new(queue, None, write_key, client);
 
-        send_daemon.start(|failure| log_send_loop_error(&failure));
+        send_daemon.start(tokio::runtime::Handle::current(), |failure| {
+            log_send_loop_error(&failure);
+        });
 
         Self {
             anonymous_id,
