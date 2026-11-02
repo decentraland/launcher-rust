@@ -8,7 +8,7 @@ use segment::message::{Track, User};
 use segment::queue::event_queue::{
     CombinedAnalyticsEventQueue, InMemoryAnalyticsEventQueue, PersistentAnalyticsEventQueue,
 };
-use segment::queue::event_send_daemon::{AnalyticsEventSendDaemon, SendFailure};
+use segment::queue::event_send_daemon::{AnalyticsEventSendDaemon, SendError, SendFailure};
 use segment::queue::queued_batcher::QueuedBatcher;
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 
 use crate::analytics::network_info::network_context;
 use crate::environment::AppEnvironment;
+use crate::logs::LogDestination;
 
 use super::event::Event;
 use super::fingerprint::ClientFingerprint;
@@ -196,8 +197,36 @@ fn event_data(value: Value) -> Result<Map<String, Value>, String> {
 
 fn log_send_loop_error(failure: &SendFailure<'_>) {
     match failure {
-        SendFailure::WillDrop(e) => error!("Analytics event dropped: {e:#?}"),
-        SendFailure::WillRetry(e) => warn!("Analytics send failed, will retry: {e:#?}"),
+        SendFailure::WillDrop(e) => report_dropped_event(e),
+        SendFailure::WillRetry(e) => {
+            warn!(target: LogDestination::File.as_target(), "Analytics send failed, will retry: {e}");
+        }
+    }
+}
+
+fn report_dropped_event(error: &SendError) {
+    let kind = send_error_kind(error);
+    error!(target: LogDestination::File.as_target(), "Analytics event dropped: {error}");
+    sentry::with_scope(
+        |scope| {
+            scope.set_tag("analytics_send_error", kind);
+            scope.set_extra("detail", error.to_string().into());
+            scope.set_fingerprint(Some(&["analytics_event_dropped", kind]));
+        },
+        || {
+            sentry::capture_message("Analytics event dropped", sentry::Level::Error);
+        },
+    );
+}
+
+const fn send_error_kind(error: &SendError) -> &'static str {
+    match error {
+        SendError::Dropped { .. } => "dropped",
+        SendError::UnreadableRow(_) => "unreadable_row",
+        SendError::Network { .. } => "network",
+        SendError::Rejected { .. } => "rejected",
+        SendError::Queue(_) => "queue",
+        SendError::Unremoved { .. } => "unremoved",
     }
 }
 
