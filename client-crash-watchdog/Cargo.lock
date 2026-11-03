@@ -339,7 +339,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "dcl-launcher-core"
-version = "1.24.0"
+version = "1.24.2"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -390,7 +390,7 @@ dependencies = [
 
 [[package]]
 name = "dcl_watchdog"
-version = "1.24.0"
+version = "1.24.2"
 dependencies = [
  "dcl-launcher-core",
  "nix 0.29.0",
@@ -2292,8 +2292,8 @@ dependencies = [
 
 [[package]]
 name = "segment"
-version = "0.2.6"
-source = "git+https://github.com/decentraland/segment?branch=main#c9d3a81bf377dc921f59bf45c0603dcfdd814e6e"
+version = "0.3.0"
+source = "git+https://github.com/decentraland/segment?branch=main#dba4b34a427b27000c274d6f64f91ea352e8ff81"
 dependencies = [
  "async-trait",
  "reqwest",
@@ -2757,7 +2757,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -3373,7 +3373,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

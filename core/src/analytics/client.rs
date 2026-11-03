@@ -197,24 +197,29 @@ fn event_data(value: Value) -> Result<Map<String, Value>, String> {
 
 fn log_send_loop_error(failure: &SendFailure<'_>) {
     match failure {
-        SendFailure::WillDrop(e) => report_dropped_event(e),
+        SendFailure::WillDrop(e) => {
+            error!(target: LogDestination::File.as_target(), "Analytics event dropped: {e}");
+            report_unrecoverable(e, "Analytics event dropped", "analytics_event_dropped");
+        }
         SendFailure::WillRetry(e) => {
             warn!(target: LogDestination::File.as_target(), "Analytics send failed, will retry: {e}");
+            if matches!(e, SendError::Rejected { .. }) {
+                report_unrecoverable(e, "Analytics send rejected", "analytics_send_rejected");
+            }
         }
     }
 }
 
-fn report_dropped_event(error: &SendError) {
+fn report_unrecoverable(error: &SendError, message: &str, fingerprint: &str) {
     let kind = send_error_kind(error);
-    error!(target: LogDestination::File.as_target(), "Analytics event dropped: {error}");
     sentry::with_scope(
         |scope| {
             scope.set_tag("analytics_send_error", kind);
             scope.set_extra("detail", error.to_string().into());
-            scope.set_fingerprint(Some(&["analytics_event_dropped", kind]));
+            scope.set_fingerprint(Some(&[fingerprint, kind]));
         },
         || {
-            sentry::capture_message("Analytics event dropped", sentry::Level::Error);
+            sentry::capture_message(message, sentry::Level::Error);
         },
     );
 }
