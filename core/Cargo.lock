@@ -2351,8 +2351,8 @@ dependencies = [
 
 [[package]]
 name = "segment"
-version = "0.2.6"
-source = "git+https://github.com/decentraland/segment?branch=main#c9d3a81bf377dc921f59bf45c0603dcfdd814e6e"
+version = "0.3.0"
+source = "git+https://github.com/decentraland/segment?branch=main#dba4b34a427b27000c274d6f64f91ea352e8ff81"
 dependencies = [
  "async-trait",
  "reqwest",

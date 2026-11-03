@@ -2,13 +2,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use log::{error, info};
+use log::{error, info, warn};
 use segment::HttpClient;
 use segment::message::{Track, User};
 use segment::queue::event_queue::{
     CombinedAnalyticsEventQueue, InMemoryAnalyticsEventQueue, PersistentAnalyticsEventQueue,
 };
-use segment::queue::event_send_daemon::AnalyticsEventSendDaemon;
+use segment::queue::event_send_daemon::{AnalyticsEventSendDaemon, SendError, SendFailure};
 use segment::queue::queued_batcher::QueuedBatcher;
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 
 use crate::analytics::network_info::network_context;
 use crate::environment::AppEnvironment;
+use crate::logs::LogDestination;
 
 use super::event::Event;
 use super::fingerprint::ClientFingerprint;
@@ -53,7 +54,9 @@ impl AnalyticsClient {
         let client = HttpClient::new_with_host(SEGMENT_HOST.to_owned());
         let mut send_daemon = AnalyticsEventSendDaemon::new(queue, None, write_key, client);
 
-        send_daemon.start(|e| error!("{}", e));
+        send_daemon.start(tokio::runtime::Handle::current(), |failure| {
+            log_send_loop_error(&failure);
+        });
 
         Self {
             anonymous_id,
@@ -189,6 +192,46 @@ fn event_data(value: Value) -> Result<Map<String, Value>, String> {
             None => Ok(Map::new()),
         },
         other => Err(format!("serialized event is not an object: {other:#?}")),
+    }
+}
+
+fn log_send_loop_error(failure: &SendFailure<'_>) {
+    match failure {
+        SendFailure::WillDrop(e) => {
+            error!(target: LogDestination::File.as_target(), "Analytics event dropped: {e}");
+            report_unrecoverable(e, "Analytics event dropped", "analytics_event_dropped");
+        }
+        SendFailure::WillRetry(e) => {
+            warn!(target: LogDestination::File.as_target(), "Analytics send failed, will retry: {e}");
+            if matches!(e, SendError::Rejected { .. }) {
+                report_unrecoverable(e, "Analytics send rejected", "analytics_send_rejected");
+            }
+        }
+    }
+}
+
+fn report_unrecoverable(error: &SendError, message: &str, fingerprint: &str) {
+    let kind = send_error_kind(error);
+    sentry::with_scope(
+        |scope| {
+            scope.set_tag("analytics_send_error", kind);
+            scope.set_extra("detail", error.to_string().into());
+            scope.set_fingerprint(Some(&[fingerprint, kind]));
+        },
+        || {
+            sentry::capture_message(message, sentry::Level::Error);
+        },
+    );
+}
+
+const fn send_error_kind(error: &SendError) -> &'static str {
+    match error {
+        SendError::Dropped { .. } => "dropped",
+        SendError::UnreadableRow(_) => "unreadable_row",
+        SendError::Network { .. } => "network",
+        SendError::Rejected { .. } => "rejected",
+        SendError::Queue(_) => "queue",
+        SendError::Unremoved { .. } => "unremoved",
     }
 }
 

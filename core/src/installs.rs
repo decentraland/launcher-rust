@@ -277,8 +277,11 @@ fn get_version_data() -> Result<Map<String, Value>> {
 }
 
 fn get_version_data_or_empty() -> Map<String, Value> {
-    get_version_data().unwrap_or_else(|_e| {
-        log::error!("Cannot get version data, fallback to new empty");
+    if !explorer_version_path().exists() {
+        return Map::new();
+    }
+    get_version_data().unwrap_or_else(|e| {
+        log::error!("Cannot get version data, fallback to new empty: {e:#}");
 
         Map::new()
     })
