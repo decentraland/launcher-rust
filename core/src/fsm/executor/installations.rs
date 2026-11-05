@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::Duration;
 
 use anyhow::{Context, anyhow};
 use log::{error, warn};
@@ -13,6 +14,7 @@ use crate::errors::{DCLError, DCLErrorResult};
 use crate::fsm::msg::Msg;
 use crate::fsm::values::{ReadyInstallation, UpdateStrategy};
 use crate::installs::{self, downloads};
+use crate::instances::{DirHolder, RunningInstances};
 use crate::s3;
 use crate::types::{BuildType, LaunchStatus, Status, Step};
 use crate::version::Version;
@@ -116,17 +118,21 @@ impl Executor {
     }
 
     /// Installing swaps `latest/`, which an Explorer holding files there would break.
+    /// When the only holders are abgen sidecars, their Explorer is gone and they are killed;
+    /// any other holder (a running Explorer included, which may still use its abgen) is reported.
     async fn refuse_while_explorer_runs(&self) -> DCLErrorResult {
-        let running = self
-            .running_instances
-            .lock()
-            .await
-            .explorer_processes_by_path();
-        if running.is_empty() {
+        let instances = self.running_instances.lock().await;
+        let mut holders = instances.processes_holding_latest();
+        if only_orphaned_abgen(&holders) {
+            instances.kill_abgen(&holders);
+            holders = holders_after_kill(&instances).await;
+        }
+        if holders.is_empty() {
             return Ok(());
         }
-        warn!("[fsm] Explorer is still running; refusing to install: {running:?}");
-        Err(DCLError::E3008_EXPLORER_ALREADY_RUNNING { processes: running })
+        let processes: Vec<String> = holders.iter().map(ToString::to_string).collect();
+        warn!("[fsm] Explorer is still running; refusing to install: {processes:?}");
+        Err(DCLError::E3008_EXPLORER_ALREADY_RUNNING { processes })
     }
 
     async fn install_zip(&self, target: &Version) -> DCLErrorResult {
@@ -161,6 +167,28 @@ impl Executor {
         .await
         .map_err(|e| DCLError::from(anyhow::Error::from(e)))?
     }
+}
+
+/// How long a killed abgen gets to exit before its hold on `latest/` counts as still there.
+const KILL_RELEASE_POLLS: u32 = 20;
+const KILL_RELEASE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// No Explorer runs from `latest/`, so every abgen still holding it was left behind by one that
+/// exited without stopping it.
+fn only_orphaned_abgen(holders: &[DirHolder]) -> bool {
+    !holders.is_empty() && holders.iter().all(DirHolder::is_abgen)
+}
+
+/// Rescans until the killed processes are gone or the polls run out; returns what still holds `latest/`.
+async fn holders_after_kill(instances: &RunningInstances) -> Vec<DirHolder> {
+    for _ in 0..KILL_RELEASE_POLLS {
+        tokio::time::sleep(KILL_RELEASE_POLL_INTERVAL).await;
+        let holders = instances.processes_holding_latest();
+        if holders.is_empty() {
+            return holders;
+        }
+    }
+    instances.processes_holding_latest()
 }
 
 /// Turns the download's status stream into one progress message per percent; the UI reads

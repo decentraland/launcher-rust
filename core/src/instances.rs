@@ -2,10 +2,35 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    ffi::OsStr,
+    fmt::{self, Display},
     fs::File,
     path::{Path, PathBuf},
 };
 use sysinfo::Pid;
+
+/// Executable stem of the Explorer's asset-bundle sidecar (`abgen` on macOS, `abgen.exe` on Windows).
+const ABGEN_STEM: &str = "abgen";
+
+/// A process keeping the `latest/` Explorer directory from being renamed or deleted.
+#[derive(Debug)]
+pub struct DirHolder {
+    pid: Pid,
+    name: String,
+    reason: &'static str,
+}
+
+impl DirHolder {
+    pub fn is_abgen(&self) -> bool {
+        is_abgen(OsStr::new(&self.name))
+    }
+}
+
+impl Display for DirHolder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (pid {}, {})", self.name, self.pid, self.reason)
+    }
+}
 
 use crate::installs;
 
@@ -96,11 +121,10 @@ impl RunningInstances {
     }
 
     /// Scans the OS process list for any process whose executable or working
-    /// directory is under the `latest/` Explorer directory. Returns
-    /// "name (pid, reason)" strings for each match.
+    /// directory is under the `latest/` Explorer directory.
     /// Authoritative — does not depend on the `running-instances.json` tracker,
     /// which can hold stale PIDs across sessions.
-    pub fn explorer_processes_by_path(&self) -> Vec<String> {
+    pub fn processes_holding_latest(&self) -> Vec<DirHolder> {
         let latest_path = installs::explorer_latest_version_path();
         let system = sysinfo::System::new_all();
         system
@@ -108,10 +132,34 @@ impl RunningInstances {
             .iter()
             .filter_map(|(pid, process)| {
                 let reason = why_process_holds_dir(process, &latest_path)?;
-                let name = process.name().to_str().unwrap_or("cannot parse os string");
-                Some(format!("{name} (pid {pid}, {reason})"))
+                let name = process
+                    .name()
+                    .to_str()
+                    .unwrap_or("cannot parse os string")
+                    .to_owned();
+                Some(DirHolder {
+                    pid: *pid,
+                    name,
+                    reason,
+                })
             })
             .collect()
+    }
+
+    /// Kills every abgen in `holders`. The name is checked again against the live process, so a
+    /// pid recycled since the scan is left alone.
+    pub fn kill_abgen(&self, holders: &[DirHolder]) {
+        let system = sysinfo::System::new_all();
+        for holder in holders.iter().filter(|holder| holder.is_abgen()) {
+            let killed = system
+                .process(holder.pid)
+                .is_some_and(|process| is_abgen(process.name()) && process.kill());
+            if killed {
+                log::warn!("Killed orphaned {holder} holding the latest/ directory");
+            } else {
+                log::warn!("Cannot kill {holder} holding the latest/ directory");
+            }
+        }
     }
 
     pub fn any_is_running(&self) -> Result<bool> {
@@ -199,6 +247,14 @@ impl Default for RunningInstances {
     }
 }
 
+/// abgen is started by the Explorer and outlives one that exits without stopping it — then it
+/// holds `latest/` as its inherited working directory with nothing left using it.
+fn is_abgen(process_name: &OsStr) -> bool {
+    Path::new(process_name)
+        .file_stem()
+        .is_some_and(|stem| stem.eq_ignore_ascii_case(ABGEN_STEM))
+}
+
 /// Why `process` keeps `dir` from being renamed or deleted, if it does.
 fn why_process_holds_dir(process: &sysinfo::Process, dir: &Path) -> Option<&'static str> {
     if process
@@ -214,4 +270,22 @@ fn why_process_holds_dir(process: &sysinfo::Process, dir: &Path) -> Option<&'sta
         return Some("working directory");
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("abgen", true)]
+    #[case("abgen.exe", true)]
+    #[case("ABGEN.EXE", true)]
+    #[case("Explorer", false)]
+    #[case("Decentraland.exe", false)]
+    #[case("abgen-build", false)]
+    #[case("zsh", false)]
+    fn is_abgen_matches_only_the_sidecar(#[case] name: &str, #[case] expected: bool) {
+        assert_eq!(is_abgen(OsStr::new(name)), expected);
+    }
 }
