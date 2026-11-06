@@ -118,8 +118,7 @@ impl Executor {
     }
 
     /// Installing swaps `latest/`, which an Explorer holding files there would break.
-    /// When the only holders are abgen sidecars, their Explorer is gone and they are killed;
-    /// any other holder (a running Explorer included, which may still use its abgen) is reported.
+    /// Orphaned abgen sidecars are killed; any other holder is reported.
     async fn refuse_while_explorer_runs(&self) -> DCLErrorResult {
         let instances = self.running_instances.lock().await;
         let mut holders = instances.processes_holding_latest();
@@ -169,17 +168,13 @@ impl Executor {
     }
 }
 
-/// How long a killed abgen gets to exit before its hold on `latest/` counts as still there.
 const KILL_RELEASE_POLLS: u32 = 20;
 const KILL_RELEASE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// No Explorer runs from `latest/`, so every abgen still holding it was left behind by one that
-/// exited without stopping it.
 fn only_orphaned_abgen(holders: &[DirHolder]) -> bool {
     !holders.is_empty() && holders.iter().all(DirHolder::is_abgen)
 }
 
-/// Rescans until the killed processes are gone or the polls run out; returns what still holds `latest/`.
 async fn holders_after_kill(instances: &RunningInstances) -> Vec<DirHolder> {
     for _ in 0..KILL_RELEASE_POLLS {
         tokio::time::sleep(KILL_RELEASE_POLL_INTERVAL).await;

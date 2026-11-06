@@ -9,7 +9,7 @@ use std::{
 };
 use sysinfo::Pid;
 
-/// Executable stem of the Explorer's asset-bundle sidecar (`abgen` on macOS, `abgen.exe` on Windows).
+/// The Explorer's asset-bundle sidecar.
 const ABGEN_STEM: &str = "abgen";
 
 /// A process keeping the `latest/` Explorer directory from being renamed or deleted.
@@ -146,8 +146,6 @@ impl RunningInstances {
             .collect()
     }
 
-    /// Kills every abgen in `holders`. The name is checked again against the live process, so a
-    /// pid recycled since the scan is left alone.
     pub fn kill_abgen(&self, holders: &[DirHolder]) {
         let system = sysinfo::System::new_all();
         for holder in holders.iter().filter(|holder| holder.is_abgen()) {
@@ -247,8 +245,6 @@ impl Default for RunningInstances {
     }
 }
 
-/// abgen is started by the Explorer and outlives one that exits without stopping it — then it
-/// holds `latest/` as its inherited working directory with nothing left using it.
 fn is_abgen(process_name: &OsStr) -> bool {
     Path::new(process_name)
         .file_stem()
